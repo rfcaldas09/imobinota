@@ -18,7 +18,7 @@ const NAV = [
   { to: '/contratos',  label: 'Contratos',     Icon: IcFile },
   { to: '/cobrancas',  label: 'Cobranças',     Icon: IcDollar },
   { to: '/relatorios', label: 'Relatórios',    Icon: IcTrend },
-  { to: '/inquilinos', label: 'Inquilinos',    Icon: IcUsers },
+  { to: '/inquilinos', label: 'Clientes',      Icon: IcUsers },
   { to: '/config',     label: 'Configurações', Icon: IcSettings },
 ]
 

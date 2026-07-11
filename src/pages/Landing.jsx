@@ -11,6 +11,14 @@ function WaIcon() {
   )
 }
 
+// ── Input reutilizável (fora do AccessCard para não recriar a cada render) ──
+function Inp({ value, onChange, type='text', placeholder }) {
+  return (
+    <input type={type} value={value} onChange={onChange} placeholder={placeholder}
+      className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-all bg-white"/>
+  )
+}
+
 // ── Login / Signup card inline ──────────────────────────────────────
 function AccessCard() {
   const { signIn, signUp } = useAuth()
@@ -49,11 +57,6 @@ function AccessCard() {
     } finally { setLoading(false) }
   }
 
-  const Inp = ({ k, type='text', placeholder }) => (
-    <input type={type} value={form[k]} onChange={set(k)} placeholder={placeholder}
-      className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-all bg-white"/>
-  )
-
   return (
     <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md mx-auto lg:mx-0">
       {/* Tab switcher */}
@@ -72,14 +75,14 @@ function AccessCard() {
           <div className="space-y-4 mb-5">
             <div>
               <label className="text-xs font-semibold text-slate-500 block mb-1">E-mail</label>
-              <Inp k="email" type="email" placeholder="seu@email.com.br"/>
+              <Inp value={form.email} onChange={set('email')} type="email" placeholder="seu@email.com.br"/>
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-semibold text-slate-500">Senha</label>
                 <a href="#" className="text-xs text-indigo-600 hover:underline">Esqueceu?</a>
               </div>
-              <Inp k="password" type="password" placeholder="••••••••"/>
+              <Inp value={form.password} onChange={set('password')} type="password" placeholder="••••••••"/>
             </div>
           </div>
           {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-4">{error}</p>}
@@ -100,28 +103,28 @@ function AccessCard() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-slate-500 block mb-1">Nome</label>
-                <Inp k="firstName" placeholder="João"/>
+                <Inp value={form.firstName} onChange={set('firstName')} placeholder="João"/>
               </div>
               <div>
                 <label className="text-xs font-semibold text-slate-500 block mb-1">Sobrenome</label>
-                <Inp k="lastName" placeholder="Silva"/>
+                <Inp value={form.lastName} onChange={set('lastName')} placeholder="Silva"/>
               </div>
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 block mb-1">Nome da empresa *</label>
-              <Inp k="company" placeholder="Silva Imóveis Ltda"/>
+              <Inp value={form.company} onChange={set('company')} placeholder="Silva Imóveis Ltda"/>
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 block mb-1">E-mail</label>
-              <Inp k="email" type="email" placeholder="seu@email.com.br"/>
+              <Inp value={form.email} onChange={set('email')} type="email" placeholder="seu@email.com.br"/>
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 block mb-1">WhatsApp</label>
-              <Inp k="whatsapp" type="tel" placeholder="(47) 9 9999-9999"/>
+              <Inp value={form.whatsapp} onChange={set('whatsapp')} type="tel" placeholder="(47) 9 9999-9999"/>
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 block mb-1">Senha</label>
-              <Inp k="password" type="password" placeholder="••••••••"/>
+              <Inp value={form.password} onChange={set('password')} type="password" placeholder="••••••••"/>
             </div>
           </div>
           {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-3">{error}</p>}

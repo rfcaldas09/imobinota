@@ -1,5 +1,8 @@
-import { useState, useMemo } from 'react'
-import { CONTRACTS, fmt, fmtDate } from '../data/mockData'
+import { useState, useMemo, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
+import { emitirUmaCobranca, mesLabel, MESES } from '../lib/cobrancas'
+import MonthPicker from '../components/MonthPicker'
 import Badge from '../components/Badge'
 
 const ic = (d, cls='') => (
@@ -18,22 +21,86 @@ const IcChevR   = ({ c='' }) => ic('<polyline points="9 18 15 12 9 6"/>', c)
 const IcChevL   = ({ c='' }) => ic('<polyline points="15 18 9 12 15 6"/>', c)
 const IcZap     = ({ c='' }) => ic('<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>', c)
 const IcScan    = ({ c='' }) => ic('<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="3" y1="12" x2="21" y2="12"/>', c)
+const IcTrash   = ({ c='' }) => ic('<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>', c)
+
+const fmt     = v => Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
+const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
+
+// ── Máscaras de input ──────────────────────────────────────────────
+const digits = v => v.replace(/\D/g, '')
+
+const maskCpfCnpj = raw => {
+  const d = digits(raw).slice(0, 14)
+  if (d.length <= 11) {
+    // CPF: 000.000.000-00
+    if (d.length <= 3) return d
+    if (d.length <= 6) return `${d.slice(0,3)}.${d.slice(3)}`
+    if (d.length <= 9) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`
+    return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`
+  }
+  // CNPJ: 00.000.000/0000-00
+  if (d.length <= 2) return d
+  if (d.length <= 5) return `${d.slice(0,2)}.${d.slice(2)}`
+  if (d.length <= 8) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5)}`
+  if (d.length <= 12) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8)}`
+  return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`
+}
+
+const maskPhone = raw => {
+  const d = digits(raw).slice(0, 11)
+  if (d.length === 0) return ''
+  if (d.length <= 2) return `(${d}`
+  if (d.length <= 6) return `(${d.slice(0,2)}) ${d.slice(2)}`
+  if (d.length <= 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`
+  return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}` // celular: (00) 00000-0000
+}
+
+const isCpfCnpjValid = v => {
+  const d = digits(v)
+  return d.length === 0 || d.length === 11 || d.length === 14
+}
+const isPhoneValid = v => {
+  const d = digits(v)
+  return d.length === 0 || d.length === 10 || d.length === 11
+}
 
 const FILTERS  = ['Todos', 'Pago', 'Pendente', 'Em Atraso', 'Por Vencer']
 const PER_PAGE = 10
 
-// "Por Vencer" = contratos cujo end está nos próximos 60 dias
 const isExpiringSoon = (c) => {
+  if (!c.end) return false
   const diff = (new Date(c.end) - new Date()) / 86400000
   return diff >= 0 && diff <= 60
 }
 
+// ── Componentes do formulário (fora do ContractForm para não perder foco) ──
+function FormInp({ value, onChange, invalid, ...rest }) {
+  const border = invalid
+    ? 'border-red-400 focus:ring-red-300'
+    : 'border-slate-200 focus:ring-indigo-500'
+  return (
+    <input value={value ?? ''} onChange={onChange}
+      className={`w-full px-3 py-2 text-sm border rounded-lg bg-white focus:outline-none focus:ring-2 transition-colors ${border}`}
+      {...rest} />
+  )
+}
+
+function Row({ label, children }) {
+  return (
+    <div>
+      <label className="text-xs font-medium text-slate-500 block mb-1">{label}</label>
+      {children}
+    </div>
+  )
+}
+
 // ── Formulário compartilhado (Novo / Editar) ──────────────────────
-function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor = 'bg-indigo-500' }) {
+function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor = 'bg-indigo-500', saving }) {
   const blank = {
     tenant: '', cpf: '', property: '', value: '', seguroFinanceiro: '0',
     seguroIncendio: '0', iptu: '0', dueDay: '10',
-    email: '', phone: '', start: '2026-07-01', end: '2027-12-31', status: 'Pendente',
+    email: '', phone: '', start: new Date().toISOString().slice(0,10),
+    end: '', status: 'Pendente',
   }
   const [f, setF] = useState({ ...blank, ...initial })
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
@@ -54,14 +121,6 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
     })
   }
 
-  const Row = ({ label, children }) => (
-    <div><label className="text-xs font-medium text-slate-500 block mb-1">{label}</label>{children}</div>
-  )
-  const Inp = ({ k, ...rest }) => (
-    <input value={f[k]} onChange={e => set(k, e.target.value)}
-      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" {...rest} />
-  )
-
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       onClick={onClose}>
@@ -77,33 +136,65 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
           {/* Inquilino */}
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Inquilino</p>
           <div className="grid grid-cols-2 gap-3">
-            <Row label="Nome Completo *"><Inp k="tenant" placeholder="Nome completo"/></Row>
-            <Row label="CPF / CNPJ"><Inp k="cpf" placeholder="000.000.000-00"/></Row>
+            <Row label="Nome Completo *">
+              <FormInp value={f.tenant} onChange={e => set('tenant', e.target.value)} placeholder="Nome completo"/>
+            </Row>
+            <Row label={`CPF / CNPJ${f.cpf && !isCpfCnpjValid(f.cpf) ? ' — incompleto' : ''}`}>
+              <FormInp
+                value={f.cpf}
+                onChange={e => set('cpf', maskCpfCnpj(e.target.value))}
+                placeholder="000.000.000-00"
+                inputMode="numeric"
+                invalid={f.cpf && !isCpfCnpjValid(f.cpf)}
+              />
+            </Row>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Row label="E-mail"><Inp k="email" type="email" placeholder="inquilino@email.com"/></Row>
-            <Row label="Telefone"><Inp k="phone" placeholder="(47) 99999-0000"/></Row>
+            <Row label="E-mail">
+              <FormInp value={f.email} onChange={e => set('email', e.target.value)} type="email" placeholder="inquilino@email.com"/>
+            </Row>
+            <Row label={`Telefone${f.phone && !isPhoneValid(f.phone) ? ' — incompleto' : ''}`}>
+              <FormInp
+                value={f.phone}
+                onChange={e => set('phone', maskPhone(e.target.value))}
+                placeholder="(47) 99999-0000"
+                inputMode="numeric"
+                invalid={f.phone && !isPhoneValid(f.phone)}
+              />
+            </Row>
           </div>
 
           {/* Imóvel */}
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Imóvel</p>
           <Row label="Identificação do Imóvel *">
-            <Inp k="property" placeholder="Ex: Ap. 201 — R. XV de Novembro, 450"/>
+            <FormInp value={f.property} onChange={e => set('property', e.target.value)} placeholder="Ex: Ap. 201 — R. XV de Novembro, 450"/>
           </Row>
           <div className="grid grid-cols-2 gap-3">
-            <Row label="Início do Contrato"><Inp k="start" type="date"/></Row>
-            <Row label="Fim do Contrato"><Inp k="end" type="date"/></Row>
+            <Row label="Início do Contrato">
+              <FormInp value={f.start} onChange={e => set('start', e.target.value)} type="date"/>
+            </Row>
+            <Row label="Fim do Contrato">
+              <FormInp value={f.end} onChange={e => set('end', e.target.value)} type="date"/>
+            </Row>
           </div>
 
           {/* Composição financeira */}
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Composição do Boleto</p>
           <div className="grid grid-cols-2 gap-3">
-            <Row label="Aluguel (R$) *"><Inp k="value" type="number" placeholder="0,00"/></Row>
-            <Row label="Seguro Financeiro (R$)"><Inp k="seguroFinanceiro" type="number" placeholder="0,00"/></Row>
+            <Row label="Aluguel (R$) *">
+              <FormInp value={f.value} onChange={e => set('value', e.target.value)} type="number" placeholder="0,00"/>
+            </Row>
+            <Row label="Seguro Financeiro (R$)">
+              <FormInp value={f.seguroFinanceiro} onChange={e => set('seguroFinanceiro', e.target.value)} type="number" placeholder="0,00"/>
+            </Row>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Row label="Seguro Incêndio (R$)"><Inp k="seguroIncendio" type="number" placeholder="0,00"/></Row>
-            <Row label="IPTU (R$)"><Inp k="iptu" type="number" placeholder="0,00"/></Row>
+            <Row label="Seguro Incêndio (R$)">
+              <FormInp value={f.seguroIncendio} onChange={e => set('seguroIncendio', e.target.value)} type="number" placeholder="0,00"/>
+            </Row>
+            <Row label="IPTU (R$)">
+              <FormInp value={f.iptu} onChange={e => set('iptu', e.target.value)} type="number" placeholder="0,00"/>
+            </Row>
           </div>
 
           {/* Total calculado */}
@@ -118,7 +209,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
           {/* Vencimento e status */}
           <div className="grid grid-cols-2 gap-3 pb-2">
             <Row label="Dia de Vencimento">
-              <Inp k="dueDay" type="number" min="1" max="31"/>
+              <FormInp value={f.dueDay} onChange={e => set('dueDay', e.target.value)} type="number" min="1" max="28"/>
             </Row>
             <Row label="Status">
               <select value={f.status} onChange={e => set('status', e.target.value)}
@@ -134,9 +225,9 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
             className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
             Cancelar
           </button>
-          <button onClick={handle} disabled={!f.tenant || !f.property || !f.value}
+          <button onClick={handle} disabled={!f.tenant || !f.property || !f.value || saving}
             className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-            {saveLabel}
+            {saving ? 'Salvando…' : saveLabel}
           </button>
         </div>
       </div>
@@ -146,8 +237,27 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
 
 // ── Preview de boleto / NFS-e ─────────────────────────────────────
 function DocModal({ type, contract: c, onClose, onToast }) {
-  const isBoleto = type === 'boleto'
-  const dueStr   = `${String(c.dueDay).padStart(2,'0')}/07/2026`
+  const { user }   = useAuth()
+  const isBoleto   = type === 'boleto'
+  const now        = new Date()
+  const dueStr     = `${String(c.dueDay).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`
+
+  // Estado do picker e da emissão (apenas para boleto)
+  const [mesRef, setMesRef]   = useState(() => new Date(now.getFullYear(), now.getMonth(), 1))
+  const [emitindo, setEmitindo] = useState(false)
+  const [emissao, setEmissao]   = useState(null) // null | 'created' | 'already' | 'error'
+
+  const emitir = async () => {
+    if (!user) return
+    setEmitindo(true)
+    const res = await emitirUmaCobranca(user.id, c, mesRef)
+    setEmitindo(false)
+    if (res.error)   { setEmissao('error');   onToast('Erro ao registrar cobrança', 'error'); return }
+    if (res.already) { setEmissao('already'); return }
+    setEmissao('created')
+    onToast(`Cobrança de ${mesLabel(mesRef)} registrada para ${c.tenant}`, 'success')
+  }
+
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       onClick={onClose}>
@@ -161,18 +271,19 @@ function DocModal({ type, contract: c, onClose, onToast }) {
                 {isBoleto ? '💳 Boleto de Cobrança' : '📄 NFS-e — Nota Fiscal de Serviço'}
               </span>
               <h3 className="text-base font-bold text-slate-900 mt-0.5">
-                {isBoleto ? 'Via OpenPIX / Banco Inter' : 'API Nacional NFS-e — Blumenau/SC'}
+                {isBoleto ? 'Via OpenPIX / Banco Inter' : 'API Nacional NFS-e — Gov.br'}
               </h3>
             </div>
             <button onClick={onClose} className="text-slate-300 hover:text-slate-600 mt-1"><IcX c="w-5 h-5"/></button>
           </div>
 
+          {/* Dados do documento */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl divide-y divide-slate-100 text-sm mb-4">
             {[
-              [isBoleto ? 'Beneficiário' : 'Prestador', 'ImobiNota Gestão Ltda'],
               [isBoleto ? 'Pagador' : 'Tomador', c.tenant],
               ['Imóvel', c.property],
-              [isBoleto ? 'Vencimento' : 'Competência', isBoleto ? dueStr : 'Julho/2026'],
+              [isBoleto ? 'Vencimento' : 'Competência',
+               isBoleto ? dueStr : now.toLocaleDateString('pt-BR',{month:'long',year:'numeric'})],
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between px-4 py-2.5">
                 <span className="text-slate-500">{k}</span>
@@ -181,8 +292,9 @@ function DocModal({ type, contract: c, onClose, onToast }) {
             ))}
           </div>
 
+          {/* Composição (boleto) */}
           {isBoleto && (
-            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden mb-3">
+            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden mb-4">
               <div className="px-4 py-2 bg-slate-50 border-b border-slate-100">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Composição do Boleto</p>
               </div>
@@ -206,18 +318,51 @@ function DocModal({ type, contract: c, onClose, onToast }) {
             </div>
           )}
 
-          <p className="text-center text-xs text-slate-400 italic mb-4">
-            🔧 Demo: documento mockado. Na produção o PDF real é gerado automaticamente.
-          </p>
+          {/* Seletor de mês + status de emissão (apenas boleto) */}
+          {isBoleto && (
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-slate-500 mb-2">Mês de referência da cobrança</p>
+              <MonthPicker value={mesRef} onChange={v => { setMesRef(v); setEmissao(null) }}/>
+              {emissao === 'already' && (
+                <div className="mt-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-xs text-amber-700">
+                  ⚠️ Cobrança já emitida para <strong>{mesLabel(mesRef)}</strong>. Selecione outro mês ou feche.
+                </div>
+              )}
+              {emissao === 'created' && (
+                <div className="mt-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5 text-xs text-emerald-700">
+                  ✅ Cobrança registrada para <strong>{mesLabel(mesRef)}</strong>. Envio de e-mail disponível em breve.
+                </div>
+              )}
+            </div>
+          )}
+
+          {!isBoleto && (
+            <p className="text-center text-xs text-slate-400 italic mb-4">
+              🔧 Integração NFS-e Nacional em breve.
+            </p>
+          )}
+
           <div className="flex gap-3">
             <button onClick={onClose}
               className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
               Fechar
             </button>
-            <button onClick={() => { onClose(); onToast(`E-mail reenviado para ${c.email}`, 'success') }}
-              className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 flex items-center justify-center gap-2">
-              <IcMail c="w-4 h-4"/> Reenviar por E-mail
-            </button>
+            {isBoleto ? (
+              <button onClick={emitir} disabled={emitindo || emissao === 'created'}
+                className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                {emitindo
+                  ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Registrando…</>
+                  : emissao === 'created'
+                  ? <><IcCheck c="w-4 h-4"/> Cobrança Registrada</>
+                  : <><IcSend c="w-4 h-4"/> Registrar e Enviar</>
+                }
+              </button>
+            ) : (
+              <button onClick={() => { onClose(); onToast('NFS-e em breve disponível', 'info') }}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 flex items-center justify-center gap-2">
+                📄 Emitir NFS-e
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -226,32 +371,31 @@ function DocModal({ type, contract: c, onClose, onToast }) {
 }
 
 // ── Batch Modal ────────────────────────────────────────────────────
-function BatchModal({ onClose }) {
+function BatchModal({ total: totalContracts, onClose }) {
   const [step, setStep]         = useState('idle')
   const [progress, setProgress] = useState(0)
   const [logs, setLogs]         = useState([])
   const [fails, setFails]       = useState(0)
-  const total = 600
 
   const run = () => {
     setStep('running')
     let sent = 0, fc = 0
     const names = ['Maria Aparecida','João Carlos','Ana Paula','Carlos Eduardo','Fernanda Oliveira']
     const iv = setInterval(() => {
-      const batch = Math.min(10, total - sent)
+      const batch = Math.min(5, totalContracts - sent)
       for (let i = 0; i < batch; i++) {
-        const fail = (sent + i) === 87 || (sent + i) === 231 || (sent + i) === 445
+        const fail = Math.random() < 0.005
         if (fail) fc++
         setLogs(l => [...l.slice(-50), { name: names[(sent+i) % names.length], ok: !fail }])
       }
-      sent = Math.min(sent + batch, total)
+      sent = Math.min(sent + batch, totalContracts)
       setProgress(sent)
       setFails(fc)
-      if (sent >= total) { clearInterval(iv); setTimeout(() => setStep('done'), 500) }
-    }, 100)
+      if (sent >= totalContracts) { clearInterval(iv); setTimeout(() => setStep('done'), 500) }
+    }, 80)
   }
 
-  const pct = Math.round((progress / total) * 100)
+  const pct = totalContracts > 0 ? Math.round((progress / totalContracts) * 100) : 0
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -260,7 +404,7 @@ function BatchModal({ onClose }) {
           <div className="p-7">
             <div className="w-14 h-14 bg-indigo-100 rounded-2xl flex items-center justify-center mb-5 text-3xl">🚀</div>
             <h2 className="text-xl font-bold text-slate-900 mb-2">Gerar e Enviar em Massa</h2>
-            <p className="text-slate-500 mb-4 text-sm">Para cada um dos <strong className="text-slate-700">{total.toLocaleString('pt-BR')} contratos ativos</strong>, a plataforma irá:</p>
+            <p className="text-slate-500 mb-4 text-sm">Para cada um dos <strong className="text-slate-700">{totalContracts} contratos ativos</strong>, a plataforma irá:</p>
             <div className="bg-slate-50 rounded-xl p-4 mb-5 space-y-2">
               {[['💳','Gerar boleto de cobrança','via OpenPIX'],
                 ['📄','Emitir Nota Fiscal de Serviço (NFS-e)','via API Nacional gov.br'],
@@ -273,17 +417,17 @@ function BatchModal({ onClose }) {
             </div>
             <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-6 text-sm text-amber-700">
               <span className="mt-0.5 shrink-0">⚠️</span>
-              <span>Mês de referência: <strong>Julho/2026</strong>. Contratos já emitidos serão ignorados.</span>
+              <span>Mês de referência: <strong>{new Date().toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</strong>. Contratos já emitidos serão ignorados.</span>
             </div>
             <div className="flex gap-3">
               <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50">Cancelar</button>
-              <button onClick={run} className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold hover:from-indigo-700 hover:to-purple-700 flex items-center justify-center gap-2 shadow-md shadow-indigo-200">
+              <button onClick={run} disabled={totalContracts === 0}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold hover:from-indigo-700 hover:to-purple-700 flex items-center justify-center gap-2 shadow-md shadow-indigo-200 disabled:opacity-40">
                 <IcZap c="w-4 h-4"/> Confirmar e Enviar
               </button>
             </div>
           </div>
         )}
-
         {step === 'running' && (
           <div className="p-6">
             <div className="flex items-center gap-3 mb-5">
@@ -297,7 +441,7 @@ function BatchModal({ onClose }) {
             </div>
             <div className="mb-4">
               <div className="flex justify-between text-sm mb-1.5">
-                <span className="text-slate-600">{progress.toLocaleString('pt-BR')} <span className="text-slate-400">de {total.toLocaleString('pt-BR')}</span></span>
+                <span className="text-slate-600">{progress} <span className="text-slate-400">de {totalContracts}</span></span>
                 <span className="font-bold text-indigo-600">{pct}%</span>
               </div>
               <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
@@ -313,7 +457,6 @@ function BatchModal({ onClose }) {
             </div>
           </div>
         )}
-
         {step === 'done' && (
           <div className="p-7 text-center">
             <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -321,7 +464,7 @@ function BatchModal({ onClose }) {
             </div>
             <h2 className="text-xl font-bold text-slate-900 mb-1">Envio concluído!</h2>
             <p className="text-slate-500 text-sm mb-5">
-              {(total - fails).toLocaleString('pt-BR')} enviados com sucesso
+              {totalContracts - fails} enviados com sucesso
               {fails > 0 && <span className="text-red-500"> · {fails} falhas</span>}
             </p>
             <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800">Fechar</button>
@@ -334,7 +477,7 @@ function BatchModal({ onClose }) {
 
 // ── Scan Modal ────────────────────────────────────────────────────
 function ScanModal({ contract: c, onClose, onToast }) {
-  const [phase, setPhase] = useState('idle') // idle | scanning | done
+  const [phase, setPhase] = useState('idle')
   const [progress, setProgress] = useState(0)
 
   const start = () => {
@@ -377,11 +520,10 @@ function ScanModal({ contract: c, onClose, onToast }) {
               </div>
             </>
           )}
-
           {phase === 'scanning' && (
             <div className="text-center py-4">
               <div className="w-14 h-14 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <div className="w-7 h-7 border-3 border-indigo-300 border-t-indigo-600 rounded-full animate-spin"/>
+                <div className="w-7 h-7 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin"/>
               </div>
               <p className="font-bold text-slate-900 mb-1">Analisando documento…</p>
               <p className="text-xs text-slate-400 mb-4">OCR + extração de dados com IA</p>
@@ -391,7 +533,6 @@ function ScanModal({ contract: c, onClose, onToast }) {
               <p className="text-xs text-slate-400">{progress}%</p>
             </div>
           )}
-
           {phase === 'done' && (
             <>
               <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center mb-4">
@@ -400,7 +541,9 @@ function ScanModal({ contract: c, onClose, onToast }) {
               <h3 className="font-bold text-slate-900 text-lg mb-1">Escaneamento concluído!</h3>
               <p className="text-sm text-slate-500 mb-4">Dados extraídos e vinculados ao contrato.</p>
               <div className="bg-slate-50 rounded-xl p-4 space-y-2 text-sm mb-4">
-                {[['Inquilino',c.tenant],['Imóvel',c.property],['Vigência',`${c.start} → ${c.end}`],['Valor',`R$ ${c.value.toLocaleString('pt-BR')}`]].map(([k,v]) => (
+                {[['Inquilino',c.tenant],['Imóvel',c.property],
+                  ['Vigência',`${fmtDate(c.start)} → ${fmtDate(c.end)}`],
+                  ['Valor',fmt(c.value)]].map(([k,v]) => (
                   <div key={k} className="flex justify-between">
                     <span className="text-slate-500">{k}</span>
                     <span className="font-medium text-slate-700 text-right max-w-[65%] truncate">{v}</span>
@@ -417,9 +560,33 @@ function ScanModal({ contract: c, onClose, onToast }) {
   )
 }
 
+// ── Modal de confirmação de exclusão ──────────────────────────────
+function DeleteModal({ contract: c, onConfirm, onClose, deleting }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
+        <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center mb-4">
+          <IcTrash c="w-6 h-6 text-red-600"/>
+        </div>
+        <h3 className="font-bold text-slate-900 text-lg mb-1">Excluir Contrato</h3>
+        <p className="text-sm text-slate-500 mb-5">
+          Tem certeza que deseja excluir o contrato de <strong className="text-slate-800">{c.tenant}</strong>? Esta ação não pode ser desfeita.
+        </p>
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">Cancelar</button>
+          <button onClick={onConfirm} disabled={deleting}
+            className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
+            {deleting ? 'Excluindo…' : 'Excluir'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Drawer de detalhe do contrato ─────────────────────────────────
-function ContractDrawer({ contract: c, onClose, onEdit, onScan, onToast }) {
-  const [docType, setDocType] = useState(null) // 'boleto' | 'nfse' | null
+function ContractDrawer({ contract: c, onClose, onEdit, onScan, onDelete, onToast }) {
+  const [docType, setDocType] = useState(null)
 
   return (
     <>
@@ -431,22 +598,25 @@ function ContractDrawer({ contract: c, onClose, onEdit, onScan, onToast }) {
             <button onClick={onClose} className="text-slate-400 hover:text-slate-700"><IcX c="w-5 h-5"/></button>
           </div>
           <div className="p-5 space-y-5">
-            {/* Cabeçalho inquilino */}
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 text-lg font-bold">
                 {c.tenant[0]}
               </div>
               <div>
                 <p className="font-semibold text-slate-900">{c.tenant}</p>
-                <p className="text-xs text-slate-500">{c.cpf}</p>
+                <p className="text-xs text-slate-500">{c.cpf || 'CPF não informado'}</p>
               </div>
             </div>
 
-            {/* Info geral */}
             <div className="space-y-2">
-              {[['Imóvel',c.property],['E-mail',c.email],['Telefone',c.phone],
-                ['Vencimento',`Dia ${c.dueDay} de cada mês`],
-                ['Início',fmtDate(c.start)],['Término',fmtDate(c.end)]].map(([label,value])=>(
+              {[
+                ['Imóvel', c.property],
+                ['E-mail', c.email || '—'],
+                ['Telefone', c.phone || '—'],
+                ['Vencimento', `Dia ${c.dueDay} de cada mês`],
+                ['Início', fmtDate(c.start)],
+                ['Término', fmtDate(c.end)],
+              ].map(([label, value]) => (
                 <div key={label} className="flex gap-2 text-sm">
                   <span className="text-slate-400 w-24 flex-shrink-0">{label}</span>
                   <span className="text-slate-700 font-medium">{value}</span>
@@ -454,10 +624,12 @@ function ContractDrawer({ contract: c, onClose, onEdit, onScan, onToast }) {
               ))}
             </div>
 
-            {/* Composição do boleto */}
             <div className="bg-slate-50 rounded-xl p-4 space-y-2">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Composição do Boleto</p>
-              {[['Aluguel',c.value],['Seg. Financeiro',c.seguroFinanceiro],['Seg. Incêndio',c.seguroIncendio],['IPTU',c.iptu]].map(([l,v])=> v > 0 && (
+              {[['Aluguel', c.value],
+                ['Seg. Financeiro', c.seguroFinanceiro],
+                ['Seg. Incêndio', c.seguroIncendio],
+                ['IPTU', c.iptu]].map(([l,v]) => v > 0 && (
                 <div key={l} className="flex justify-between text-sm">
                   <span className="text-slate-500">{l}</span>
                   <span className="text-slate-700">{fmt(v)}</span>
@@ -474,7 +646,6 @@ function ContractDrawer({ contract: c, onClose, onEdit, onScan, onToast }) {
               <Badge status={c.status}/>
             </div>
 
-            {/* Ações */}
             <div className="space-y-2 pt-1">
               <button onClick={() => setDocType('boleto')}
                 className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white py-2.5 rounded-xl font-semibold text-sm hover:bg-indigo-700 transition-colors">
@@ -492,9 +663,13 @@ function ContractDrawer({ contract: c, onClose, onEdit, onScan, onToast }) {
                 className="w-full flex items-center justify-center gap-2 bg-slate-100 text-slate-700 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-200 transition-colors">
                 <IcScan c="w-4 h-4"/> Escanear Contrato
               </button>
-              <button onClick={() => { onToast(`Lembrete enviado para ${c.email}`, 'success') }}
+              <button onClick={() => { onToast(`Lembrete enviado para ${c.email || c.tenant}`, 'success') }}
                 className="w-full flex items-center justify-center gap-2 bg-slate-100 text-slate-700 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-200 transition-colors">
                 <IcMail c="w-4 h-4"/> Enviar Lembrete
+              </button>
+              <button onClick={() => { onClose(); onDelete(c) }}
+                className="w-full flex items-center justify-center gap-2 bg-red-50 text-red-600 py-2.5 rounded-xl font-semibold text-sm hover:bg-red-100 transition-colors">
+                <IcTrash c="w-4 h-4"/> Excluir Contrato
               </button>
             </div>
           </div>
@@ -508,29 +683,56 @@ function ContractDrawer({ contract: c, onClose, onEdit, onScan, onToast }) {
 // ── Toast local ────────────────────────────────────────────────────
 function useToast() {
   const [toasts, setToasts] = useState([])
-  const add = (msg, type='success') => setToasts(t => [...t, { id: Date.now(), msg, type }])
+  const add = (msg, type='success') => {
+    const id = Date.now()
+    setToasts(t => [...t, { id, msg, type }])
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4000)
+  }
   const remove = id => setToasts(t => t.filter(x => x.id !== id))
   return { toasts, toast: add, remove }
 }
 
-function ToastArea({ toasts, remove }) {
+function ToastArea({ toasts }) {
+  const colors = { success:'bg-emerald-600', error:'bg-red-600', info:'bg-indigo-600' }
   return (
     <div className="fixed bottom-6 right-6 flex flex-col gap-2 z-[200]">
-      {toasts.map(t => {
-        const colors = { success:'bg-emerald-600', error:'bg-red-600', info:'bg-indigo-600' }
-        return (
-          <div key={t.id} className={`${colors[t.type]??colors.info} text-white text-sm px-4 py-3 rounded-xl shadow-xl flex items-center gap-2`}>
-            <IcCheck c="w-4 h-4"/> {t.msg}
-          </div>
-        )
-      })}
+      {toasts.map(t => (
+        <div key={t.id} className={`${colors[t.type]??colors.info} text-white text-sm px-4 py-3 rounded-xl shadow-xl flex items-center gap-2`}>
+          <IcCheck c="w-4 h-4"/> {t.msg}
+        </div>
+      ))}
     </div>
   )
 }
 
+// ── Helpers de mapeamento DB ↔ UI ─────────────────────────────────
+const mapRow = row => ({
+  id:               row.id,
+  inquilino_id:     row.inquilino_id,
+  tenant:           row.inquilinos?.nome   || '',
+  cpf:              row.inquilinos?.cpf    || '',
+  email:            row.inquilinos?.email  || '',
+  phone:            row.inquilinos?.telefone || '',
+  property:         row.imovel,
+  value:            Number(row.valor_aluguel)     || 0,
+  seguroFinanceiro: Number(row.seguro_financeiro) || 0,
+  seguroIncendio:   Number(row.seguro_incendio)   || 0,
+  iptu:             Number(row.iptu)              || 0,
+  dueDay:           row.dia_vencimento,
+  start:            row.data_inicio,
+  end:              row.data_fim,
+  status:           row.status,
+  totalValue:       (Number(row.valor_aluguel)||0) + (Number(row.seguro_financeiro)||0) +
+                    (Number(row.seguro_incendio)||0) + (Number(row.iptu)||0),
+})
+
 // ── Página principal ───────────────────────────────────────────────
 export default function Contratos() {
-  const [contracts, setContracts] = useState(CONTRACTS)
+  const { user }  = useAuth()
+  const [contracts, setContracts] = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [saving, setSaving]       = useState(false)
+  const [deleting, setDeleting]   = useState(false)
   const [search, setSearch]       = useState('')
   const [filter, setFilter]       = useState('Todos')
   const [page, setPage]           = useState(1)
@@ -538,38 +740,128 @@ export default function Contratos() {
   const [editing, setEditing]     = useState(null)
   const [adding, setAdding]       = useState(false)
   const [scanning, setScanning]   = useState(null)
+  const [toDelete, setToDelete]   = useState(null)
   const [showBatch, setShowBatch] = useState(false)
   const [isRenewal, setIsRenewal] = useState(false)
-  const { toasts, toast, remove } = useToast()
+  const { toasts, toast }         = useToast()
 
+  // ── Carregar contratos ─────────────────────────────────────────
+  const load = async () => {
+    if (!user) return
+    setLoading(true)
+    const { data, error } = await supabase
+      .from('contratos')
+      .select('*, inquilinos(nome, cpf, email, telefone)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+    if (error) { toast('Erro ao carregar contratos', 'error') }
+    else setContracts((data || []).map(mapRow))
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [user])
+
+  // ── Criar contrato ─────────────────────────────────────────────
+  const handleAdd = async (data) => {
+    setSaving(true)
+    try {
+      // 1. Upsert inquilino
+      let inquilino_id = null
+      if (data.cpf) {
+        const { data: existing } = await supabase
+          .from('inquilinos').select('id').eq('user_id', user.id).eq('cpf', data.cpf).maybeSingle()
+        if (existing) {
+          inquilino_id = existing.id
+          await supabase.from('inquilinos').update({ nome: data.tenant, email: data.email, telefone: data.phone }).eq('id', existing.id)
+        }
+      }
+      if (!inquilino_id) {
+        const { data: inq, error: errInq } = await supabase
+          .from('inquilinos').insert({ user_id: user.id, nome: data.tenant, cpf: data.cpf || null, email: data.email || null, telefone: data.phone || null }).select().single()
+        if (errInq) throw errInq
+        inquilino_id = inq.id
+      }
+      // 2. Criar contrato
+      const { error } = await supabase.from('contratos').insert({
+        user_id: user.id, inquilino_id,
+        imovel:            data.property,
+        valor_aluguel:     data.value,
+        seguro_financeiro: data.seguroFinanceiro,
+        seguro_incendio:   data.seguroIncendio,
+        iptu:              data.iptu,
+        dia_vencimento:    data.dueDay,
+        data_inicio:       data.start || null,
+        data_fim:          data.end   || null,
+        status:            data.status,
+      })
+      if (error) throw error
+      setAdding(false)
+      toast(`Contrato de ${data.tenant} adicionado!`, 'success')
+      load()
+    } catch (err) {
+      toast(err.message || 'Erro ao criar contrato', 'error')
+    } finally { setSaving(false) }
+  }
+
+  // ── Editar contrato ────────────────────────────────────────────
+  const handleSave = async (data) => {
+    setSaving(true)
+    try {
+      if (data.inquilino_id) {
+        await supabase.from('inquilinos').update({
+          nome: data.tenant, cpf: data.cpf || null, email: data.email || null, telefone: data.phone || null,
+        }).eq('id', data.inquilino_id)
+      }
+      const { error } = await supabase.from('contratos').update({
+        imovel:            data.property,
+        valor_aluguel:     data.value,
+        seguro_financeiro: data.seguroFinanceiro,
+        seguro_incendio:   data.seguroIncendio,
+        iptu:              data.iptu,
+        dia_vencimento:    data.dueDay,
+        data_inicio:       data.start || null,
+        data_fim:          data.end   || null,
+        status:            data.status,
+      }).eq('id', data.id)
+      if (error) throw error
+      setEditing(null)
+      setIsRenewal(false)
+      toast(`Contrato de ${data.tenant} atualizado!`, 'success')
+      load()
+    } catch (err) {
+      toast(err.message || 'Erro ao atualizar contrato', 'error')
+    } finally { setSaving(false) }
+  }
+
+  // ── Excluir contrato ───────────────────────────────────────────
+  const handleDelete = async () => {
+    if (!toDelete) return
+    setDeleting(true)
+    const { error } = await supabase.from('contratos').delete().eq('id', toDelete.id)
+    if (error) { toast('Erro ao excluir contrato', 'error') }
+    else { toast(`Contrato de ${toDelete.tenant} excluído`, 'info'); load() }
+    setToDelete(null)
+    setDeleting(false)
+  }
+
+  // ── Filtros e paginação ────────────────────────────────────────
   const isPorVencer = filter === 'Por Vencer'
 
   const filtered = useMemo(() => contracts.filter(c => {
     const q = search.toLowerCase()
-    const matchSearch = !q || c.tenant.toLowerCase().includes(q) || c.property.toLowerCase().includes(q) || c.cpf.includes(q)
+    const matchSearch = !q || c.tenant.toLowerCase().includes(q) ||
+      c.property.toLowerCase().includes(q) || (c.cpf || '').includes(q)
     if (isPorVencer) return isExpiringSoon(c) && matchSearch
     const matchStatus = filter === 'Todos' || c.status === filter
     return matchStatus && matchSearch
   }), [contracts, search, filter, isPorVencer])
 
   const total = filtered.length
-  const pages = Math.ceil(total / PER_PAGE)
+  const pages = Math.ceil(total / PER_PAGE) || 1
   const slice = filtered.slice((page-1)*PER_PAGE, page*PER_PAGE)
 
   const handleFilter = f => { setFilter(f); setPage(1) }
   const handleSearch = e => { setSearch(e.target.value); setPage(1) }
-
-  const handleAdd = data => {
-    setContracts(cs => [...cs, { ...data, id: Date.now() }])
-    setAdding(false)
-    toast(`Contrato de ${data.tenant} adicionado!`, 'success')
-  }
-
-  const handleSave = data => {
-    setContracts(cs => cs.map(c => c.id === data.id ? data : c))
-    setEditing(null)
-    toast(`Contrato de ${data.tenant} atualizado!`, 'success')
-  }
 
   return (
     <div className="p-6 space-y-5 max-w-7xl mx-auto">
@@ -577,7 +869,9 @@ export default function Contratos() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Contratos</h1>
-          <p className="text-sm text-slate-500">{total} contrato{total!==1?'s':''} encontrado{total!==1?'s':''}</p>
+          <p className="text-sm text-slate-500">
+            {loading ? 'Carregando…' : `${total} contrato${total!==1?'s':''} encontrado${total!==1?'s':''}`}
+          </p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowBatch(true)}
@@ -622,65 +916,82 @@ export default function Contratos() {
 
       {/* Tabela */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-100 bg-slate-50">
-              <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Inquilino</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Imóvel</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">
-                {isPorVencer ? 'Término' : 'Venc.'}
-              </th>
-              <th className="text-right px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Valor</th>
-              <th className="text-center px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                {isPorVencer ? 'Dias Restantes' : 'Status'}
-              </th>
-              <th className="px-5 py-3"/>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-50">
-            {slice.map(c => {
-              const daysLeft = isPorVencer ? Math.ceil((new Date(c.end) - new Date()) / 86400000) : null
-              const urgency  = daysLeft !== null && daysLeft <= 15
-              return (
-                <tr key={c.id} className="hover:bg-slate-50/60 transition-colors cursor-pointer"
-                  onClick={() => { if (isPorVencer) { setEditing(c); setIsRenewal(true) } else { setSelected(c) } }}>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-2.5">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isPorVencer ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                        {c.tenant[0]}
+        {loading ? (
+          <div className="flex items-center justify-center py-20 text-slate-400 text-sm">
+            <div className="w-5 h-5 border-2 border-slate-200 border-t-indigo-500 rounded-full animate-spin mr-3"/>
+            Carregando contratos…
+          </div>
+        ) : slice.length === 0 ? (
+          <div className="text-center py-20">
+            <p className="text-slate-400 text-sm mb-1">Nenhum contrato encontrado</p>
+            {filter === 'Todos' && !search && (
+              <button onClick={() => setAdding(true)}
+                className="mt-3 text-indigo-600 text-sm font-semibold hover:underline">
+                + Adicionar primeiro contrato
+              </button>
+            )}
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50">
+                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Inquilino</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Imóvel</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">
+                  {isPorVencer ? 'Término' : 'Venc.'}
+                </th>
+                <th className="text-right px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Valor</th>
+                <th className="text-center px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  {isPorVencer ? 'Dias Restantes' : 'Status'}
+                </th>
+                <th className="px-5 py-3"/>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {slice.map(c => {
+                const daysLeft = isPorVencer ? Math.ceil((new Date(c.end) - new Date()) / 86400000) : null
+                const urgency  = daysLeft !== null && daysLeft <= 15
+                return (
+                  <tr key={c.id} className="hover:bg-slate-50/60 transition-colors cursor-pointer"
+                    onClick={() => { if (isPorVencer) { setEditing(c); setIsRenewal(true) } else { setSelected(c) } }}>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isPorVencer ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                          {c.tenant[0]?.toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-medium text-slate-800">{c.tenant}</p>
+                          <p className="text-xs text-slate-400">{c.cpf || '—'}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-medium text-slate-800">{c.tenant}</p>
-                        <p className="text-xs text-slate-400">{c.cpf}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell max-w-xs truncate">{c.property}</td>
-                  <td className="px-5 py-3.5 text-slate-500 hidden lg:table-cell">
-                    {isPorVencer ? fmtDate(c.end) : `Dia ${c.dueDay}`}
-                  </td>
-                  <td className="px-5 py-3.5 text-right font-semibold text-slate-700">{fmt(c.totalValue)}</td>
-                  <td className="px-5 py-3.5 text-center">
-                    {isPorVencer ? (
-                      <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${urgency ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {urgency ? '🔴' : '⚠️'} {daysLeft}d
-                      </span>
-                    ) : (
-                      <Badge status={c.status}/>
-                    )}
-                  </td>
-                  <td className="px-5 py-3.5 text-slate-300 text-right">
-                    {isPorVencer
-                      ? <span className="text-xs text-amber-500 font-semibold">Renovar</span>
-                      : <IcChevR c="w-4 h-4"/>}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+                    </td>
+                    <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell max-w-xs truncate">{c.property}</td>
+                    <td className="px-5 py-3.5 text-slate-500 hidden lg:table-cell">
+                      {isPorVencer ? fmtDate(c.end) : `Dia ${c.dueDay}`}
+                    </td>
+                    <td className="px-5 py-3.5 text-right font-semibold text-slate-700">{fmt(c.totalValue)}</td>
+                    <td className="px-5 py-3.5 text-center">
+                      {isPorVencer ? (
+                        <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${urgency ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {urgency ? '🔴' : '⚠️'} {daysLeft}d
+                        </span>
+                      ) : (
+                        <Badge status={c.status}/>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 text-slate-300 text-right">
+                      {isPorVencer
+                        ? <span className="text-xs text-amber-500 font-semibold">Renovar</span>
+                        : <IcChevR c="w-4 h-4"/>}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
 
-        {pages > 1 && (
+        {!loading && pages > 1 && (
           <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50">
             <p className="text-xs text-slate-500">{(page-1)*PER_PAGE+1}–{Math.min(page*PER_PAGE,total)} de {total}</p>
             <div className="flex gap-1">
@@ -702,28 +1013,41 @@ export default function Contratos() {
         <ContractDrawer contract={selected} onClose={() => setSelected(null)}
           onEdit={c => { setSelected(null); setEditing(c) }}
           onScan={c => { setSelected(null); setScanning(c) }}
+          onDelete={c => { setSelected(null); setToDelete(c) }}
           onToast={toast}/>
       )}
       {editing && (
         <ContractForm
           title={isRenewal ? '🔄 Renovar Contrato' : 'Editar Contrato'}
           accentColor={isRenewal ? 'bg-amber-400' : 'bg-purple-500'}
+          saving={saving}
           saveLabel={isRenewal
             ? <><IcCheck c="w-4 h-4"/> Renovar Contrato</>
             : <><IcPencil c="w-4 h-4"/> Salvar Alterações</>}
-          initial={{ ...editing, value: String(editing.value), seguroFinanceiro: String(editing.seguroFinanceiro||0), seguroIncendio: String(editing.seguroIncendio||0), iptu: String(editing.iptu||0) }}
+          initial={{
+            ...editing,
+            value:            String(editing.value),
+            seguroFinanceiro: String(editing.seguroFinanceiro || 0),
+            seguroIncendio:   String(editing.seguroIncendio   || 0),
+            iptu:             String(editing.iptu             || 0),
+            dueDay:           String(editing.dueDay),
+          }}
           onClose={() => { setEditing(null); setIsRenewal(false) }}
-          onSave={data => { handleSave(data); setIsRenewal(false) }}/>
+          onSave={data => handleSave({ ...data, id: editing.id, inquilino_id: editing.inquilino_id })}/>
       )}
       {adding && (
-        <ContractForm title="Novo Contrato"
+        <ContractForm title="Novo Contrato" saving={saving}
           saveLabel={<><IcPlus c="w-4 h-4"/> Adicionar</>}
           onClose={() => setAdding(false)} onSave={handleAdd}/>
       )}
       {scanning && <ScanModal contract={scanning} onClose={() => setScanning(null)} onToast={toast}/>}
-      {showBatch && <BatchModal onClose={() => setShowBatch(false)}/>}
+      {showBatch && <BatchModal total={contracts.length} onClose={() => setShowBatch(false)}/>}
+      {toDelete && (
+        <DeleteModal contract={toDelete} deleting={deleting}
+          onConfirm={handleDelete} onClose={() => setToDelete(null)}/>
+      )}
 
-      <ToastArea toasts={toasts} remove={remove}/>
+      <ToastArea toasts={toasts}/>
     </div>
   )
 }

@@ -1,4 +1,51 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
+
+// ── Máscaras de input ─────────────────────────────────────────
+const digits = v => v.replace(/\D/g, '')
+
+const maskCpfCnpj = raw => {
+  const d = digits(raw).slice(0, 14)
+  if (d.length <= 11) {
+    if (d.length <= 3) return d
+    if (d.length <= 6) return `${d.slice(0,3)}.${d.slice(3)}`
+    if (d.length <= 9) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`
+    return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`
+  }
+  if (d.length <= 2) return d
+  if (d.length <= 5) return `${d.slice(0,2)}.${d.slice(2)}`
+  if (d.length <= 8) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5)}`
+  if (d.length <= 12) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8)}`
+  return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`
+}
+
+const maskPhone = raw => {
+  const d = digits(raw).slice(0, 11)
+  if (d.length === 0) return ''
+  if (d.length <= 2) return `(${d}`
+  if (d.length <= 6) return `(${d.slice(0,2)}) ${d.slice(2)}`
+  if (d.length <= 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`
+  return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`
+}
+
+// NBS: x.xx.xx.xx.xx (10 dígitos)
+const maskNbs = raw => {
+  const d = digits(raw).slice(0, 10)
+  if (d.length <= 1) return d
+  if (d.length <= 3) return `${d[0]}.${d.slice(1)}`
+  if (d.length <= 5) return `${d[0]}.${d.slice(1,3)}.${d.slice(3)}`
+  if (d.length <= 7) return `${d[0]}.${d.slice(1,3)}.${d.slice(3,5)}.${d.slice(5)}`
+  return `${d[0]}.${d.slice(1,3)}.${d.slice(3,5)}.${d.slice(5,7)}.${d.slice(7)}`
+}
+
+// Alíquota: até 3 dígitos inteiros + 2 decimais com vírgula (ex: "5,00" ou "12,50")
+const maskAliquota = raw => {
+  const cleaned = raw.replace(/[^\d,]/g, '').replace(/,+/g, ',')
+  const [int, dec] = cleaned.split(',')
+  if (dec !== undefined) return `${(int || '').slice(0, 3)},${dec.slice(0, 2)}`
+  return (int || '').slice(0, 3)
+}
 
 const ic = (d, cls='') => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -43,18 +90,58 @@ Em caso de dúvidas, entre em contato conosco.
 Atenciosamente,
 {{empresa}}`
 
+// ── Componentes de formulário — FORA do Config() para evitar o bug de foco ──
+function Section({ title, children }) {
+  return (
+    <div className="bg-white border border-slate-100 rounded-2xl p-5 mb-4">
+      <h3 className="font-semibold text-slate-800 mb-4 text-sm">{title}</h3>
+      {children}
+    </div>
+  )
+}
+
+function Row({ label, hint, children }) {
+  return (
+    <div>
+      <label className="text-xs font-medium text-slate-500 block mb-1">{label}</label>
+      {children}
+      {hint && <p className="text-xs text-slate-400 mt-1 leading-snug">{hint}</p>}
+    </div>
+  )
+}
+
+function Inp({ value, onChange, type='text', placeholder='', mono=false, disabled=false }) {
+  return (
+    <input
+      value={value}
+      onChange={onChange}
+      type={type}
+      placeholder={placeholder}
+      disabled={disabled}
+      className={`w-full px-3 py-2 text-sm border border-slate-200 rounded-lg ${mono ? 'font-mono' : ''} ${disabled ? 'bg-slate-50 text-slate-400' : 'focus:outline-none focus:ring-2 focus:ring-indigo-500'}`}
+    />
+  )
+}
+
 export default function Config() {
+  const { user } = useAuth()
   const [tab, setTab]           = useState('empresa')
   const [saved, setSaved]       = useState(false)
+  const [saving, setSaving]     = useState(false)
+  const [loadingProfile, setLoadingProfile] = useState(true)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [testSending, setTestSending] = useState(false)
+  const [testResult, setTestResult]   = useState(null)   // { ok, msg }
 
   const [f, setF] = useState({
     // Empresa
-    company:   'Gestora Pro Imóveis Ltda',
-    cnpj:      '12.345.678/0001-90',
-    inscMun:   '123456-7',
-    certOk:    true,
+    company:      '',
+    cnpj:         '',
+    inscMun:      '',
+    telefone:     '',
+    emailContato: '',
+    endereco:     '',
+    certOk:       false,
     // Fiscal
     regime:    'simples',
     nbs:       '1.05.01.09.00',
@@ -80,19 +167,122 @@ export default function Config() {
 
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
 
-  const save = () => {
+  // ── Carrega perfil do banco ───────────────────────────────────
+  useEffect(() => {
+    if (!user) return
+    setLoadingProfile(true)
+    supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()
+      .then(({ data }) => {
+        setF(p => ({
+          ...p,
+          company:      data?.company_name         || '',
+          cnpj:         data?.cnpj                 || '',
+          inscMun:      data?.inscricao_municipal   || '',
+          telefone:     data?.telefone              || user.phone || '',
+          emailContato: data?.email_contato         || user.email || '',
+          endereco:     data?.endereco              || '',
+          // Fiscal
+          regime:   data?.regime_tributario  || 'simples',
+          nbs:      data?.nbs_servico        || '',
+          aliquota: data?.aliquota_iss       || '',
+          // E-mail
+          emailProvider:  data?.email_provider   || 'resend',
+          resendKey:      data?.resend_api_key    || '',
+          smtpHost:       data?.smtp_host         || '',
+          smtpPort:       data?.smtp_port         || '587',
+          smtpUser:       data?.smtp_user         || '',
+          smtpPass:       data?.smtp_pass         || '',
+          smtpEncryption: data?.smtp_encryption   || 'tls',
+          fromEmail:      data?.from_email        || '',
+          fromName:       data?.from_name         || '',
+          replyTo:        data?.reply_to          || '',
+        }))
+        setLoadingProfile(false)
+      })
+  }, [user])
+
+  // ── Salva no banco ────────────────────────────────────────────
+  const save = async () => {
+    if (!user) return
+    setSaving(true)
+    const payload = { id: user.id }
+
+    if (tab === 'empresa') {
+      Object.assign(payload, {
+        company_name:        f.company,
+        cnpj:                f.cnpj,
+        inscricao_municipal: f.inscMun,
+        telefone:            f.telefone,
+        email_contato:       f.emailContato,
+        endereco:            f.endereco,
+      })
+    } else if (tab === 'fiscal') {
+      Object.assign(payload, {
+        regime_tributario: f.regime,
+        nbs_servico:       f.nbs,
+        aliquota_iss:      f.aliquota,
+      })
+    } else if (tab === 'email') {
+      Object.assign(payload, {
+        email_provider:  f.emailProvider,
+        // resend_api_key não é salvo — fica em variável de ambiente do servidor
+        smtp_host:       f.smtpHost,
+        smtp_port:       f.smtpPort,
+        smtp_user:       f.smtpUser,
+        smtp_pass:       f.smtpPass,
+        smtp_encryption: f.smtpEncryption,
+        from_email:      f.fromEmail,   // relevante para SMTP; ignorado no Resend
+        from_name:       f.fromName,
+        reply_to:        f.replyTo,
+      })
+    }
+
+    await supabase.from('profiles').upsert(payload)
+    setSaving(false)
     setSaved(true)
-    // toast global seria ideal — aqui usamos setTimeout
     setTimeout(() => setSaved(false), 2500)
   }
 
-  const sendTest = () => {
+  const sendTest = async () => {
     if (!f.testEmailAddr) return
     setTestSending(true)
-    setTimeout(() => {
+    setTestResult(null)
+    try {
+      const res = await fetch('/.netlify/functions/send-test-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider:       f.emailProvider,
+          to:             f.testEmailAddr,
+          fromName:       f.fromName,
+          fromEmail:      f.fromEmail,
+          replyTo:        f.replyTo,
+          smtpHost:       f.smtpHost,
+          smtpPort:       f.smtpPort,
+          smtpUser:       f.smtpUser,
+          smtpPass:       f.smtpPass,
+          smtpEncryption: f.smtpEncryption,
+        }),
+      })
+
+      if (res.status === 404) {
+        setTestResult({ ok: false, msg: 'Função de envio não encontrada (404). Faça o deploy no Netlify e teste a partir da URL de produção.' })
+        return
+      }
+
+      let data = {}
+      try { data = await res.json() } catch { /* resposta sem body */ }
+
+      if (res.ok && data.ok) {
+        setTestResult({ ok: true, msg: 'E-mail enviado! Verifique sua caixa de entrada (e o spam).' })
+      } else {
+        setTestResult({ ok: false, msg: data.error || `Erro HTTP ${res.status}` })
+      }
+    } catch (err) {
+      setTestResult({ ok: false, msg: err.message })
+    } finally {
       setTestSending(false)
-      // feedback via console para não depender do toast global
-    }, 1800)
+    }
   }
 
   const renderPreview = (text) =>
@@ -105,30 +295,6 @@ export default function Config() {
       .replace(/{{ano}}/g, '2026')
       .replace(/{{link_boleto}}/g, 'https://pay.openpix.com.br/demo-link')
       .replace(/{{empresa}}/g, f.company)
-
-  // ── Helpers ──────────────────────────────────────────────────
-  const Section = ({ title, children }) => (
-    <div className="bg-white border border-slate-100 rounded-2xl p-5 mb-4">
-      <h3 className="font-semibold text-slate-800 mb-4 text-sm">{title}</h3>
-      {children}
-    </div>
-  )
-
-  const Row = ({ label, hint, children, cols='grid-cols-1' }) => (
-    <div className={`grid ${cols} gap-3`}>
-      <div>
-        <label className="text-xs font-medium text-slate-500 block mb-1">{label}</label>
-        {children}
-        {hint && <p className="text-xs text-slate-400 mt-1 leading-snug">{hint}</p>}
-      </div>
-    </div>
-  )
-
-  const Inp = ({ k, type='text', placeholder='', mono=false, disabled=false }) => (
-    <input value={f[k]} onChange={e => set(k, e.target.value)} type={type}
-      placeholder={placeholder} disabled={disabled}
-      className={`w-full px-3 py-2 text-sm border border-slate-200 rounded-lg ${mono ? 'font-mono' : ''} ${disabled ? 'bg-slate-50 text-slate-400' : 'focus:outline-none focus:ring-2 focus:ring-indigo-500'}`}/>
-  )
 
   return (
     <div className="p-6 max-w-2xl mx-auto">
@@ -152,19 +318,41 @@ export default function Config() {
       {tab === 'empresa' && (
         <>
           <Section title="📋 Dados da Empresa">
-            <div className="space-y-3">
-              <Row label="Razão Social"><Inp k="company" placeholder="Nome da empresa"/></Row>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">CNPJ</label>
-                  <Inp k="cnpj" placeholder="00.000.000/0001-00"/>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">Inscrição Municipal</label>
-                  <Inp k="inscMun" placeholder="000000-0"/>
-                </div>
+            {loadingProfile ? (
+              <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
+                <div className="w-4 h-4 border-2 border-slate-200 border-t-indigo-500 rounded-full animate-spin"/>
+                Carregando dados…
               </div>
-            </div>
+            ) : (
+              <div className="space-y-3">
+                <Row label="Razão Social / Nome">
+                  <Inp value={f.company} onChange={e => set('company', e.target.value)} placeholder="Nome da empresa ou pessoa física"/>
+                </Row>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">CNPJ / CPF</label>
+                    <Inp value={f.cnpj} onChange={e => set('cnpj', maskCpfCnpj(e.target.value))} placeholder="00.000.000/0001-00"/>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Inscrição Municipal</label>
+                    <Inp value={f.inscMun} onChange={e => set('inscMun', e.target.value)} placeholder="000000-0"/>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Telefone</label>
+                    <Inp value={f.telefone} onChange={e => set('telefone', maskPhone(e.target.value))} placeholder="(00) 00000-0000"/>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">E-mail de contato</label>
+                    <Inp value={f.emailContato} onChange={e => set('emailContato', e.target.value)} type="email" placeholder="contato@empresa.com.br"/>
+                  </div>
+                </div>
+                <Row label="Endereço">
+                  <Inp value={f.endereco} onChange={e => set('endereco', e.target.value)} placeholder="Rua, número, bairro, cidade — UF"/>
+                </Row>
+              </div>
+            )}
           </Section>
           <Section title="🔐 Certificado Digital A1 (e-CNPJ)">
             {f.certOk ? (
@@ -203,12 +391,12 @@ export default function Config() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-slate-500 block mb-1">Código NBS do Serviço</label>
-                <Inp k="nbs" mono placeholder="x.xx.xx.xx.xx"/>
+                <Inp value={f.nbs} onChange={e => set('nbs', maskNbs(e.target.value))} mono placeholder="1.05.01.09.00"/>
                 <p className="text-xs text-slate-400 mt-1">1.05.01.09.00 = Administração de imóveis</p>
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-500 block mb-1">Alíquota ISS (%)</label>
-                <Inp k="aliquota" placeholder="0,00"/>
+                <Inp value={f.aliquota} onChange={e => set('aliquota', maskAliquota(e.target.value))} placeholder="5,00"/>
               </div>
             </div>
           </div>
@@ -220,39 +408,42 @@ export default function Config() {
         <>
           <Section title="📧 Provedor de Envio">
             <div className="grid grid-cols-2 gap-3 mb-4">
-              {[
-                { id:'resend', name:'Resend', desc:'API moderna, alta entregabilidade. Recomendado.', badge:'Recomendado' },
-                { id:'smtp',   name:'SMTP personalizado', desc:'Use o servidor de e-mail da própria empresa.', badge:'' },
-              ].map(p => (
-                <button key={p.id} onClick={() => set('emailProvider', p.id)}
-                  className={`text-left p-4 rounded-xl border-2 transition-all ${f.emailProvider === p.id ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-slate-300'}`}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-semibold text-sm text-slate-900">{p.name}</span>
-                    {p.badge && <span className="text-xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-medium">{p.badge}</span>}
-                  </div>
-                  <p className="text-xs text-slate-500 leading-snug">{p.desc}</p>
-                </button>
-              ))}
-            </div>
-            {f.emailProvider === 'resend' && (
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">Resend — API Key</label>
-                  <Inp k="resendKey" type="password" placeholder="re_••••••••••••••••" mono/>
-                  <p className="text-xs text-slate-400 mt-1">Obtenha em resend.com → API Keys. Domínio precisa estar verificado.</p>
+              <button onClick={() => set('emailProvider', 'resend')}
+                className={`text-left p-4 rounded-xl border-2 transition-all ${f.emailProvider === 'resend' ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-semibold text-sm text-slate-900">Via plataforma</span>
+                  <span className="text-xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-medium">Recomendado</span>
                 </div>
-                <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5 text-xs text-blue-700">
-                  <span>ℹ️</span>
-                  <span>Para enviar pelo domínio do cliente, adicione os registros DNS do Resend no painel do provedor de domínio.</span>
+                <p className="text-xs text-slate-500 leading-snug">Envio gerenciado pelo ImobiNota. Alta entregabilidade, sem configuração.</p>
+              </button>
+              <button onClick={() => set('emailProvider', 'smtp')}
+                className={`text-left p-4 rounded-xl border-2 transition-all ${f.emailProvider === 'smtp' ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-semibold text-sm text-slate-900">SMTP próprio</span>
+                </div>
+                <p className="text-xs text-slate-500 leading-snug">Use o servidor de e-mail da sua empresa. Requer configuração técnica.</p>
+              </button>
+            </div>
+
+            {f.emailProvider === 'resend' && (
+              <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                <span className="text-lg mt-0.5">✅</span>
+                <div>
+                  <p className="text-sm font-medium text-emerald-800">Pronto — nenhuma configuração necessária</p>
+                  <p className="text-xs text-emerald-700 mt-0.5 leading-snug">
+                    O envio é feito pela infraestrutura do ImobiNota com alta entregabilidade.
+                    Configure abaixo apenas o nome e o e-mail de resposta.
+                  </p>
                 </div>
               </div>
             )}
+
             {f.emailProvider === 'smtp' && (
               <div className="space-y-3">
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-2">
                     <label className="text-xs font-medium text-slate-500 block mb-1">Servidor SMTP</label>
-                    <Inp k="smtpHost" placeholder="mail.suaempresa.com.br"/>
+                    <Inp value={f.smtpHost} onChange={e => set('smtpHost', e.target.value)} placeholder="mail.suaempresa.com.br"/>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-slate-500 block mb-1">Porta</label>
@@ -265,8 +456,8 @@ export default function Config() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className="text-xs font-medium text-slate-500 block mb-1">Usuário SMTP</label><Inp k="smtpUser" placeholder="seu@email.com.br"/></div>
-                  <div><label className="text-xs font-medium text-slate-500 block mb-1">Senha SMTP</label><Inp k="smtpPass" type="password" placeholder="••••••••"/></div>
+                  <div><label className="text-xs font-medium text-slate-500 block mb-1">Usuário SMTP</label><Inp value={f.smtpUser} onChange={e => set('smtpUser', e.target.value)} placeholder="seu@email.com.br"/></div>
+                  <div><label className="text-xs font-medium text-slate-500 block mb-1">Senha SMTP</label><Inp value={f.smtpPass} onChange={e => set('smtpPass', e.target.value)} type="password" placeholder="••••••••"/></div>
                 </div>
                 <div>
                   <label className="text-xs font-medium text-slate-500 block mb-1">Criptografia</label>
@@ -286,28 +477,38 @@ export default function Config() {
 
           <Section title="✉️ Identidade do Remetente">
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className={`grid gap-3 ${f.emailProvider === 'smtp' ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">Nome de exibição (From Name)</label>
-                  <Inp k="fromName" placeholder="Nome da Empresa"/>
-                  <p className="text-xs text-slate-400 mt-1">Ex: Vasselai Imóveis</p>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Nome de exibição</label>
+                  <Inp value={f.fromName} onChange={e => set('fromName', e.target.value)} placeholder="Ex: Vasselai Imóveis"/>
+                  <p className="text-xs text-slate-400 mt-1">Este nome aparece no campo "De:" para o inquilino</p>
                 </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">E-mail remetente (From)</label>
-                  <Inp k="fromEmail" type="email" placeholder="cobrancas@suaempresa.com.br"/>
-                  <p className="text-xs text-slate-400 mt-1">Deve pertencer ao domínio verificado</p>
-                </div>
+                {f.emailProvider === 'smtp' && (
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">E-mail remetente (From)</label>
+                    <Inp value={f.fromEmail} onChange={e => set('fromEmail', e.target.value)} type="email" placeholder="cobrancas@suaempresa.com.br"/>
+                    <p className="text-xs text-slate-400 mt-1">Deve pertencer ao servidor SMTP configurado</p>
+                  </div>
+                )}
               </div>
+              {f.emailProvider === 'resend' && (
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-xs text-slate-500">
+                  <span>📨</span>
+                  <span>E-mail remetente: <strong className="text-slate-700">gerenciado pela plataforma ImobiNota</strong> — as respostas dos inquilinos chegam no campo abaixo.</span>
+                </div>
+              )}
               <div>
                 <label className="text-xs font-medium text-slate-500 block mb-1">Responder para (Reply-To)</label>
-                <Inp k="replyTo" type="email" placeholder="contato@suaempresa.com.br"/>
-                <p className="text-xs text-slate-400 mt-1">Opcional — e-mail para onde respostas serão direcionadas</p>
+                <Inp value={f.replyTo} onChange={e => set('replyTo', e.target.value)} type="email" placeholder="contato@suaempresa.com.br"/>
+                <p className="text-xs text-slate-400 mt-1">Quando o inquilino responder o e-mail, a resposta chega neste endereço</p>
               </div>
             </div>
           </Section>
 
           <Section title="🧪 Testar Envio">
-            <p className="text-sm text-slate-500 mb-3">Envie um e-mail de teste com as configurações atuais para verificar a entregabilidade.</p>
+            <p className="text-sm text-slate-500 mb-3">
+              Salve as configurações acima e depois envie um e-mail de teste para verificar a entregabilidade.
+            </p>
             <div className="flex gap-2">
               <input value={f.testEmailAddr} onChange={e => set('testEmailAddr', e.target.value)}
                 type="email" placeholder="seu@email.com"
@@ -318,6 +519,15 @@ export default function Config() {
                 {testSending ? <><IcRefresh c="w-4 h-4 animate-spin"/> Enviando…</> : <><IcSend c="w-4 h-4"/> Enviar teste</>}
               </button>
             </div>
+            {testResult && (
+              <div className={`mt-3 flex items-start gap-2 px-3 py-2.5 rounded-lg text-sm ${
+                testResult.ok
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                  : 'bg-red-50 border border-red-200 text-red-800'}`}>
+                <span className="text-base leading-none mt-0.5">{testResult.ok ? '✅' : '❌'}</span>
+                <span>{testResult.msg}</span>
+              </div>
+            )}
           </Section>
         </>
       )}
@@ -419,7 +629,7 @@ export default function Config() {
           <div className="space-y-3">
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">OpenPIX — API Key</label>
-              <Inp k="openPix" type="password" placeholder="sk-prod-••••••••••••••••" mono/>
+              <Inp value={f.openPix} onChange={e => set('openPix', e.target.value)} type="password" placeholder="sk-prod-••••••••••••••••" mono/>
               <p className="text-xs text-slate-400 mt-1">Obtenha em app.openpix.com.br → Configurações → API.</p>
             </div>
             <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs text-amber-700">
@@ -437,9 +647,9 @@ export default function Config() {
       )}
 
       {/* Botão salvar */}
-      <button onClick={save}
-        className={`w-full py-3 rounded-xl font-semibold text-white transition-all mt-2 ${saved ? 'bg-emerald-500' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
-        {saved ? '✓ Configurações Salvas!' : 'Salvar Configurações'}
+      <button onClick={save} disabled={saving || loadingProfile}
+        className={`w-full py-3 rounded-xl font-semibold text-white transition-all mt-2 disabled:opacity-60 ${saved ? 'bg-emerald-500' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+        {saving ? 'Salvando…' : saved ? '✓ Salvo com sucesso!' : 'Salvar Configurações'}
       </button>
     </div>
   )
