@@ -427,102 +427,18 @@ export default function Config() {
       {/* ── E-mail ─────────────────────────────────────────────── */}
       {tab === 'email' && (
         <>
-          <Section title="📧 Provedor de Envio">
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <button onClick={() => set('emailProvider', 'resend')}
-                className={`text-left p-4 rounded-xl border-2 transition-all ${f.emailProvider === 'resend' ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-slate-300'}`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-semibold text-sm text-slate-900">Via plataforma</span>
-                  <span className="text-xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-medium">Recomendado</span>
-                </div>
-                <p className="text-xs text-slate-500 leading-snug">Envio gerenciado pelo ImobiNota. Alta entregabilidade, sem configuração.</p>
-              </button>
-              <button onClick={() => set('emailProvider', 'smtp')}
-                className={`text-left p-4 rounded-xl border-2 transition-all ${f.emailProvider === 'smtp' ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-slate-300'}`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-semibold text-sm text-slate-900">SMTP próprio</span>
-                </div>
-                <p className="text-xs text-slate-500 leading-snug">Use o servidor de e-mail da sua empresa. Requer configuração técnica.</p>
-              </button>
-            </div>
-
-            {f.emailProvider === 'resend' && (
-              <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
-                <span className="text-lg mt-0.5">✅</span>
-                <div>
-                  <p className="text-sm font-medium text-emerald-800">Pronto — nenhuma configuração necessária</p>
-                  <p className="text-xs text-emerald-700 mt-0.5 leading-snug">
-                    O envio é feito pela infraestrutura do ImobiNota com alta entregabilidade.
-                    Configure abaixo apenas o nome e o e-mail de resposta.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {f.emailProvider === 'smtp' && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="col-span-2">
-                    <label className="text-xs font-medium text-slate-500 block mb-1">Servidor SMTP</label>
-                    <Inp value={f.smtpHost} onChange={e => set('smtpHost', e.target.value)} placeholder="mail.suaempresa.com.br"/>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 block mb-1">Porta</label>
-                    <select value={f.smtpPort} onChange={e => set('smtpPort', e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white">
-                      <option value="587">587 (TLS)</option>
-                      <option value="465">465 (SSL)</option>
-                      <option value="25">25</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className="text-xs font-medium text-slate-500 block mb-1">Usuário SMTP</label><Inp value={f.smtpUser} onChange={e => set('smtpUser', e.target.value)} placeholder="seu@email.com.br"/></div>
-                  <div><label className="text-xs font-medium text-slate-500 block mb-1">Senha SMTP</label><Inp value={f.smtpPass} onChange={e => set('smtpPass', e.target.value)} type="password" placeholder="••••••••"/></div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">Criptografia</label>
-                  <div className="flex gap-4">
-                    {['tls','ssl','none'].map(enc => (
-                      <label key={enc} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                        <input type="radio" name="smtpEnc" value={enc}
-                          checked={f.smtpEncryption === enc} onChange={() => set('smtpEncryption', enc)}/>
-                        <span className="capitalize">{enc === 'none' ? 'Nenhuma' : enc.toUpperCase()}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </Section>
-
           <Section title="✉️ Identidade do Remetente">
             <div className="space-y-3">
-              <div className={`grid gap-3 ${f.emailProvider === 'smtp' ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">Nome de exibição</label>
-                  <Inp value={f.fromName} onChange={e => set('fromName', e.target.value)} placeholder="Ex: Vasselai Imóveis"/>
-                  <p className="text-xs text-slate-400 mt-1">Este nome aparece no campo "De:" para o inquilino</p>
-                </div>
-                {f.emailProvider === 'smtp' && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 block mb-1">E-mail remetente (From)</label>
-                    <Inp value={f.fromEmail} onChange={e => set('fromEmail', e.target.value)} type="email" placeholder="cobrancas@suaempresa.com.br"/>
-                    <p className="text-xs text-slate-400 mt-1">Deve pertencer ao servidor SMTP configurado</p>
-                  </div>
-                )}
+              <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5 text-xs text-emerald-700">
+                <span>✅</span>
+                <span>O envio é feito pela infraestrutura do ImobiNota — configure apenas o nome e o e-mail de resposta abaixo.</span>
               </div>
-              {f.emailProvider === 'resend' && (
-                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 text-xs text-slate-500">
-                  <span>📨</span>
-                  <span>E-mail remetente: <strong className="text-slate-700">gerenciado pela plataforma ImobiNota</strong> — as respostas dos inquilinos chegam no campo abaixo.</span>
-                </div>
-              )}
-              <div>
-                <label className="text-xs font-medium text-slate-500 block mb-1">Responder para (Reply-To)</label>
+              <Row label="Nome de exibição" hint='Aparece no campo "De:" para o inquilino'>
+                <Inp value={f.fromName} onChange={e => set('fromName', e.target.value)} placeholder="Ex: Vasselai Imóveis"/>
+              </Row>
+              <Row label="Responder para (Reply-To)" hint="Quando o inquilino responder, a mensagem chega neste endereço">
                 <Inp value={f.replyTo} onChange={e => set('replyTo', e.target.value)} type="email" placeholder="contato@suaempresa.com.br"/>
-                <p className="text-xs text-slate-400 mt-1">Quando o inquilino responder o e-mail, a resposta chega neste endereço</p>
-              </div>
+              </Row>
             </div>
           </Section>
 
