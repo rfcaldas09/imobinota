@@ -40,8 +40,8 @@ export default function Sidebar() {
   return (
     <aside className="w-56 flex-shrink-0 bg-white border-r border-slate-100 flex flex-col h-screen">
       {/* Logo */}
-      <div className="px-4 pt-5 pb-4 border-b border-slate-100">
-        <img src={LOGO_URL} alt="ImobiNota" className="h-9 w-auto" style={{ maxHeight: 36 }} />
+      <div className="px-4 pt-5 pb-4 border-b border-slate-100 flex items-center justify-center">
+        <img src={LOGO_URL} alt="ImobiNota" className="h-12 w-auto" style={{ maxHeight: 48 }} />
       </div>
 
       {/* Nav */}

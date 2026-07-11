@@ -196,6 +196,11 @@ export default function Config() {
           fromEmail:      data?.from_email        || '',
           fromName:       data?.from_name         || '',
           replyTo:        data?.reply_to          || '',
+          // Template
+          emailSubject: data?.email_subject || 'Boleto e NFS-e de {{mes}}/{{ano}} — {{imovel}}',
+          emailBody:    data?.email_body    || DEFAULT_BODY,
+          // API
+          openPix: data?.openpix_api_key || '',
         }))
         setLoadingProfile(false)
       })
@@ -231,9 +236,18 @@ export default function Config() {
         smtp_user:       f.smtpUser,
         smtp_pass:       f.smtpPass,
         smtp_encryption: f.smtpEncryption,
-        from_email:      f.fromEmail,   // relevante para SMTP; ignorado no Resend
+        from_email:      f.fromEmail,
         from_name:       f.fromName,
         reply_to:        f.replyTo,
+      })
+    } else if (tab === 'template') {
+      Object.assign(payload, {
+        email_subject: f.emailSubject,
+        email_body:    f.emailBody,
+      })
+    } else if (tab === 'api') {
+      Object.assign(payload, {
+        openpix_api_key: f.openPix,
       })
     }
 
@@ -284,6 +298,13 @@ export default function Config() {
       setTestSending(false)
     }
   }
+
+  useEffect(() => {
+    if (!previewOpen) return
+    const handle = e => { if (e.key === 'Escape') setPreviewOpen(false) }
+    document.addEventListener('keydown', handle)
+    return () => document.removeEventListener('keydown', handle)
+  }, [previewOpen])
 
   const renderPreview = (text) =>
     text
@@ -557,6 +578,21 @@ export default function Config() {
             ))}
           </div>
 
+          <div className="flex gap-2 mb-4 flex-wrap">
+            <button onClick={() => setPreviewOpen(true)}
+              className="flex items-center gap-2 border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50">
+              👁 Pré-visualizar
+            </button>
+            <button
+              onClick={() => {
+                set('emailSubject', 'Boleto e NFS-e de {{mes}}/{{ano}} — {{imovel}}')
+                set('emailBody', DEFAULT_BODY)
+              }}
+              className="flex items-center gap-2 border border-indigo-200 bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-100 transition-colors">
+              ✨ Carregar template padrão de e-mail
+            </button>
+          </div>
+
           <div className="space-y-3">
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">Assunto do e-mail</label>
@@ -570,17 +606,6 @@ export default function Config() {
                 rows={14}
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg font-mono leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500"/>
             </div>
-          </div>
-
-          <div className="flex gap-2 mt-4">
-            <button onClick={() => setPreviewOpen(true)}
-              className="flex items-center gap-2 border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50">
-              👁 Pré-visualizar
-            </button>
-            <button onClick={() => set('emailBody', DEFAULT_BODY)}
-              className="text-xs text-slate-400 hover:text-slate-600 px-3 py-2 rounded-lg hover:bg-slate-50">
-              ↩ Restaurar padrão
-            </button>
           </div>
 
           {/* Preview modal */}

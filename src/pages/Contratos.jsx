@@ -105,6 +105,12 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
   const [f, setF] = useState({ ...blank, ...initial })
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
 
+  useEffect(() => {
+    const handle = e => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handle)
+    return () => document.removeEventListener('keydown', handle)
+  }, [onClose])
+
   const totalValue = (parseFloat(f.value)||0) + (parseFloat(f.seguroFinanceiro)||0) +
                      (parseFloat(f.seguroIncendio)||0) + (parseFloat(f.iptu)||0)
 
@@ -247,6 +253,12 @@ function DocModal({ type, contract: c, onClose, onToast }) {
   const [emitindo, setEmitindo] = useState(false)
   const [emissao, setEmissao]   = useState(null) // null | 'created' | 'already' | 'error'
 
+  useEffect(() => {
+    const handle = e => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handle)
+    return () => document.removeEventListener('keydown', handle)
+  }, [onClose])
+
   const emitir = async () => {
     if (!user) return
     setEmitindo(true)
@@ -377,6 +389,13 @@ function BatchModal({ total: totalContracts, onClose }) {
   const [logs, setLogs]         = useState([])
   const [fails, setFails]       = useState(0)
 
+  useEffect(() => {
+    if (step === 'running') return
+    const handle = e => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handle)
+    return () => document.removeEventListener('keydown', handle)
+  }, [onClose, step])
+
   const run = () => {
     setStep('running')
     let sent = 0, fc = 0
@@ -480,6 +499,13 @@ function ScanModal({ contract: c, onClose, onToast }) {
   const [phase, setPhase] = useState('idle')
   const [progress, setProgress] = useState(0)
 
+  useEffect(() => {
+    if (phase !== 'idle') return
+    const handle = e => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handle)
+    return () => document.removeEventListener('keydown', handle)
+  }, [onClose, phase])
+
   const start = () => {
     setPhase('scanning')
     let p = 0
@@ -562,6 +588,12 @@ function ScanModal({ contract: c, onClose, onToast }) {
 
 // ── Modal de confirmação de exclusão ──────────────────────────────
 function DeleteModal({ contract: c, onConfirm, onClose, deleting }) {
+  useEffect(() => {
+    const handle = e => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handle)
+    return () => document.removeEventListener('keydown', handle)
+  }, [onClose])
+
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
@@ -587,6 +619,12 @@ function DeleteModal({ contract: c, onConfirm, onClose, deleting }) {
 // ── Drawer de detalhe do contrato ─────────────────────────────────
 function ContractDrawer({ contract: c, onClose, onEdit, onScan, onDelete, onToast }) {
   const [docType, setDocType] = useState(null)
+
+  useEffect(() => {
+    const handle = e => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handle)
+    return () => document.removeEventListener('keydown', handle)
+  }, [onClose])
 
   return (
     <>

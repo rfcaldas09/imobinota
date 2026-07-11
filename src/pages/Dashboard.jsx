@@ -62,6 +62,13 @@ function BatchModal({ contracts, user, onClose }) {
     )
   }, [mesRef, user, contracts])
 
+  useEffect(() => {
+    if (step === 'running') return
+    const handle = e => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handle)
+    return () => document.removeEventListener('keydown', handle)
+  }, [onClose, step])
+
   const confirm = async () => {
     setStep('running')
     setProgress(0)
