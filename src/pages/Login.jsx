@@ -21,7 +21,7 @@ export default function Login() {
         ? await signIn(form.email, form.password)
         : await signUp(form.email, form.password, { company_name: form.company })
       if (err) throw err
-      navigate('/')
+      navigate('/dashboard')
     } catch (err) {
       setError(err.message)
     } finally {
