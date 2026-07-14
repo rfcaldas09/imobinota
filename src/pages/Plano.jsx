@@ -298,7 +298,8 @@ export default function Plano() {
             plan={plan}
             isCurrent={sub.plan === plan.id}
             isPaying={payingPlan === plan.id}
-            o
+            onAssinar={() => handleAssinar(plan.id)}
+          />
         ))}
       </div>
 
