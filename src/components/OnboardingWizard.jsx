@@ -861,4 +861,3 @@ export default function OnboardingWizard({ onComplete }) {
     </div>
   )
 }
-  
