@@ -103,6 +103,39 @@ async function handle(event) {
 
   if (!res.ok) {
     const msg = data?.error || data?.message || data?.errors?.[0]?.message || `Erro OpenPIX: ${res.status}`
+
+    // Se a cobrança já existe com este correlationID, busca e retorna a existente
+    const isDuplicate = /correlat|j.{1,4}existe|already exist/i.test(msg)
+    if (isDuplicate) {
+      console.log('[openpix-create-charge] Cobrança duplicada — buscando existente:', correlationID)
+      try {
+        const getRes = await fetch(`https://api.openpix.com.br/api/v1/charge/${correlationID}`, {
+          headers: { 'Authorization': APP_ID },
+        })
+        if (getRes.ok) {
+          const existingData = await getRes.json()
+          const existingCharge = existingData.charge || existingData
+          console.log('[openpix-create-charge] Cobrança existente encontrada:', existingCharge?.correlationID)
+          return {
+            statusCode: 200,
+            body: JSON.stringify({
+              ok:          true,
+              brCode:      existingData.brCode || existingCharge.brCode || null,
+              pixQrCode:   existingCharge.pixQrCode || null,
+              expiresAt:   existingCharge.expiresIn
+                             ? new Date(Date.now() + existingCharge.expiresIn * 1000).toISOString()
+                             : null,
+              fee:         FEE_CENTS,
+              clientSplit: Math.max(0, Number(existingCharge.value) - FEE_CENTS),
+              existing:    true, // flag para o frontend saber que é uma cobrança já gerada
+            }),
+          }
+        }
+      } catch (fetchErr) {
+        console.warn('[openpix-create-charge] Falha ao buscar cobrança existente:', fetchErr.message)
+      }
+    }
+
     console.error('[openpix-create-charge] Erro OpenPIX:', JSON.stringify(data))
     return { statusCode: 400, body: JSON.stringify({ error: msg, detail: data }) }
   }

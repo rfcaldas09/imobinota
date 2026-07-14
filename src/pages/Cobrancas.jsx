@@ -80,46 +80,72 @@ const mapCob = row => ({
 })
 
 // ── Modal de Cobrança (QR Code de Pagamento) ─────────────────────
+// Retorna a próxima data futura com o mesmo dia de vencimento (YYYY-MM-DD)
+function nextFutureDue(dueDay) {
+  const today = new Date()
+  const d = parseInt(dueDay, 10)
+  const thisMonth = new Date(today.getFullYear(), today.getMonth(), d)
+  if (thisMonth > today) return thisMonth.toISOString().slice(0, 10)
+  return new Date(today.getFullYear(), today.getMonth() + 1, d).toISOString().slice(0, 10)
+}
+
 function BoletoPIXModal({ cob, pixKey, onClose }) {
-  const [state, setState]         = useState('loading') // loading | ok | error | noPix
+  // loading | confirm_date | ok | error | noPix
+  const [state, setState]           = useState('loading')
   const [chargeData, setChargeData] = useState(null)
-  const [errMsg, setErrMsg]       = useState('')
-  const [copied, setCopied]       = useState(false)
+  const [errMsg, setErrMsg]         = useState('')
+  const [copied, setCopied]         = useState(false)
+  const [overrideDue, setOverrideDue] = useState('') // YYYY-MM-DD escolhido pelo usuário
 
   useEffect(() => {
     if (state === 'loading') return
-    const handle = e => { if (e.key === 'Escape') onClose() }
+    const handle = e => { if (e.key === 'Escape' && state !== 'loading') onClose() }
     document.addEventListener('keydown', handle)
     return () => document.removeEventListener('keydown', handle)
   }, [onClose, state])
 
   useEffect(() => {
     if (!pixKey) { setState('noPix'); return }
+
+    // ── Verificar se a data de vencimento já passou ──────────────────
+    const dueIso = calcDueDate(cob.mesRef, cob.dueDay)
+    if (dueIso && new Date(dueIso + 'T23:59:59') < new Date()) {
+      // Pré-preenche com a próxima ocorrência futura do mesmo dia
+      setOverrideDue(nextFutureDue(cob.dueDay))
+      setState('confirm_date')
+      return
+    }
+
     generate()
   }, [])
 
-  const generate = async () => {
+  // customDue: YYYY-MM-DD opcional (usado na repactuação)
+  const generate = async (customDue = null) => {
     setState('loading')
     setErrMsg('')
 
-    // Itens discriminados — exibidos no app do pagador
     const additionalInfo = []
     if (cob.value > 0)            additionalInfo.push({ key: 'Aluguel',           value: fmtCi(cob.value) })
     if (cob.seguroFinanceiro > 0) additionalInfo.push({ key: 'Seguro Financeiro', value: fmtCi(cob.seguroFinanceiro) })
-    if (cob.seguroIncendio   > 0) additionalInfo.push({ key: 'Seguro Incêndio',   value: fmtCi(cob.seguroIncendio) })
+    if (cob.seguroIncendio   > 0) additionalInfo.push({ key: 'Seguro Incendio',   value: fmtCi(cob.seguroIncendio) })
     if (cob.iptu             > 0) additionalInfo.push({ key: 'IPTU',              value: fmtCi(cob.iptu) })
     additionalInfo.push({ key: 'Total', value: fmtCi(cob.totalValue) })
 
-    // Apenas ASCII — OpenPIX rejeita Unicode especial (en-dash, etc.) como "emoji"
     const comment = [
       `Aluguel ref. ${refLabel(cob.mesRef)}`,
       cob.property ? `- ${cob.property}` : '',
     ].filter(Boolean).join(' ').replace(/[^\x00-\x7F]/g, '')
 
-    // Expira na data de vencimento + 3 dias de carência.
-    // Bancos como Itaú, Bradesco, Nubank e C6 permitem ao pagador
-    // agendar o pagamento ao ler um código com vencimento futuro.
-    const expiresIn = calcExpiresIn(cob.mesRef, cob.dueDay)
+    // Calcula expiresIn com base na data efetiva (original ou repactuada)
+    const effectiveDue = customDue || calcDueDate(cob.mesRef, cob.dueDay)
+    let expiresIn
+    if (effectiveDue) {
+      const due = new Date(effectiveDue + 'T23:59:59')
+      const secs = Math.floor((due - Date.now()) / 1000)
+      expiresIn = Math.max(3 * 24 * 3600, secs + 3 * 24 * 3600)
+    } else {
+      expiresIn = 30 * 24 * 3600
+    }
 
     try {
       const res = await fetch('/.netlify/functions/openpix-create-charge', {
@@ -140,14 +166,14 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
       try { data = JSON.parse(raw) } catch {
         setErrMsg(
           res.status === 404
-            ? 'Função não encontrada. Rode "netlify dev" em vez de "npm run dev" para testar localmente.'
-            : `Resposta inesperada do servidor (${res.status}): ${raw.slice(0, 120)}`
+            ? 'Funcao nao encontrada. Rode "netlify dev" para testar localmente.'
+            : `Resposta inesperada (${res.status}): ${raw.slice(0, 120)}`
         )
         setState('error')
         return
       }
 
-      if (!res.ok || data.error) { setErrMsg(data.error || 'Erro ao gerar cobrança'); setState('error'); return }
+      if (!res.ok || data.error) { setErrMsg(data.error || 'Erro ao gerar cobranca'); setState('error'); return }
       setChargeData(data)
       setState('ok')
     } catch (err) {
@@ -163,7 +189,9 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
     setTimeout(() => setCopied(false), 2500)
   }
 
-  const dueLabel = fmtDate(calcDueDate(cob.mesRef, cob.dueDay))
+  // Usa a data efetiva para o label de vencimento na tela de sucesso
+  const effectiveDueLabel = fmtDate(overrideDue || calcDueDate(cob.mesRef, cob.dueDay))
+  const todayIso = new Date().toISOString().slice(0, 10)
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -193,6 +221,46 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
           </div>
         )}
 
+        {/* Vencimento vencido — pede nova data antes de gerar */}
+        {state === 'confirm_date' && (
+          <div className="p-5 space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <p className="text-sm font-semibold text-amber-800">Vencimento expirado</p>
+              <p className="text-xs text-amber-600 mt-1">
+                O vencimento original ({fmtDate(calcDueDate(cob.mesRef, cob.dueDay))}) já passou.
+                Informe a nova data antes de gerar a cobrança.
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-500 block mb-1.5">Nova data de vencimento</label>
+              <input
+                type="date"
+                value={overrideDue}
+                min={todayIso}
+                onChange={e => setOverrideDue(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-indigo-400"
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                Sugerido: {fmtDate(nextFutureDue(cob.dueDay))} (próximo vencimento dia {cob.dueDay})
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={onClose}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50">
+                Cancelar
+              </button>
+              <button
+                onClick={() => overrideDue && generate(overrideDue)}
+                disabled={!overrideDue}
+                className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700 disabled:opacity-40">
+                Confirmar e Gerar
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Sem chave PIX */}
         {state === 'noPix' && (
           <div className="p-6 text-center">
@@ -210,8 +278,10 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
             <p className="font-semibold text-slate-800 mb-1">Erro ao gerar cobrança</p>
             <p className="text-sm text-red-500 bg-red-50 rounded-xl px-4 py-3 mb-4">{errMsg}</p>
             <div className="flex gap-3">
-              <button onClick={generate} className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm">Tentar novamente</button>
-              <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm">Fechar</button>
+              <button onClick={() => generate(overrideDue || null)}
+                className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm">Tentar novamente</button>
+              <button onClick={onClose}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm">Fechar</button>
             </div>
           </div>
         )}
@@ -220,11 +290,11 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
         {state === 'ok' && chargeData && (
           <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
 
-            {/* Vencimento */}
-            {dueLabel && dueLabel !== '—' && (
+            {/* Vencimento efetivo */}
+            {effectiveDueLabel && effectiveDueLabel !== '—' && (
               <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
                 <span className="text-xs font-semibold text-amber-700">Vencimento</span>
-                <span className="text-sm font-bold text-amber-800">{dueLabel}</span>
+                <span className="text-sm font-bold text-amber-800">{effectiveDueLabel}</span>
               </div>
             )}
 
@@ -237,7 +307,6 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
                   alt="QR Code"
                   className="w-48 h-48 rounded-2xl border border-slate-100 shadow-sm"
                 />
-                {/* Copia-e-cola */}
                 <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
                   <p className="text-xs text-slate-600 font-mono break-all leading-relaxed">{chargeData.brCode.slice(0, 60)}…</p>
                   <button onClick={copy}
