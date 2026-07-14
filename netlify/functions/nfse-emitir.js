@@ -213,7 +213,22 @@ function decryptPassword(encHex, keyHex) {
 function parsePfx(pfxBuffer, password) {
   const pfxDer = forge.util.createBuffer(pfxBuffer.toString('binary'))
   const pfxAsn = forge.asn1.fromDer(pfxDer)
-  const pfx    = forge.pkcs12.pkcs12FromAsn1(pfxAsn, password)
+
+  // node-forge só suporta SHA-1 MAC. Certificados modernos usam SHA-256 MAC.
+  // Tentativa 1: strict (verifica MAC) — funciona com SHA-1
+  // Tentativa 2: strict=false (pula verificação MAC) — necessário para SHA-256
+  let pfx
+  try {
+    pfx = forge.pkcs12.pkcs12FromAsn1(pfxAsn, true, password)
+    console.log('[nfse-emitir] parsePfx: MAC SHA-1 verificado OK')
+  } catch (e) {
+    if (e.message && e.message.includes('MAC could not be verified')) {
+      console.log('[nfse-emitir] parsePfx: MAC SHA-256 detectado, prosseguindo sem verificação MAC')
+      pfx = forge.pkcs12.pkcs12FromAsn1(pfxAsn, false, password)
+    } else {
+      throw e
+    }
+  }
 
   const certBags = pfx.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag] || []
   const keyBags  = pfx.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag] || []
