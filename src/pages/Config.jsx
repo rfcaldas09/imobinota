@@ -1,6 +1,18 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+
+// ── Criptografia da senha do certificado (AES-128-CBC via SubtleCrypto) ─
+async function encryptPassword(password, keyHex) {
+  if (!keyHex || !password) return ''
+  const keyBytes = hexToBytes(keyHex)
+  const iv       = crypto.getRandomValues(new Uint8Array(16))
+  const key      = await crypto.subtle.importKey('raw', keyBytes, { name:'AES-CBC' }, false, ['encrypt'])
+  const enc      = await crypto.subtle.encrypt({ name:'AES-CBC', iv }, key, new TextEncoder().encode(password))
+  return bytesToHex(iv) + bytesToHex(new Uint8Array(enc))
+}
+const hexToBytes = hex => new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)))
+const bytesToHex = buf => Array.from(buf).map(b => b.toString(16).padStart(2,'0')).join('')
 
 // ── Máscaras de input ─────────────────────────────────────────
 const digits = v => v.replace(/\D/g, '')
@@ -61,6 +73,27 @@ const TABS = [
   { id:'email',    emoji:'📧', label:'E-mail' },
   { id:'template', emoji:'✉️', label:'Template' },
   { id:'api',      emoji:'⚡', label:'Integrações' },
+]
+
+// Lista de municípios comuns do Sul para facilitar a busca
+const MUNICIPIOS_SUL = [
+  { ibge:'4202008', nome:'Blumenau — SC' },
+  { ibge:'4205407', nome:'Florianópolis — SC' },
+  { ibge:'4209102', nome:'Joinville — SC' },
+  { ibge:'4214805', nome:'São José — SC' },
+  { ibge:'4204202', nome:'Chapecó — SC' },
+  { ibge:'4213500', nome:'São Bento do Sul — SC' },
+  { ibge:'4211900', nome:'Palhoça — SC' },
+  { ibge:'4307609', nome:'Porto Alegre — RS' },
+  { ibge:'4304606', nome:'Caxias do Sul — RS' },
+  { ibge:'4316907', nome:'Santa Maria — RS' },
+  { ibge:'4313409', nome:'Pelotas — RS' },
+  { ibge:'4309209', nome:'Gramado — RS' },
+  { ibge:'4106902', nome:'Curitiba — PR' },
+  { ibge:'4113700', nome:'Londrina — PR' },
+  { ibge:'4115200', nome:'Maringá — PR' },
+  { ibge:'4119905', nome:'Ponta Grossa — PR' },
+  { ibge:'4104808', nome:'Cascavel — PR' },
 ]
 
 const VARS = [
@@ -132,6 +165,9 @@ export default function Config() {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [testSending, setTestSending] = useState(false)
   const [testResult, setTestResult]   = useState(null)   // { ok, msg }
+  const [certUploading, setCertUploading] = useState(false)
+  const [certMsg, setCertMsg]   = useState(null)         // { ok, msg }
+  const certInputRef            = useRef(null)
 
   const [f, setF] = useState({
     // Empresa
@@ -142,10 +178,22 @@ export default function Config() {
     emailContato: '',
     endereco:     '',
     certOk:       false,
+    certNome:     '',
+    certValidade: '',
+    certPassword: '',
     // Fiscal
     regime:    'simples',
     nbs:       '1.05.01.09.00',
     aliquota:  '5,00',
+    // NFS-e
+    municipioIbge: '',
+    municipioNome: '',
+    codigoServico: '6.05',
+    serie:         'IMOB',
+    logradouro:    '',
+    numeroEnd:     '',
+    bairro:        '',
+    cep:           '',
     // E-mail
     emailProvider: 'resend',
     resendKey:     '',
@@ -183,10 +231,22 @@ export default function Config() {
           telefone:     data?.telefone              || user.phone || '',
           emailContato: data?.email_contato         || user.email || '',
           endereco:     data?.endereco              || '',
+          certOk:       !!data?.nfse_cert_path,
+          certNome:     data?.nfse_cert_path ? data.nfse_cert_path.split('/').pop() : '',
+          certPassword: '',
           // Fiscal
           regime:   data?.regime_tributario  || 'simples',
           nbs:      data?.nbs_servico        || '',
           aliquota: data?.aliquota_iss       || '',
+          // NFS-e
+          municipioIbge: data?.nfse_municipio_ibge  || '',
+          municipioNome: data?.nfse_municipio_nome  || '',
+          codigoServico: data?.nfse_codigo_servico  || '6.05',
+          serie:         data?.nfse_serie           || 'IMOB',
+          logradouro:    data?.nfse_logradouro      || '',
+          numeroEnd:     data?.nfse_numero_end      || '',
+          bairro:        data?.nfse_bairro          || '',
+          cep:           data?.nfse_cep             || '',
           // E-mail
           emailProvider:  data?.email_provider   || 'resend',
           resendKey:      data?.resend_api_key    || '',
@@ -227,9 +287,18 @@ export default function Config() {
       })
     } else if (tab === 'fiscal') {
       Object.assign(payload, {
-        regime_tributario: f.regime,
-        nbs_servico:       f.nbs,
-        aliquota_iss:      f.aliquota,
+        regime_tributario:  f.regime,
+        nbs_servico:        f.nbs,
+        aliquota_iss:       f.aliquota,
+        // NFS-e
+        nfse_municipio_ibge: f.municipioIbge,
+        nfse_municipio_nome: f.municipioNome,
+        nfse_codigo_servico: f.codigoServico,
+        nfse_serie:          f.serie,
+        nfse_logradouro:     f.logradouro,
+        nfse_numero_end:     f.numeroEnd,
+        nfse_bairro:         f.bairro,
+        nfse_cep:            f.cep,
       })
     } else if (tab === 'email') {
       Object.assign(payload, {
@@ -401,53 +470,251 @@ export default function Config() {
               </div>
             )}
           </Section>
-          <Section title="🔐 Certificado Digital A1 (e-CNPJ)">
+          <Section title="🔐 Certificado Digital A1 (e-CNPJ / e-CPF)">
+            {/* Arquivo .pfx oculto */}
+            <input ref={certInputRef} type="file" accept=".pfx,.p12"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0]
+                if (!file || !user) return
+                setCertUploading(true)
+                setCertMsg(null)
+                try {
+                  // Sobe o arquivo para Supabase Storage: certificados-nfse/{userId}/{filename}
+                  const path = `${user.id}/${Date.now()}_${file.name}`
+                  const { error } = await supabase.storage
+                    .from('certificados-nfse')
+                    .upload(path, file, { upsert: true, contentType: 'application/x-pkcs12' })
+                  if (error) throw error
+
+                  // Criptografa a senha (se houver) com a chave de ambiente
+                  // Nota: NFSE_CERT_KEY precisa estar configurado no .env e no Netlify
+                  let encPassword = ''
+                  if (f.certPassword) {
+                    const keyHex = import.meta.env.VITE_NFSE_CERT_KEY || ''
+                    encPassword = keyHex ? await encryptPassword(f.certPassword, keyHex) : ''
+                  }
+
+                  // Grava path e senha criptografada no profile
+                  await supabase.from('profiles').upsert({
+                    id: user.id,
+                    nfse_cert_path: path,
+                    ...(encPassword ? { nfse_cert_password_enc: encPassword } : {}),
+                  })
+
+                  set('certOk', true)
+                  set('certNome', file.name)
+                  set('certPassword', '') // limpa senha da UI
+                  setCertMsg({ ok: true, msg: `${file.name} enviado com sucesso.` })
+                } catch (err) {
+                  setCertMsg({ ok: false, msg: err.message || 'Erro ao enviar certificado.' })
+                } finally {
+                  setCertUploading(false)
+                  e.target.value = '' // reset input
+                }
+              }}
+            />
+
             {f.certOk ? (
-              <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 mb-2">
+              <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 mb-3">
                 <span className="text-xl">✅</span>
                 <div className="flex-1">
                   <p className="text-sm font-medium text-emerald-800">Certificado configurado</p>
-                  <p className="text-xs text-emerald-600">cert-gestora-pro.pfx · válido até 15/03/2027</p>
+                  <p className="text-xs text-emerald-600 truncate">{f.certNome || 'certificado.pfx'}</p>
                 </div>
-                <button onClick={() => set('certOk', false)} className="text-xs text-red-400 hover:text-red-600">Remover</button>
+                <button
+                  onClick={() => certInputRef.current?.click()}
+                  className="text-xs text-indigo-600 hover:underline font-medium">
+                  Substituir
+                </button>
               </div>
             ) : (
-              <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center mb-2">
-                <p className="text-slate-400 text-sm mb-2">Arraste o arquivo .pfx aqui ou</p>
-                <button onClick={() => set('certOk', true)} className="text-indigo-600 text-sm font-medium hover:underline">clique para selecionar</button>
+              <div
+                className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center mb-3 hover:border-indigo-300 transition-colors cursor-pointer"
+                onClick={() => certInputRef.current?.click()}>
+                <p className="text-2xl mb-1">📁</p>
+                <p className="text-slate-500 text-sm font-medium">Clique para selecionar o arquivo .pfx</p>
+                <p className="text-slate-400 text-xs mt-0.5">Certificado A1 do e-CNPJ ou e-CPF</p>
               </div>
             )}
-            <p className="text-xs text-slate-400">Armazenado de forma criptografada (AES-256). Nunca exposto via API.</p>
+
+            {/* Senha do certificado */}
+            <div className="mb-3">
+              <label className="text-xs font-medium text-slate-500 block mb-1">
+                Senha do certificado
+              </label>
+              <input
+                value={f.certPassword}
+                onChange={e => set('certPassword', e.target.value)}
+                type="password"
+                placeholder="Senha usada ao exportar o .pfx"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                A senha é criptografada (AES-128) antes de ser salva. Nunca é exposta em texto simples.
+              </p>
+            </div>
+
+            {certUploading && (
+              <div className="flex items-center gap-2 text-xs text-slate-500 mb-2">
+                <div className="w-3 h-3 border-2 border-slate-300 border-t-indigo-500 rounded-full animate-spin"/>
+                Enviando certificado…
+              </div>
+            )}
+            {certMsg && (
+              <div className={`text-xs rounded-lg px-3 py-2 mb-2 ${certMsg.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                {certMsg.msg}
+              </div>
+            )}
+
+            <button
+              onClick={() => certInputRef.current?.click()}
+              disabled={certUploading}
+              className="w-full py-2 rounded-lg border border-indigo-200 text-indigo-600 text-sm font-medium hover:bg-indigo-50 disabled:opacity-40">
+              {certUploading ? 'Enviando…' : f.certOk ? '↑ Substituir certificado' : '↑ Enviar certificado .pfx'}
+            </button>
+
+            <p className="text-xs text-slate-400 mt-2">
+              Armazenado em bucket privado no Supabase (AES-128). Nunca exposto via API pública.
+            </p>
           </Section>
         </>
       )}
 
       {/* ── Fiscal ─────────────────────────────────────────────── */}
       {tab === 'fiscal' && (
-        <Section title="📄 Dados Fiscais (NFS-e)">
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-slate-500 block mb-1">Regime Tributário</label>
-              <select value={f.regime} onChange={e => set('regime', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                <option value="simples">Simples Nacional</option>
-                <option value="presumido">Lucro Presumido</option>
-                <option value="real">Lucro Real</option>
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
+        <>
+          <Section title="📄 Tributação">
+            <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-slate-500 block mb-1">Código NBS do Serviço</label>
-                <Inp value={f.nbs} onChange={e => set('nbs', maskNbs(e.target.value))} mono placeholder="1.05.01.09.00"/>
-                <p className="text-xs text-slate-400 mt-1">1.05.01.09.00 = Administração de imóveis</p>
+                <label className="text-xs font-medium text-slate-500 block mb-1">Regime Tributário</label>
+                <select value={f.regime} onChange={e => set('regime', e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="simples">Simples Nacional</option>
+                  <option value="presumido">Lucro Presumido</option>
+                  <option value="real">Lucro Real</option>
+                  <option value="mei">MEI</option>
+                </select>
               </div>
-              <div>
-                <label className="text-xs font-medium text-slate-500 block mb-1">Alíquota ISS (%)</label>
-                <Inp value={f.aliquota} onChange={e => set('aliquota', maskAliquota(e.target.value))} placeholder="5,00"/>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Alíquota ISS (%)</label>
+                  <Inp value={f.aliquota} onChange={e => set('aliquota', maskAliquota(e.target.value))} placeholder="2,00"/>
+                  <p className="text-xs text-slate-400 mt-1">Ex: 2,00 para administração de imóveis</p>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Cód. NBS (opcional)</label>
+                  <Inp value={f.nbs} onChange={e => set('nbs', maskNbs(e.target.value))} mono placeholder="1.05.01.09.00"/>
+                  <p className="text-xs text-slate-400 mt-1">1.05.01.09.00 = Adm. imóveis</p>
+                </div>
               </div>
             </div>
-          </div>
-        </Section>
+          </Section>
+
+          <Section title="🏛️ NFS-e — Dados de Emissão">
+            <div className="space-y-3">
+
+              {/* Município */}
+              <div>
+                <label className="text-xs font-medium text-slate-500 block mb-1">Município de prestação do serviço</label>
+                <div className="flex gap-2">
+                  <select
+                    className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    value={f.municipioIbge}
+                    onChange={e => {
+                      const opt = MUNICIPIOS_SUL.find(m => m.ibge === e.target.value)
+                      set('municipioIbge', e.target.value)
+                      set('municipioNome', opt?.nome || '')
+                    }}>
+                    <option value="">— Selecione o município —</option>
+                    {MUNICIPIOS_SUL.map(m => (
+                      <option key={m.ibge} value={m.ibge}>{m.nome}</option>
+                    ))}
+                    <option value="outro">Outro (digitar IBGE abaixo)</option>
+                  </select>
+                </div>
+                {(f.municipioIbge === 'outro' || (f.municipioIbge && !MUNICIPIOS_SUL.find(m => m.ibge === f.municipioIbge))) && (
+                  <div className="mt-2">
+                    <Inp value={f.municipioIbge === 'outro' ? '' : f.municipioIbge}
+                      onChange={e => set('municipioIbge', e.target.value.replace(/\D/g,'').slice(0,7))}
+                      mono placeholder="Código IBGE (7 dígitos)"/>
+                    <p className="text-xs text-slate-400 mt-1">Consulte: ibge.gov.br/cidades-e-estados</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Código serviço LC 116 e Série */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Código serviço LC 116</label>
+                  <select value={f.codigoServico} onChange={e => set('codigoServico', e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="6.05">6.05 — Agenciamento de imóveis</option>
+                    <option value="11.04">11.04 — Administração de negócios</option>
+                    <option value="17.06">17.06 — Assessoria, análise, consultoria</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Série DPS</label>
+                  <Inp value={f.serie} onChange={e => set('serie', e.target.value.toUpperCase().slice(0,5))}
+                    mono placeholder="IMOB"/>
+                  <p className="text-xs text-slate-400 mt-1">Máx. 5 chars (ex: IMOB)</p>
+                </div>
+              </div>
+
+              {/* Endereço completo do prestador (para DPS) */}
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Endereço do prestador (para a DPS)</p>
+                <div className="space-y-2">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-2">
+                      <label className="text-xs font-medium text-slate-500 block mb-1">Logradouro</label>
+                      <Inp value={f.logradouro} onChange={e => set('logradouro', e.target.value)} placeholder="Rua das Flores"/>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">Número</label>
+                      <Inp value={f.numeroEnd} onChange={e => set('numeroEnd', e.target.value)} placeholder="100"/>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">Bairro</label>
+                      <Inp value={f.bairro} onChange={e => set('bairro', e.target.value)} placeholder="Centro"/>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">CEP</label>
+                      <Inp value={f.cep} onChange={e => set('cep', e.target.value.replace(/\D/g,'').slice(0,8))}
+                        mono placeholder="89010000"/>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Section>
+
+          {/* Status de prontidão para emitir NFS-e */}
+          {(() => {
+            const ok = f.cnpj && f.inscMun && f.municipioIbge && f.certOk && f.aliquota
+            return (
+              <div className={`rounded-xl px-4 py-3 text-xs ${ok ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-amber-50 border border-amber-200 text-amber-700'}`}>
+                {ok ? (
+                  <span>✅ Configuração completa — pronto para emitir NFS-e.</span>
+                ) : (
+                  <span>
+                    ⚠️ Para emitir NFS-e, você precisa de: {[
+                      !f.cnpj && 'CNPJ/CPF',
+                      !f.inscMun && 'Inscrição Municipal',
+                      !f.municipioIbge && 'Código IBGE',
+                      !f.certOk && 'Certificado A1',
+                      !f.aliquota && 'Alíquota ISS',
+                    ].filter(Boolean).join(', ')}.
+                    Configure em <strong>Empresa</strong> ou nas abas acima.
+                  </span>
+                )}
+              </div>
+            )
+          })()}
+        </>
       )}
 
       {/* ── E-mail ─────────────────────────────────────────────── */}

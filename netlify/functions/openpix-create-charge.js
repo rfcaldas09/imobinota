@@ -1,9 +1,10 @@
-// Netlify Function — gera boleto bancário via OpenPIX (/api/v1/boleto)
-// Boleto+PIX: pago pelo código de barras (agendável) OU pelo QR code PIX (instantâneo).
-const FEE_CENTS = 299 // R$ 2,99 por boleto pago
+// Netlify Function — gera cobrança PIX via OpenPIX (/api/v1/charge)
+// O QR code fica válido até a data de vencimento + 3 dias de carência.
+// A maioria dos bancos (Itaú, Bradesco, Nubank, C6, etc.) permite agendar o
+// pagamento ao ler um QR code com vencimento futuro.
+const FEE_CENTS = 299 // R$ 2,99 por cobrança paga
 
 exports.handler = async (event) => {
-  // ── Wrapper global — captura qualquer exceção inesperada ────────
   try {
     return await handle(event)
   } catch (err) {
@@ -19,7 +20,6 @@ async function handle(event) {
     return { statusCode: 405, body: JSON.stringify({ error: 'Método não permitido' }) }
   }
 
-  // ── Parse do body ───────────────────────────────────────────────
   if (!event.body) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Body vazio' }) }
   }
@@ -27,7 +27,7 @@ async function handle(event) {
   let body
   try {
     body = JSON.parse(event.body)
-  } catch (e) {
+  } catch {
     return { statusCode: 400, body: JSON.stringify({ error: 'Body inválido (não é JSON)' }) }
   }
 
@@ -35,22 +35,19 @@ async function handle(event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Body deve ser um objeto JSON' }) }
   }
 
-  const { value, correlationID, comment, additionalInfo, clientPixKey, dueDate, customer } = body
+  const {
+    value,          // centavos — ex: 164390 = R$1.643,90
+    correlationID,  // UUID da cobrança no Supabase
+    comment,        // descrição curta (aparece no extrato do pagador)
+    additionalInfo, // [{ key, value }] — itens discriminados exibidos no app
+    clientPixKey,   // chave PIX do cliente para split (subconta OpenPIX)
+    expiresIn,      // segundos até expirar (calculado no frontend)
+  } = body
 
-  console.log('[openpix-create-charge] payload:', {
-    value,
-    correlationID,
-    hasCpf: !!customer?.taxID,
-    hasPix: !!clientPixKey,
-    dueDate,
-  })
+  console.log('[openpix-create-charge] payload:', { value, correlationID, hasPix: !!clientPixKey, expiresIn })
 
-  // ── Validações ──────────────────────────────────────────────────
   if (!value || !correlationID) {
     return { statusCode: 400, body: JSON.stringify({ error: 'value e correlationID são obrigatórios' }) }
-  }
-  if (!customer || !customer.name || !customer.taxID) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'customer.name e customer.taxID (CPF) são obrigatórios' }) }
   }
 
   const APP_ID = process.env.OPENPIX_APP_ID
@@ -59,29 +56,14 @@ async function handle(event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'OPENPIX_APP_ID não configurado no servidor' }) }
   }
 
-  // ── Montagem do payload ─────────────────────────────────────────
   const splitValue = Math.max(0, Number(value) - FEE_CENTS)
 
-  const dueDateFinal = dueDate || (() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 30)
-    return d.toISOString().split('T')[0]
-  })()
-
-  const taxIDClean = String(customer.taxID).replace(/\D/g, '')
-
-  const boletoBody = {
-    value: Number(value),
+  const chargeBody = {
+    value:         Number(value),
     correlationID: String(correlationID),
-    comment:  comment  || 'Cobrança ImobiNota',
-    dueDate:  dueDateFinal,
+    comment:       comment || 'Cobrança ImobiNota',
+    expiresIn:     Number(expiresIn) || 30 * 24 * 3600, // padrão 30 dias
     ...(Array.isArray(additionalInfo) && additionalInfo.length > 0 ? { additionalInfo } : {}),
-    customer: {
-      name:  String(customer.name),
-      taxID: taxIDClean,
-      ...(customer.email ? { email: String(customer.email) } : {}),
-      ...(customer.phone ? { phone: String(customer.phone).replace(/\D/g, '') } : {}),
-    },
     ...(clientPixKey && splitValue > 0 ? {
       splits: [{
         pixKey:    String(clientPixKey),
@@ -91,16 +73,15 @@ async function handle(event) {
     } : {}),
   }
 
-  console.log('[openpix-create-charge] boletoBody:', JSON.stringify(boletoBody))
+  console.log('[openpix-create-charge] chargeBody:', JSON.stringify(chargeBody))
 
-  // ── Chamada à API OpenPIX ───────────────────────────────────────
-  const res = await fetch('https://api.openpix.com.br/api/v1/boleto', {
+  const res = await fetch('https://api.openpix.com.br/api/v1/charge', {
     method: 'POST',
     headers: {
       'Authorization': APP_ID,
       'Content-Type':  'application/json',
     },
-    body: JSON.stringify(boletoBody),
+    body: JSON.stringify(chargeBody),
   })
 
   const rawText = await res.text()
@@ -110,12 +91,6 @@ async function handle(event) {
   try {
     data = JSON.parse(rawText)
   } catch {
-    if (res.status === 404 || rawText.toLowerCase().includes('not found')) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ error: 'Módulo Boleto não habilitado na conta OpenPIX. Acesse: Configurações → Boleto.' }),
-      }
-    }
     return {
       statusCode: 400,
       body: JSON.stringify({ error: `Resposta inesperada OpenPIX (${res.status}): ${rawText.slice(0, 200)}` }),
@@ -128,16 +103,19 @@ async function handle(event) {
     return { statusCode: 400, body: JSON.stringify({ error: msg, detail: data }) }
   }
 
+  const charge = data.charge || data
+
   return {
     statusCode: 200,
     body: JSON.stringify({
-      ok:            true,
-      digitableLine: data.boleto?.digitableLine || null,
-      bankSlipUrl:   data.boleto?.bankSlipUrl   || null,
-      dueDate:       data.boleto?.expiresDate   || dueDateFinal,
-      brCode:        data.charge?.brCode        || null,
-      fee:           FEE_CENTS,
-      clientSplit:   splitValue,
+      ok:          true,
+      brCode:      data.brCode || charge.brCode       || null, // PIX copia-e-cola
+      pixQrCode:   charge.pixQrCode                   || null, // URL do QR code (se disponível)
+      expiresAt:   charge.expiresIn
+                     ? new Date(Date.now() + charge.expiresIn * 1000).toISOString()
+                     : null,
+      fee:         FEE_CENTS,
+      clientSplit: splitValue,
     }),
   }
 }

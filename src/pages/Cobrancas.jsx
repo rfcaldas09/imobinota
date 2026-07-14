@@ -15,6 +15,7 @@ const IcRefresh = ({ c='' }) => ic('<polyline points="23 4 23 10 17 10"/><polyli
 const IcQR      = ({ c='' }) => ic('<rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="14" y="14" width="8" height="8" rx="1"/><rect x="4" y="4" width="4" height="4"/><rect x="16" y="4" width="4" height="4"/><rect x="16" y="16" width="4" height="4"/><path d="M2 14h4v2H2zM6 14v4h4M2 20h4"/>', c)
 const IcCopy    = ({ c='' }) => ic('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', c)
 const IcClose   = ({ c='' }) => ic('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>', c)
+const IcReceipt = ({ c='' }) => ic('<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="16" y2="14"/><line x1="8" y1="18" x2="11" y2="18"/>', c)
 
 const fmt   = v => Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
 const fmtCi = v => Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
@@ -34,11 +35,23 @@ function refLabel(mesRef) {
   return `${MESES_ABREV[parseInt(month, 10) - 1]}/${year}`
 }
 
-// ── Calcula data de vencimento do boleto (YYYY-MM-DD) ────────────
+// ── Calcula data de vencimento (YYYY-MM-DD) ──────────────────────
 function calcDueDate(mesRef, dueDay) {
   if (!mesRef || !dueDay) return null
   const [year, month] = mesRef.split('-')
   return `${year}-${month}-${String(dueDay).padStart(2, '0')}`
+}
+
+// ── Calcula expiresIn (segundos) para o QR Code expirar na data de
+//    vencimento + 3 dias de carência. Bancos que suportam agendamento
+//    de pagamento PIX usam este prazo para exibir a opção ao pagador.
+function calcExpiresIn(mesRef, dueDay) {
+  const iso = calcDueDate(mesRef, dueDay)
+  if (!iso) return 30 * 24 * 3600
+  const due = new Date(iso + 'T23:59:59')
+  const secs = Math.floor((due - Date.now()) / 1000)
+  // mínimo 3 dias; vencimento futuro recebe +3 dias de carência
+  return Math.max(3 * 24 * 3600, secs + 3 * 24 * 3600)
 }
 
 // Formata data YYYY-MM-DD para dd/mm/aaaa
@@ -66,13 +79,12 @@ const mapCob = row => ({
   emissao:         row.data_emissao,
 })
 
-// ── Modal Boleto Bancário ─────────────────────────────────────────
+// ── Modal de Cobrança (QR Code de Pagamento) ─────────────────────
 function BoletoPIXModal({ cob, pixKey, onClose }) {
-  const [state, setState]           = useState('loading') // loading | ok | error | noPix | noCpf
-  const [boletoData, setBoletoData] = useState(null)
-  const [errMsg, setErrMsg]         = useState('')
-  const [copiedLine, setCopiedLine] = useState(false)
-  const [copiedPix, setCopiedPix]   = useState(false)
+  const [state, setState]         = useState('loading') // loading | ok | error | noPix
+  const [chargeData, setChargeData] = useState(null)
+  const [errMsg, setErrMsg]       = useState('')
+  const [copied, setCopied]       = useState(false)
 
   useEffect(() => {
     if (state === 'loading') return
@@ -82,8 +94,7 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
   }, [onClose, state])
 
   useEffect(() => {
-    if (!pixKey)     { setState('noPix'); return }
-    if (!cob.cpf)    { setState('noCpf'); return }
+    if (!pixKey) { setState('noPix'); return }
     generate()
   }, [])
 
@@ -91,40 +102,38 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
     setState('loading')
     setErrMsg('')
 
-    // Itens discriminados — aparecem no corpo do boleto
+    // Itens discriminados — exibidos no app do pagador
     const additionalInfo = []
-    if (cob.value > 0)            additionalInfo.push({ key: 'Aluguel',          value: fmtCi(cob.value) })
+    if (cob.value > 0)            additionalInfo.push({ key: 'Aluguel',           value: fmtCi(cob.value) })
     if (cob.seguroFinanceiro > 0) additionalInfo.push({ key: 'Seguro Financeiro', value: fmtCi(cob.seguroFinanceiro) })
     if (cob.seguroIncendio   > 0) additionalInfo.push({ key: 'Seguro Incêndio',   value: fmtCi(cob.seguroIncendio) })
     if (cob.iptu             > 0) additionalInfo.push({ key: 'IPTU',              value: fmtCi(cob.iptu) })
     additionalInfo.push({ key: 'Total', value: fmtCi(cob.totalValue) })
 
-    // Descrição resumida para o campo comment (aparece no extrato e no histórico)
     const comment = [
       `Aluguel ref. ${refLabel(cob.mesRef)}`,
       cob.property ? `– ${cob.property}` : '',
     ].filter(Boolean).join(' ')
+
+    // Expira na data de vencimento + 3 dias de carência.
+    // Bancos como Itaú, Bradesco, Nubank e C6 permitem ao pagador
+    // agendar o pagamento ao ler um código com vencimento futuro.
+    const expiresIn = calcExpiresIn(cob.mesRef, cob.dueDay)
 
     try {
       const res = await fetch('/.netlify/functions/openpix-create-charge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          value:          Math.round(cob.totalValue * 100),
-          correlationID:  cob.id,
+          value:         Math.round(cob.totalValue * 100),
+          correlationID: cob.id,
           comment,
           additionalInfo,
-          clientPixKey:   pixKey,
-          dueDate:        calcDueDate(cob.mesRef, cob.dueDay),
-          customer: {
-            name:  cob.tenant,
-            taxID: cob.cpf,
-            email: cob.email || undefined,
-          },
+          clientPixKey:  pixKey,
+          expiresIn,
         }),
       })
 
-      // Garante parse seguro — evita crash se resposta não for JSON
       const raw = await res.text()
       let data
       try { data = JSON.parse(raw) } catch {
@@ -137,8 +146,8 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
         return
       }
 
-      if (!res.ok || data.error) { setErrMsg(data.error || 'Erro ao gerar boleto'); setState('error'); return }
-      setBoletoData(data)
+      if (!res.ok || data.error) { setErrMsg(data.error || 'Erro ao gerar cobrança'); setState('error'); return }
+      setChargeData(data)
       setState('ok')
     } catch (err) {
       setErrMsg(err.message)
@@ -146,11 +155,14 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
     }
   }
 
-  const copy = (text, setter) => {
-    navigator.clipboard.writeText(text)
-    setter(true)
-    setTimeout(() => setter(false), 2500)
+  const copy = () => {
+    if (!chargeData?.brCode) return
+    navigator.clipboard.writeText(chargeData.brCode)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2500)
   }
+
+  const dueLabel = fmtDate(calcDueDate(cob.mesRef, cob.dueDay))
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -159,9 +171,9 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center text-lg">🏦</div>
+            <div className="w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center text-lg">💳</div>
             <div>
-              <p className="font-bold text-slate-900 text-sm">Boleto Bancário</p>
+              <p className="font-bold text-slate-900 text-sm">Cobrança</p>
               <p className="text-xs text-slate-400">{cob.tenant} · {refLabel(cob.mesRef)}</p>
             </div>
           </div>
@@ -176,7 +188,7 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
         {state === 'loading' && (
           <div className="flex flex-col items-center justify-center py-16 gap-4">
             <div className="w-10 h-10 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"/>
-            <p className="text-sm text-slate-500">Emitindo boleto…</p>
+            <p className="text-sm text-slate-500">Gerando cobrança…</p>
           </div>
         )}
 
@@ -190,21 +202,11 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
           </div>
         )}
 
-        {/* Sem CPF do inquilino */}
-        {state === 'noCpf' && (
-          <div className="p-6 text-center">
-            <p className="text-4xl mb-3">📋</p>
-            <p className="font-semibold text-slate-800 mb-1">CPF do inquilino não cadastrado</p>
-            <p className="text-sm text-slate-500 mb-4">O CPF é obrigatório para emissão de boleto bancário. Atualize o cadastro de <strong>{cob.tenant}</strong> em Clientes.</p>
-            <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm">Fechar</button>
-          </div>
-        )}
-
         {/* Erro */}
         {state === 'error' && (
           <div className="p-6 text-center">
             <p className="text-4xl mb-3">⚠️</p>
-            <p className="font-semibold text-slate-800 mb-1">Erro ao emitir boleto</p>
+            <p className="font-semibold text-slate-800 mb-1">Erro ao gerar cobrança</p>
             <p className="text-sm text-red-500 bg-red-50 rounded-xl px-4 py-3 mb-4">{errMsg}</p>
             <div className="flex gap-3">
               <button onClick={generate} className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm">Tentar novamente</button>
@@ -214,68 +216,37 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
         )}
 
         {/* Sucesso */}
-        {state === 'ok' && boletoData && (
+        {state === 'ok' && chargeData && (
           <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
 
             {/* Vencimento */}
-            {boletoData.dueDate && (
+            {dueLabel && dueLabel !== '—' && (
               <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
                 <span className="text-xs font-semibold text-amber-700">Vencimento</span>
-                <span className="text-sm font-bold text-amber-800">{fmtDate(boletoData.dueDate)}</span>
+                <span className="text-sm font-bold text-amber-800">{dueLabel}</span>
               </div>
             )}
 
-            {/* Linha digitável */}
-            {boletoData.digitableLine && (
-              <div>
-                <p className="text-xs font-semibold text-slate-400 mb-1.5">LINHA DIGITÁVEL</p>
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
-                  <p className="text-xs text-slate-700 font-mono tracking-wide break-all">{boletoData.digitableLine}</p>
-                  <button
-                    onClick={() => copy(boletoData.digitableLine, setCopiedLine)}
-                    className={`w-full flex items-center justify-center gap-1.5 text-xs font-semibold py-1.5 rounded-lg transition-all ${
-                      copiedLine ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`}>
+            {/* QR Code */}
+            {chargeData.brCode && (
+              <div className="flex flex-col items-center gap-3">
+                <p className="text-xs font-semibold text-slate-400 self-start">CÓDIGO DE PAGAMENTO</p>
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=192x192&data=${encodeURIComponent(chargeData.brCode)}`}
+                  alt="QR Code"
+                  className="w-48 h-48 rounded-2xl border border-slate-100 shadow-sm"
+                />
+                {/* Copia-e-cola */}
+                <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                  <p className="text-xs text-slate-600 font-mono break-all leading-relaxed">{chargeData.brCode.slice(0, 60)}…</p>
+                  <button onClick={copy}
+                    className={`w-full flex items-center justify-center gap-1.5 text-xs font-semibold py-2 rounded-lg transition-all ${
+                      copied ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`}>
                     <IcCopy c="w-3 h-3"/>
-                    {copiedLine ? 'Copiado!' : 'Copiar linha digitável'}
+                    {copied ? '✓ Copiado!' : 'Copiar código'}
                   </button>
                 </div>
               </div>
-            )}
-
-            {/* PDF do boleto */}
-            {boletoData.bankSlipUrl && (
-              <a href={boletoData.bankSlipUrl} target="_blank" rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-slate-800 text-white text-sm font-semibold hover:bg-slate-700 transition-colors">
-                📄 Abrir PDF do Boleto
-              </a>
-            )}
-
-            {/* PIX embutido (opcional, colapsável) */}
-            {boletoData.brCode && (
-              <details className="group">
-                <summary className="cursor-pointer text-xs font-semibold text-slate-400 hover:text-slate-600 list-none flex items-center gap-1.5">
-                  <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
-                  Pagar via PIX (opcional)
-                </summary>
-                <div className="mt-2 space-y-2">
-                  <div className="flex justify-center">
-                    <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(boletoData.brCode)}`}
-                      alt="QR Code PIX"
-                      className="w-40 h-40 rounded-xl border border-slate-100"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-2.5">
-                    <p className="flex-1 text-xs text-slate-600 font-mono truncate">{boletoData.brCode}</p>
-                    <button onClick={() => copy(boletoData.brCode, setCopiedPix)}
-                      className={`flex-shrink-0 flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg transition-all ${
-                        copiedPix ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`}>
-                      <IcCopy c="w-3 h-3"/>
-                      {copiedPix ? 'Copiado!' : 'Copiar'}
-                    </button>
-                  </div>
-                </div>
-              </details>
             )}
 
             {/* Discriminativo */}
@@ -309,8 +280,200 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
             </div>
 
             <p className="text-center text-xs text-slate-400">
-              Taxa ImobiNota: {fmt((boletoData.fee || 299) / 100)} · Você recebe {fmt((boletoData.clientSplit || 0) / 100)} após compensação
+              Taxa ImobiNota: {fmt((chargeData.fee || 299) / 100)} · Você recebe {fmt((chargeData.clientSplit || 0) / 100)} após compensação
             </p>
+
+            <button onClick={onClose} className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50">Fechar</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Modal de emissão de NFS-e ─────────────────────────────────────
+function NfseModal({ cob, user, onClose }) {
+  const [state, setState]       = useState('idle') // idle | loading | ok | error
+  const [result, setResult]     = useState(null)
+  const [errMsg, setErrMsg]     = useState('')
+  const [homolog, setHomolog]   = useState(false)
+
+  useEffect(() => {
+    const handle = e => { if (e.key === 'Escape' && state !== 'loading') onClose() }
+    document.addEventListener('keydown', handle)
+    return () => document.removeEventListener('keydown', handle)
+  }, [onClose, state])
+
+  const emitir = async () => {
+    setState('loading')
+    setErrMsg('')
+    try {
+      const res = await fetch('/.netlify/functions/nfse-emitir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId:     user.id,
+          cobId:      cob.id,
+          homologacao: homolog,
+          cobData: {
+            mesRef:           cob.mesRef,
+            tenant:           cob.tenant,
+            cpf:              cob.cpf,
+            email:            cob.email,
+            property:         cob.property,
+            totalValue:       cob.totalValue,
+            value:            cob.value,
+            seguroFinanceiro: cob.seguroFinanceiro,
+            seguroIncendio:   cob.seguroIncendio,
+            iptu:             cob.iptu,
+          },
+        }),
+      })
+
+      const raw = await res.text()
+      let data
+      try { data = JSON.parse(raw) } catch {
+        setErrMsg(res.status === 404 ? 'Função não encontrada (rode netlify dev).' : `Resposta inesperada (${res.status}): ${raw.slice(0,120)}`)
+        setState('error')
+        return
+      }
+
+      if (!res.ok || data.error) {
+        setErrMsg(data.error || data.detail || `Erro HTTP ${res.status}`)
+        setState('error')
+        return
+      }
+
+      setResult(data)
+      setState('ok')
+    } catch (err) {
+      setErrMsg(err.message)
+      setState('error')
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-emerald-100 rounded-xl flex items-center justify-center text-lg">📋</div>
+            <div>
+              <p className="font-bold text-slate-900 text-sm">Emitir NFS-e</p>
+              <p className="text-xs text-slate-400">{cob.tenant} · {refLabel(cob.mesRef)}</p>
+            </div>
+          </div>
+          {state !== 'loading' && (
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">
+              <IcClose c="w-4 h-4"/>
+            </button>
+          )}
+        </div>
+
+        {/* Idle — confirmação */}
+        {state === 'idle' && (
+          <div className="p-5 space-y-4">
+            <div className="bg-slate-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
+              {cob.value > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Aluguel</span><span className="font-medium">{fmt(cob.value)}</span>
+                </div>
+              )}
+              {cob.seguroFinanceiro > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Seguro Financeiro</span><span className="font-medium">{fmt(cob.seguroFinanceiro)}</span>
+                </div>
+              )}
+              {cob.seguroIncendio > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Seguro Incêndio</span><span className="font-medium">{fmt(cob.seguroIncendio)}</span>
+                </div>
+              )}
+              {cob.iptu > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>IPTU</span><span className="font-medium">{fmt(cob.iptu)}</span>
+                </div>
+              )}
+              <div className="border-t border-slate-200 pt-1.5 mt-1 flex justify-between font-bold text-slate-800">
+                <span>Total</span><span>{fmt(cob.totalValue)}</span>
+              </div>
+            </div>
+
+            {/* Toggle de ambiente */}
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <div className={`w-9 h-5 rounded-full transition-colors relative ${homolog ? 'bg-amber-400' : 'bg-slate-200'}`}
+                onClick={() => setHomolog(v => !v)}>
+                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${homolog ? 'translate-x-4' : 'translate-x-0.5'}`}/>
+              </div>
+              <span className="text-xs font-medium text-slate-600">
+                {homolog ? '⚠️ Homologação (teste)' : '✅ Produção'}
+              </span>
+            </label>
+            {homolog && (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Ambiente de teste — a NFS-e não terá validade fiscal.
+              </p>
+            )}
+
+            <div className="flex gap-3">
+              <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50">Cancelar</button>
+              <button onClick={emitir}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700 flex items-center justify-center gap-2">
+                <IcReceipt c="w-4 h-4"/> Emitir NFS-e
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Loading */}
+        {state === 'loading' && (
+          <div className="flex flex-col items-center justify-center py-16 gap-4">
+            <div className="w-10 h-10 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"/>
+            <div className="text-center">
+              <p className="text-sm font-medium text-slate-700">Emitindo NFS-e…</p>
+              <p className="text-xs text-slate-400 mt-1">Assinando e enviando ao SEFIN Nacional</p>
+            </div>
+          </div>
+        )}
+
+        {/* Erro */}
+        {state === 'error' && (
+          <div className="p-6 text-center">
+            <p className="text-4xl mb-3">⚠️</p>
+            <p className="font-semibold text-slate-800 mb-1">Erro na emissão</p>
+            <p className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-3 mb-4 text-left">{errMsg}</p>
+            <div className="flex gap-3">
+              <button onClick={emitir} className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white font-semibold text-sm">Tentar novamente</button>
+              <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm">Fechar</button>
+            </div>
+          </div>
+        )}
+
+        {/* Sucesso */}
+        {state === 'ok' && result && (
+          <div className="p-5 space-y-4">
+            <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+              <span className="text-2xl">✅</span>
+              <div>
+                <p className="font-semibold text-emerald-800 text-sm">NFS-e emitida com sucesso!</p>
+                {result.numeroNfse && (
+                  <p className="text-xs text-emerald-600">Número: {result.numeroNfse}</p>
+                )}
+              </div>
+            </div>
+
+            {result.chaveAcesso && (
+              <div>
+                <p className="text-xs font-semibold text-slate-400 mb-1">CHAVE DE ACESSO</p>
+                <p className="text-xs text-slate-600 font-mono bg-slate-50 rounded-xl px-3 py-2 break-all">{result.chaveAcesso}</p>
+              </div>
+            )}
+
+            <div className="text-xs text-slate-400 text-center">
+              DPS nº {result.numeroDps} · {refLabel(cob.mesRef)} · {fmt(cob.totalValue)}
+            </div>
 
             <button onClick={onClose} className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50">Fechar</button>
           </div>
@@ -322,9 +485,9 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
 
 // ── Opções de ação no BatchModal ──────────────────────────────────
 const BATCH_ACTIONS = [
-  { id: 'boleto', label: 'Somente Boletos', icon: '💳', desc: 'Gera e envia boletos bancários para cada inquilino' },
-  { id: 'nfse',   label: 'Somente NFS-e',  icon: '📄', desc: 'Emite notas fiscais de serviço (em breve)' },
-  { id: 'ambos',  label: 'Boleto + NFS-e', icon: '⚡', desc: 'Gera boleto e emite NFS-e juntos (em breve)' },
+  { id: 'boleto', label: 'Somente Cobranças', icon: '💳', desc: 'Gera e registra cobranças para cada inquilino' },
+  { id: 'nfse',   label: 'Somente NFS-e',    icon: '📄', desc: 'Emite notas fiscais de serviço (em breve)' },
+  { id: 'ambos',  label: 'Cobrança + NFS-e', icon: '⚡', desc: 'Gera cobrança e emite NFS-e juntos (em breve)' },
 ]
 
 // ── Modal Gerar e Enviar em Massa ─────────────────────────────────
@@ -466,7 +629,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
             {/* Aviso se sem chave PIX */}
             {needsPix && !pixKey && (
               <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
-                ⚠️ Configure sua chave PIX de recebimento em <strong>Configurações → Integrações</strong> antes de gerar boletos.
+                ⚠️ Configure sua chave PIX de recebimento em <strong>Configurações → Integrações</strong> antes de gerar cobranças.
               </div>
             )}
 
@@ -579,6 +742,7 @@ export default function Cobrancas() {
   const [updatingId, setUpdatingId] = useState(null)
   const [pixKey, setPixKey]       = useState(null)
   const [boletoCob, setBoletoCob] = useState(null)
+  const [nfseCob, setNfseCob]     = useState(null) // cobrança selecionada para NFS-e
 
   // Carrega chave PIX do perfil
   useEffect(() => {
@@ -774,14 +938,21 @@ export default function Cobrancas() {
                       <div className="w-4 h-4 border-2 border-slate-200 border-t-indigo-500 rounded-full animate-spin inline-block"/>
                     ) : (
                       <div className="flex items-center justify-end gap-2 flex-wrap">
-                        {/* Boleto PIX — apenas para cobranças não pagas */}
+                        {/* Gerar Cobrança — apenas para cobranças não pagas */}
                         {c.status !== 'Pago' && (
                           <button onClick={() => setBoletoCob(c)}
                             className="flex items-center gap-1 text-xs text-indigo-600 font-semibold border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors">
                             <IcQR c="w-3 h-3"/>
-                            Boleto PIX
+                            Gerar Cobrança
                           </button>
                         )}
+
+                        {/* Emitir NFS-e */}
+                        <button onClick={() => setNfseCob(c)}
+                          className="flex items-center gap-1 text-xs text-emerald-700 font-semibold border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors">
+                          <IcReceipt c="w-3 h-3"/>
+                          Emitir NFS-e
+                        </button>
 
                         {c.status === 'Pago' ? (
                           <span className="text-xs text-slate-300">—</span>
@@ -832,6 +1003,14 @@ export default function Cobrancas() {
           cob={boletoCob}
           pixKey={pixKey}
           onClose={() => setBoletoCob(null)}
+        />
+      )}
+
+      {nfseCob && (
+        <NfseModal
+          cob={nfseCob}
+          user={user}
+          onClose={() => setNfseCob(null)}
         />
       )}
     </div>
