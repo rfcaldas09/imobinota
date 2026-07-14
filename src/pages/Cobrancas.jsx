@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useSubscription } from '../contexts/SubscriptionContext'
@@ -987,6 +988,7 @@ function AdicionarCobrancaModal({ contracts, user, onClose, onDone }) {
 export default function Cobrancas() {
   const { user }    = useAuth()
   const { isActive } = useSubscription()
+  const navigate    = useNavigate()
   const [showWizard, setShowWizard] = useState(false)
   const [mesRef, setMesRef]       = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
   const [cobrancas, setCobrancas] = useState([])
@@ -1103,9 +1105,14 @@ export default function Cobrancas() {
             className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-50 shadow-sm whitespace-nowrap">
             <IcPlus c="w-4 h-4"/> Adicionar Cobrança
           </button>
-          <button onClick={() => setShowBatch(true)}
-            className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:from-indigo-700 hover:to-purple-700 shadow-md shadow-indigo-200 whitespace-nowrap">
-            <IcZap c="w-4 h-4"/> Gerar e Enviar Tudo
+          <button onClick={() => isActive ? setShowBatch(true) : navigate('/plano')}
+            title={!isActive ? 'Assine um plano para usar esta função' : ''}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm shadow-md whitespace-nowrap ${
+              isActive
+                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700 shadow-indigo-200'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+            }`}>
+            {isActive ? <IcZap c="w-4 h-4"/> : '🔒'} Gerar e Enviar Tudo
           </button>
         </div>
       </div>
@@ -1160,9 +1167,9 @@ export default function Cobrancas() {
                 : `Nenhuma cobrança ${filter.toLowerCase()} em ${currentMonth}`}
             </p>
             {cobrancas.length === 0 && (
-              <button onClick={() => setShowBatch(true)}
+              <button onClick={() => isActive ? setShowBatch(true) : navigate('/plano')}
                 className="mt-4 text-indigo-600 text-sm font-semibold hover:underline">
-                + Gerar cobranças para este mês
+                {isActive ? '+ Gerar cobranças para este mês' : '🔒 Assine um plano para gerar cobranças'}
               </button>
             )}
           </div>
@@ -1201,29 +1208,27 @@ export default function Cobrancas() {
                     {updatingId === c.id ? (
                       <div className="w-4 h-4 border-2 border-slate-200 border-t-indigo-500 rounded-full animate-spin inline-block"/>
                     ) : (
-                      <div className="flex items-center justify-end gap-2 flex-wrap">
-                        {/* Gerar Cobrança — apenas para cobranças não pagas */}
-                        {c.status !== 'Pago' && (
-                          <button
-                            onClick={() => isActive ? setBoletoCob(c) : null}
-                            disabled={!isActive}
-                            title={!isActive ? 'Assine um plano para gerar cobranças' : ''}
-                            className={`flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors ${
-                              isActive
-                                ? 'text-indigo-600 border-indigo-200 bg-indigo-50 hover:bg-indigo-100'
-                                : 'text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed'
-                            }`}>
-                            <IcQR c="w-3 h-3"/>
-                            {isActive ? 'Gerar Cobrança' : '🔒 Gerar Cobrança'}
-                          </button>
-                        )}
+                      <div className="flex flex-col items-end gap-1.5">
+                        {/* Linha 1 — Gerar Cobrança */}
+                        <button
+                          onClick={() => isActive ? setBoletoCob(c) : null}
+                          disabled={!isActive}
+                          title={!isActive ? 'Assine um plano para gerar cobranças' : ''}
+                          className={`flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors w-full justify-center ${
+                            isActive
+                              ? 'text-indigo-600 border-indigo-200 bg-indigo-50 hover:bg-indigo-100'
+                              : 'text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed'
+                          }`}>
+                          <IcQR c="w-3 h-3"/>
+                          {isActive ? 'Gerar Cobrança' : '🔒 Gerar Cobrança'}
+                        </button>
 
-                        {/* Emitir NFS-e */}
+                        {/* Linha 2 — Emitir NFS-e */}
                         <button
                           onClick={() => isActive ? setNfseCob(c) : null}
                           disabled={!isActive}
                           title={!isActive ? 'Assine um plano para emitir NFS-e' : ''}
-                          className={`flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors ${
+                          className={`flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors w-full justify-center ${
                             isActive
                               ? 'text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100'
                               : 'text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed'
@@ -1232,10 +1237,11 @@ export default function Cobrancas() {
                           {isActive ? 'Emitir NFS-e' : '🔒 Emitir NFS-e'}
                         </button>
 
+                        {/* Linha 3 — Marcar Pago + status */}
                         {c.status === 'Pago' ? (
-                          <span className="text-xs text-slate-300">—</span>
+                          <span className="text-xs text-slate-300 w-full text-center">—</span>
                         ) : (
-                          <>
+                          <div className="flex items-center gap-2 w-full justify-end">
                             <button onClick={() => updateStatus(c.id, 'Pago')}
                               className="text-xs text-emerald-600 font-semibold hover:underline whitespace-nowrap">
                               ✓ Marcar Pago
@@ -1252,7 +1258,7 @@ export default function Cobrancas() {
                                 Pendente
                               </button>
                             )}
-                          </>
+                          </div>
                         )}
                       </div>
                     )}
@@ -1272,7 +1278,7 @@ export default function Cobrancas() {
           contracts={contracts}
           user={user}
           pixKey={pixKey}
-          mesRef={mesStr(mesRef)}
+          mesRef={mesRef}
           onClose={() => setShowBatch(false)}
           onDone={() => { setShowBatch(false); load() }}
         />

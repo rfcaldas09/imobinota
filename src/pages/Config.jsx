@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { LC116 } from '../lib/lc116'
 
 // ── Criptografia da senha do certificado (AES-128-CBC via SubtleCrypto) ─
 async function encryptPassword(password, keyHex) {
@@ -156,6 +157,67 @@ function Inp({ value, onChange, type='text', placeholder='', mono=false, disable
   )
 }
 
+// ── Dropdown pesquisável LC 116 ───────────────────────────────────
+function Lc116Picker({ value, onChange }) {
+  const [search, setSearch] = useState('')
+  const [open, setOpen]     = useState(false)
+  const ref                 = useRef(null)
+
+  const selected = LC116.find(s => s.cod === value)
+  const filtered = search.trim()
+    ? LC116.filter(s =>
+        s.cod.includes(search.trim()) ||
+        s.desc.toLowerCase().includes(search.trim().toLowerCase())
+      )
+    : LC116
+
+  // Fecha ao clicar fora
+  useEffect(() => {
+    const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  return (
+    <div ref={ref}>
+      <label className="text-xs font-medium text-slate-500 block mb-1">Código serviço LC 116</label>
+      <div className="relative">
+        <button type="button" onClick={() => setOpen(o => !o)}
+          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white text-left flex items-center justify-between focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <span className={selected ? 'text-slate-800' : 'text-slate-400'}>
+            {selected ? `${selected.cod} — ${selected.desc}` : '— Selecione o código —'}
+          </span>
+          <span className="text-slate-400 ml-2">▾</span>
+        </button>
+        {open && (
+          <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
+            <div className="p-2 border-b border-slate-100">
+              <input autoFocus type="text" value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Digite o código (ex: 6.04) ou descrição (ex: academia)…"
+                className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
+            </div>
+            <div className="max-h-56 overflow-y-auto">
+              {filtered.length === 0 && (
+                <p className="text-xs text-slate-400 text-center py-4">Nenhum resultado</p>
+              )}
+              {filtered.map(s => (
+                <button key={s.cod} type="button"
+                  onClick={() => { onChange(s.cod); setSearch(''); setOpen(false) }}
+                  className={'w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 transition-colors ' +
+                    (s.cod === value ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-slate-700')}>
+                  <span className="font-mono text-xs text-slate-500 mr-2">{s.cod}</span>
+                  {s.desc}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      <p className="text-xs text-slate-400 mt-1">Conforme Lei Complementar 116/2003 — {LC116.length} códigos disponíveis</p>
+    </div>
+  )
+}
+
 export default function Config() {
   const { user } = useAuth()
   const [tab, setTab]           = useState('empresa')
@@ -183,13 +245,11 @@ export default function Config() {
     certPassword: '',
     // Fiscal
     regime:    'simples',
-    nbs:       '1.05.01.09.00',
     aliquota:  '5,00',
     // NFS-e
     municipioIbge: '',
     municipioNome: '',
-    codigoServico: '6.05',
-    serie:         'IMOB',
+    codigoServico: '6.04',
     logradouro:    '',
     numeroEnd:     '',
     bairro:        '',
@@ -236,13 +296,11 @@ export default function Config() {
           certPassword: '',
           // Fiscal
           regime:   data?.regime_tributario  || 'simples',
-          nbs:      data?.nbs_servico        || '',
           aliquota: data?.aliquota_iss       || '',
           // NFS-e
           municipioIbge: data?.nfse_municipio_ibge  || '',
           municipioNome: data?.nfse_municipio_nome  || '',
-          codigoServico: data?.nfse_codigo_servico  || '6.05',
-          serie:         data?.nfse_serie           || 'IMOB',
+          codigoServico: data?.nfse_codigo_servico  || '6.04',
           logradouro:    data?.nfse_logradouro      || '',
           numeroEnd:     data?.nfse_numero_end      || '',
           bairro:        data?.nfse_bairro          || '',
@@ -288,13 +346,12 @@ export default function Config() {
     } else if (tab === 'fiscal') {
       Object.assign(payload, {
         regime_tributario:  f.regime,
-        nbs_servico:        f.nbs,
         aliquota_iss:       f.aliquota,
         // NFS-e
         nfse_municipio_ibge: f.municipioIbge,
         nfse_municipio_nome: f.municipioNome,
         nfse_codigo_servico: f.codigoServico,
-        nfse_serie:          f.serie,
+        nfse_serie:          'NFSE',
         nfse_logradouro:     f.logradouro,
         nfse_numero_end:     f.numeroEnd,
         nfse_bairro:         f.bairro,
@@ -596,17 +653,10 @@ export default function Config() {
                   <option value="mei">MEI</option>
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">Alíquota ISS (%)</label>
-                  <Inp value={f.aliquota} onChange={e => set('aliquota', maskAliquota(e.target.value))} placeholder="2,00"/>
-                  <p className="text-xs text-slate-400 mt-1">Ex: 2,00 para administração de imóveis</p>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">Cód. NBS (opcional)</label>
-                  <Inp value={f.nbs} onChange={e => set('nbs', maskNbs(e.target.value))} mono placeholder="1.05.01.09.00"/>
-                  <p className="text-xs text-slate-400 mt-1">1.05.01.09.00 = Adm. imóveis</p>
-                </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 block mb-1">Alíquota ISS (%)</label>
+                <Inp value={f.aliquota} onChange={e => set('aliquota', maskAliquota(e.target.value))} placeholder="2,00"/>
+                <p className="text-xs text-slate-400 mt-1">Confirme com a prefeitura do seu município. Geralmente entre 2% e 5%.</p>
               </div>
             </div>
           </Section>
@@ -643,24 +693,8 @@ export default function Config() {
                 )}
               </div>
 
-              {/* Código serviço LC 116 e Série */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">Código serviço LC 116</label>
-                  <select value={f.codigoServico} onChange={e => set('codigoServico', e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <option value="6.05">6.05 — Agenciamento de imóveis</option>
-                    <option value="11.04">11.04 — Administração de negócios</option>
-                    <option value="17.06">17.06 — Assessoria, análise, consultoria</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">Série DPS</label>
-                  <Inp value={f.serie} onChange={e => set('serie', e.target.value.toUpperCase().slice(0,5))}
-                    mono placeholder="IMOB"/>
-                  <p className="text-xs text-slate-400 mt-1">Máx. 5 chars (ex: IMOB)</p>
-                </div>
-              </div>
+              {/* Código serviço LC 116 — dropdown pesquisável */}
+              <Lc116Picker value={f.codigoServico} onChange={v => set('codigoServico', v)} />
 
               {/* Endereço completo do prestador (para DPS) */}
               <div>
