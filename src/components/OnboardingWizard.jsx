@@ -254,11 +254,16 @@ export function useOnboarding() {
     const done = !!localStorage.getItem(obKey(user.id))
     const { data } = await supabase
       .from('profiles')
-      .select('pix_key_recebimento')
+      .select('pix_key_recebimento, company_name, cnpj')
       .eq('id', user.id)
       .maybeSingle()
     const pixSet = !!data?.pix_key_recebimento
-    setState({ loading: false, wizardOpen: !done, pixSet })
+    // Usuário já tem dados cadastrados — marca como concluído e não abre wizard
+    const profileComplete = !!(data?.company_name && data?.cnpj)
+    if (profileComplete && !done) {
+      localStorage.setItem(obKey(user.id), '1')
+    }
+    setState({ loading: false, wizardOpen: !done && !profileComplete, pixSet })
   }, [user])
 
   useEffect(() => { check() }, [check])
@@ -748,11 +753,26 @@ export default function OnboardingWizard({ onComplete }) {
     navigate(path)
   }
 
+  // Fechar/dispensar wizard — seta localStorage para não reabrir
+  const handleClose = () => {
+    if (user) localStorage.setItem(obKey(user.id), '1')
+    onComplete?.()
+  }
+
   const handleSkip = () => setStep(s => s + 1)
 
   return (
     <div className="fixed inset-0 z-[200] bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-auto overflow-hidden">
+
+        {/* Botão fechar */}
+        <div className="flex justify-end pt-4 pr-4 pb-0">
+          <button onClick={handleClose}
+            title="Fechar"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors text-lg">
+            ✕
+          </button>
+        </div>
 
         {step > 0 && !isDone && (
           <div className="h-1.5 bg-slate-100">
@@ -761,7 +781,7 @@ export default function OnboardingWizard({ onComplete }) {
           </div>
         )}
 
-        <div className="p-8">
+        <div className="p-8 pt-4">
           {step > 0 && !isDone && (
             <div className="flex items-center gap-2 mb-5 overflow-x-auto pb-1">
               {CONTENT_STEPS.map((s, i) => (
