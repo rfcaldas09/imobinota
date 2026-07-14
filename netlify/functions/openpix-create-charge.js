@@ -61,7 +61,7 @@ async function handle(event) {
   const chargeBody = {
     value:         Number(value),
     correlationID: String(correlationID),
-    comment:       comment || 'Cobrança ImobiNota',
+    comment:       (comment || 'Cobranca NotaFacil').replace(/[^\x00-\x7F]/g, ''),
     expiresIn:     Number(expiresIn) || 30 * 24 * 3600, // padrão 30 dias
     ...(Array.isArray(additionalInfo) && additionalInfo.length > 0 ? { additionalInfo } : {}),
     ...(clientPixKey && splitValue > 0 ? {

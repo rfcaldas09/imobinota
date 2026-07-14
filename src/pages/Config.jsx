@@ -325,7 +325,7 @@ export default function Config() {
           const subRes = await fetch('/.netlify/functions/openpix-create-subaccount', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: f.company || 'Cliente ImobiNota', pixKey: f.pixKeyRecebimento }),
+            body: JSON.stringify({ name: f.company || 'Cliente NotaFacil', pixKey: f.pixKeyRecebimento }),
           })
           const subData = await subRes.json()
           if (!subRes.ok && subRes.status !== 404) {
@@ -724,7 +724,7 @@ export default function Config() {
             <div className="space-y-3">
               <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5 text-xs text-emerald-700">
                 <span>✅</span>
-                <span>O envio é feito pela infraestrutura do ImobiNota — configure apenas o nome e o e-mail de resposta abaixo.</span>
+                <span>O envio é feito pela infraestrutura do NotaFacil — configure apenas o nome e o e-mail de resposta abaixo.</span>
               </div>
               <Row label="Nome de exibição" hint='Aparece no campo "De:" para o inquilino'>
                 <Inp value={f.fromName} onChange={e => set('fromName', e.target.value)} placeholder="Ex: Vasselai Imóveis"/>
@@ -929,7 +929,7 @@ export default function Config() {
             <h3 className="font-semibold text-slate-800 mb-3 text-sm">ℹ️ Como funciona</h3>
             <ol className="space-y-2 text-xs text-slate-500 leading-relaxed">
               <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">1.</span>Seu inquilino recebe o boleto e paga via PIX.</li>
-              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">2.</span>O ImobiNota retém a taxa de serviço de R$ 2,99 por boleto pago.</li>
+              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">2.</span>O NotaFacil retém a taxa de serviço de R$ 2,99 por boleto pago.</li>
               <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">3.</span>O restante é transferido instantaneamente para a sua chave PIX acima.</li>
               <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">4.</span>Você vê tudo no dashboard em tempo real. Nenhuma ação manual necessária.</li>
             </ol>

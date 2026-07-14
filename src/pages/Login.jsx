@@ -34,7 +34,7 @@ export default function Login() {
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 w-full max-w-sm p-8">
         {/* Logo */}
         <div className="flex justify-center mb-6">
-          <img src="/logo-imobinota.png" alt="ImobiNota" className="h-12 w-auto" />
+          <img src="/logo-notafacil.png" alt="NotaFacil" className="h-12 w-auto" />
         </div>
 
         {/* Tabs */}

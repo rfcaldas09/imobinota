@@ -13,7 +13,7 @@ const CURRENT = {
 const PLANS = {
   essencial: {
     id:       'essencial',
-    name:     'ImobiNota Essencial',
+    name:     'NotaFacil Essencial',
     price:    297,
     color:    'indigo',
     features: [
@@ -33,7 +33,7 @@ const PLANS = {
   },
   pro: {
     id:       'pro',
-    name:     'ImobiNota Pro',
+    name:     'NotaFacil Pro',
     price:    497,
     color:    'purple',
     features: [
@@ -211,7 +211,7 @@ function PixPanel({ plan, onClose }) {
 
       <p className="text-xs text-slate-400 mt-4 text-center leading-relaxed">
         Após o pagamento o acesso é liberado automaticamente em até 1h útil.
-        Dúvidas? <strong className="text-slate-600">financeiro@imobinota.com.br</strong>
+        Dúvidas? <strong className="text-slate-600">financeiro@notafacil.com.br</strong>
       </p>
     </div>
   )
@@ -234,7 +234,7 @@ export default function Plano() {
     <div className="p-6 max-w-2xl mx-auto space-y-4">
       <div className="mb-2">
         <h1 className="text-xl font-bold text-slate-900">Meu Plano</h1>
-        <p className="text-sm text-slate-500">Gerencie sua assinatura do ImobiNota</p>
+        <p className="text-sm text-slate-500">Gerencie sua assinatura do NotaFacil</p>
       </div>
 
       {/* Status do plano atual */}

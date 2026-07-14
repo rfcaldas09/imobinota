@@ -110,10 +110,11 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
     if (cob.iptu             > 0) additionalInfo.push({ key: 'IPTU',              value: fmtCi(cob.iptu) })
     additionalInfo.push({ key: 'Total', value: fmtCi(cob.totalValue) })
 
+    // Apenas ASCII — OpenPIX rejeita Unicode especial (en-dash, etc.) como "emoji"
     const comment = [
       `Aluguel ref. ${refLabel(cob.mesRef)}`,
-      cob.property ? `– ${cob.property}` : '',
-    ].filter(Boolean).join(' ')
+      cob.property ? `- ${cob.property}` : '',
+    ].filter(Boolean).join(' ').replace(/[^\x00-\x7F]/g, '')
 
     // Expira na data de vencimento + 3 dias de carência.
     // Bancos como Itaú, Bradesco, Nubank e C6 permitem ao pagador
@@ -280,7 +281,7 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
             </div>
 
             <p className="text-center text-xs text-slate-400">
-              Taxa ImobiNota: {fmt((chargeData.fee || 299) / 100)} · Você recebe {fmt((chargeData.clientSplit || 0) / 100)} após compensação
+              Taxa NotaFacil: {fmt((chargeData.fee || 299) / 100)} · Você recebe {fmt((chargeData.clientSplit || 0) / 100)} após compensação
             </p>
 
             <button onClick={onClose} className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50">Fechar</button>

@@ -265,7 +265,7 @@ function buildDpsXml(cfg, cob, homologacao) {
 `<infDPS xmlns="${ns}" Id="${id}" versao="1.00">\n` +
 `<tpAmb>${tpAmb}</tpAmb>\n` +
 `<dhEmi>${dhEmi}</dhEmi>\n` +
-`<verAplic>IMOBINOTA-1.0</verAplic>\n` +
+`<verAplic>NOTAFACIL-1.0</verAplic>\n` +
 `<serie>${escXml(cfg.serie.trim())}</serie>\n` +
 `<nDPS>${cfg.numero}</nDPS>\n` +
 `<dCompet>${mesRef}</dCompet>\n` +

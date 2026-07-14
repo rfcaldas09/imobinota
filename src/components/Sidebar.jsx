@@ -3,11 +3,11 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { IcHome, IcFile, IcDollar, IcTrend, IcSettings, IcUsers, IcLogout } from './Icons'
 
-const LOGO_URL = '/logo-imobinota.png'
+const LOGO_URL = '/logo-notafacil.png'
 
 // Dados do plano (mock — virão do Supabase em produção)
 const PLAN = {
-  name: 'ImobiNota Essencial',
+  name: 'NotaFacil Essencial',
   renewDate: '18/07/2026',
   totalDays: 30,
   usedDays: 19,
@@ -41,7 +41,7 @@ export default function Sidebar() {
     <aside className="w-56 flex-shrink-0 bg-white border-r border-slate-100 flex flex-col h-screen">
       {/* Logo */}
       <div className="px-4 pt-5 pb-4 border-b border-slate-100 flex items-center justify-center">
-        <img src={LOGO_URL} alt="ImobiNota" className="h-12 w-auto" style={{ maxHeight: 48 }} />
+        <img src={LOGO_URL} alt="NotaFacil" className="h-12 w-auto" style={{ maxHeight: 48 }} />
       </div>
 
       {/* Nav */}

@@ -35,9 +35,9 @@ exports.handler = async (event) => {
       const html = `
         <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
           <h2 style="color:#4f46e5;margin-bottom:8px">✅ Configuração funcionando!</h2>
-          <p style="color:#475569">Este é um e-mail de teste enviado pelo <strong>ImobiNota</strong>
+          <p style="color:#475569">Este é um e-mail de teste enviado pelo <strong>NotaFacil</strong>
             em nome de <strong>${fromName || 'sua empresa'}</strong>.</p>
-          <p style="color:#94a3b8;font-size:12px;margin-top:24px">Remetente: ${fromName || 'ImobiNota'} &lt;${fromAddr}&gt;</p>
+          <p style="color:#94a3b8;font-size:12px;margin-top:24px">Remetente: ${fromName || 'NotaFacil'} &lt;${fromAddr}&gt;</p>
         </div>`
 
       const res = await fetch('https://api.resend.com/emails', {
@@ -47,12 +47,12 @@ exports.handler = async (event) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from:    `${fromName || 'ImobiNota'} <${fromAddr}>`,
+          from:    `${fromName || 'NotaFacil'} <${fromAddr}>`,
           to:      [to],
           ...(replyTo ? { reply_to: replyTo } : {}),
-          subject: 'Teste de e-mail — ImobiNota',
+          subject: 'Teste de e-mail — NotaFacil',
           html,
-          text:    `Configuração funcionando! E-mail de teste do ImobiNota em nome de ${fromName || 'sua empresa'}.`,
+          text:    `Configuração funcionando! E-mail de teste do NotaFacil em nome de ${fromName || 'sua empresa'}.`,
         }),
       })
 
@@ -76,8 +76,8 @@ exports.handler = async (event) => {
       const html = `
         <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
           <h2 style="color:#4f46e5;margin-bottom:8px">✅ Configuração SMTP funcionando!</h2>
-          <p style="color:#475569">Este é um e-mail de teste enviado pelo <strong>ImobiNota</strong> via SMTP.</p>
-          <p style="color:#94a3b8;font-size:12px;margin-top:24px">De: ${fromName || 'ImobiNota'} &lt;${fromEmail}&gt;</p>
+          <p style="color:#475569">Este é um e-mail de teste enviado pelo <strong>NotaFacil</strong> via SMTP.</p>
+          <p style="color:#94a3b8;font-size:12px;margin-top:24px">De: ${fromName || 'NotaFacil'} &lt;${fromEmail}&gt;</p>
         </div>`
 
       const transporter = nodemailer.createTransport({
@@ -89,12 +89,12 @@ exports.handler = async (event) => {
       })
 
       await transporter.sendMail({
-        from:    `${fromName || 'ImobiNota'} <${fromEmail}>`,
+        from:    `${fromName || 'NotaFacil'} <${fromEmail}>`,
         to,
         ...(replyTo ? { replyTo } : {}),
-        subject: 'Teste de e-mail — ImobiNota',
+        subject: 'Teste de e-mail — NotaFacil',
         html,
-        text:    'Configuração SMTP funcionando! E-mail de teste do ImobiNota.',
+        text:    'Configuração SMTP funcionando! E-mail de teste do NotaFacil.',
       })
 
       return { statusCode: 200, body: JSON.stringify({ ok: true }) }

@@ -159,7 +159,7 @@ function DashboardMockup() {
         <div className="w-3 h-3 rounded-full bg-red-400"/>
         <div className="w-3 h-3 rounded-full bg-amber-400"/>
         <div className="w-3 h-3 rounded-full bg-emerald-400"/>
-        <span className="text-slate-400 text-xs ml-3 font-mono">imobinota.com.br/dashboard</span>
+        <span className="text-slate-400 text-xs ml-3 font-mono">notafacil.com.br/dashboard</span>
       </div>
       <div className="flex">
         {/* Sidebar mini */}
@@ -309,7 +309,7 @@ export default function Landing() {
       <nav className="bg-white/95 backdrop-blur sticky top-0 z-50 border-b border-slate-100">
         <div className="max-w-6xl mx-auto px-6 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <img src="/logo-imobinota.png" alt="ImobiNota" className="h-9 w-auto"
+            <img src="/logo-notafacil.png" alt="NotaFacil" className="h-9 w-auto"
               onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex' }}/>
             <div className="hidden items-center gap-2">
               <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-black text-sm">IN</div>
@@ -403,7 +403,7 @@ export default function Landing() {
               A NFS-e Nacional é obrigatória a partir de <span className="text-amber-600">1º de agosto de 2026</span>
             </h2>
             <p className="text-slate-600 max-w-2xl mx-auto">
-              Gestoras que não se adaptarem estarão sujeitas a multas e impossibilidade de emitir cobranças. O ImobiNota já está pronto.
+              Gestoras que não se adaptarem estarão sujeitas a multas e impossibilidade de emitir cobranças. O NotaFacil já está pronto.
             </p>
           </div>
           <div className="grid md:grid-cols-3 gap-6 mb-10">
@@ -487,7 +487,7 @@ export default function Landing() {
           <div className="text-center mb-14">
             <span className="text-xs font-bold uppercase tracking-widest text-indigo-500 mb-3 block">A Solução</span>
             <h2 className="text-3xl font-black text-slate-900 mb-4">Uma plataforma. Zero planilha.</h2>
-            <p className="text-slate-500 text-lg max-w-xl mx-auto">O ImobiNota resolve cada uma dessas dores — e ainda te prepara para a nova regulação.</p>
+            <p className="text-slate-500 text-lg max-w-xl mx-auto">O NotaFacil resolve cada uma dessas dores — e ainda te prepara para a nova regulação.</p>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
             {[
@@ -545,7 +545,7 @@ export default function Landing() {
           <div className="grid md:grid-cols-3 gap-6">
             {[
               {name:'Marcos A.',role:'Gestora de Imóveis — Blumenau',quote:'"Antes levava 3 dias para emitir boleto e nota de todos os inquilinos. Hoje faço em 5 minutos. Não tem como voltar atrás."',initial:'M',destaque:false},
-              {name:'Carla S.',role:'Proprietária — Joinville',quote:'"A NFS-e integrada foi o que me convenceu. Já estava preocupada com a nova regulação de agosto — o ImobiNota resolveu isso e muito mais."',initial:'C',destaque:true},
+              {name:'Carla S.',role:'Proprietária — Joinville',quote:'"A NFS-e integrada foi o que me convenceu. Já estava preocupada com a nova regulação de agosto — o NotaFacil resolveu isso e muito mais."',initial:'C',destaque:true},
               {name:'Ricardo P.',role:'Gestor Independente — Curitiba',quote:'"O dashboard de inadimplência me deu visibilidade que eu nunca tive. Reduzi meu atraso em 40% no primeiro mês."',initial:'R',destaque:false},
             ].map(t => (
               <div key={t.name} className={`rounded-2xl p-6 relative ${t.destaque ? 'border-2 border-indigo-400 bg-white shadow-lg shadow-indigo-100' : 'border border-slate-100 bg-white'}`}>
@@ -639,7 +639,7 @@ export default function Landing() {
           <div className="grid md:grid-cols-3 gap-8 mb-10">
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <img src="/logo-imobinota.png" alt="ImobiNota" className="h-9 w-auto" style={{filter:'brightness(0) invert(1)'}}
+                <img src="/logo-notafacil.png" alt="NotaFacil" className="h-9 w-auto" style={{filter:'brightness(0) invert(1)'}}
                   onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex' }}/>
                 <div className="hidden items-center gap-2">
                   <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-black text-sm">IN</div>
@@ -681,7 +681,7 @@ export default function Landing() {
       </footer>
 
       {/* ── BOTÃO FLUTUANTE WHATSAPP ── */}
-      <a href="https://wa.me/5547991797774?text=Olá!%20Tenho%20interesse%20no%20TechLinker%20ImobiNota."
+      <a href="https://wa.me/5547991797774?text=Olá!%20Tenho%20interesse%20no%20TechLinker%20NotaFacil."
         target="_blank" rel="noopener noreferrer"
         className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-[#25D366] rounded-full shadow-xl flex items-center justify-center hover:scale-110 transition-transform"
         title="Falar no WhatsApp">
