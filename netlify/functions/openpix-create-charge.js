@@ -1,6 +1,12 @@
-// Netlify Function — cria uma cobrança PIX+Boleto no OpenPIX com split para subconta do cliente
-// O valor da taxa (R$2,99) fica na conta principal (TechLinker)
-// O restante vai para a subconta do cliente e é sacado automaticamente via webhook
+// Netlify Function — gera boleto bancário via OpenPIX (/api/v1/boleto)
+// O boleto é do tipo Boleto+PIX: o inquilino pode pagar pelo código de barras
+// (agendável nos apps de banco) OU pelo QR code PIX (instantâneo).
+//
+// O valor da taxa ImobiNota (R$2,99) fica na conta principal.
+// O restante é creditado na subconta do cliente via split e sacado automaticamente no webhook.
+//
+// ⚠️  REQUISITO: módulo Boleto habilitado na conta OpenPIX.
+//     Acesse: painel OpenPIX → Configurações → Boleto → ativar
 const FEE_CENTS = 299 // R$ 2,99 por boleto pago
 
 exports.handler = async (event) => {
@@ -15,14 +21,19 @@ exports.handler = async (event) => {
 
   const {
     value,          // valor em centavos (ex: 150000 = R$1.500,00)
-    correlationID,  // ID único da cobrança (ex: UUID do contrato + mês)
-    comment,        // descrição (ex: "Aluguel jul/2026 — Sala 12")
-    clientPixKey,   // chave PIX do cliente (salva no profiles.pix_key_recebimento)
-    expiresIn,      // segundos para expirar (padrão: 2592000 = 30 dias)
+    correlationID,  // UUID da cobrança no Supabase
+    comment,        // descrição resumida (aparece no boleto e no extrato)
+    additionalInfo, // array [{ key, value }] — itens discriminados no boleto
+    clientPixKey,   // chave PIX do cliente (subconta OpenPIX)
+    dueDate,        // "YYYY-MM-DD" — data de vencimento
+    customer,       // { name, taxID, email, phone?, address? }
   } = body
 
-  if (!value || !correlationID) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'value e correlationID são obrigatórios' }) }
+  if (!value || !correlationID || !customer?.name || !customer?.taxID) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: 'value, correlationID, customer.name e customer.taxID são obrigatórios' }),
+    }
   }
 
   const APP_ID = process.env.OPENPIX_APP_ID
@@ -30,50 +41,68 @@ exports.handler = async (event) => {
     return { statusCode: 500, body: JSON.stringify({ error: 'OPENPIX_APP_ID não configurado no servidor' }) }
   }
 
-  // Valor que vai para a subconta do cliente (total - taxa ImobiNota)
   const splitValue = Math.max(0, value - FEE_CENTS)
 
-  const chargeBody = {
+  // Vencimento: usa o informado, ou 30 dias como fallback
+  const dueDateFinal = dueDate || (() => {
+    const d = new Date()
+    d.setDate(d.getDate() + 30)
+    return d.toISOString().split('T')[0]
+  })()
+
+  const boletoBody = {
     value,
     correlationID,
-    comment: comment || 'Cobrança ImobiNota',
-    expiresIn: expiresIn || 2592000, // 30 dias
-    // Split apenas se o cliente tiver subconta configurada e o valor cobrir a taxa
+    comment:  comment || 'Cobrança ImobiNota',
+    dueDate:  dueDateFinal,
+    // Itens discriminados — aparecem no corpo do boleto (campo suportado pelo OpenPIX)
+    ...(Array.isArray(additionalInfo) && additionalInfo.length > 0
+      ? { additionalInfo }
+      : {}),
+    customer: {
+      name:  customer.name,
+      taxID: customer.taxID.replace(/\D/g, ''), // CPF/CNPJ só dígitos
+      ...(customer.email   ? { email: customer.email }                       : {}),
+      ...(customer.phone   ? { phone: customer.phone.replace(/\D/g, '') }    : {}),
+      ...(customer.address ? { address: customer.address }                   : {}),
+    },
     ...(clientPixKey && splitValue > 0 ? {
       splits: [{
-        pixKey: clientPixKey,
-        value: splitValue,
+        pixKey:    clientPixKey,
+        value:     splitValue,
         splitType: 'SPLIT_SUB_ACCOUNT',
       }],
     } : {}),
   }
 
   try {
-    const res = await fetch('https://api.openpix.com.br/api/v1/charge', {
+    const res = await fetch('https://api.openpix.com.br/api/v1/boleto', {
       method: 'POST',
       headers: {
         'Authorization': APP_ID,
-        'Content-Type': 'application/json',
+        'Content-Type':  'application/json',
       },
-      body: JSON.stringify(chargeBody),
+      body: JSON.stringify(boletoBody),
     })
 
     const data = await res.json()
 
     if (!res.ok) {
       const msg = data?.error || data?.message || `Erro OpenPIX: ${res.status}`
-      return { statusCode: 400, body: JSON.stringify({ error: msg }) }
+      console.error('[openpix-create-charge] Erro:', JSON.stringify(data))
+      return { statusCode: 400, body: JSON.stringify({ error: msg, detail: data }) }
     }
 
     return {
       statusCode: 200,
       body: JSON.stringify({
         ok: true,
-        charge: data.charge,
-        brCode: data.brCode,            // código PIX copia-e-cola
-        pixQrCode: data.charge?.pixQrCode || null, // URL do QR code
-        fee: FEE_CENTS,
-        clientSplit: splitValue,
+        digitableLine: data.boleto?.digitableLine || null, // linha digitável
+        bankSlipUrl:   data.boleto?.bankSlipUrl   || null, // PDF do boleto
+        dueDate:       data.boleto?.expiresDate   || dueDateFinal,
+        brCode:        data.charge?.brCode        || null, // PIX copia-e-cola embutido
+        fee:           FEE_CENTS,
+        clientSplit:   splitValue,
       }),
     }
   } catch (err) {

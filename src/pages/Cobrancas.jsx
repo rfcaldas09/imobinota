@@ -12,8 +12,12 @@ const ic = (d, cls='') => (
 const IcZap     = ({ c='' }) => ic('<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>', c)
 const IcCheck   = ({ c='' }) => ic('<polyline points="20 6 9 17 4 12"/>', c)
 const IcRefresh = ({ c='' }) => ic('<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>', c)
+const IcQR      = ({ c='' }) => ic('<rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="14" y="14" width="8" height="8" rx="1"/><rect x="4" y="4" width="4" height="4"/><rect x="16" y="4" width="4" height="4"/><rect x="16" y="16" width="4" height="4"/><path d="M2 14h4v2H2zM6 14v4h4M2 20h4"/>', c)
+const IcCopy    = ({ c='' }) => ic('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', c)
+const IcClose   = ({ c='' }) => ic('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>', c)
 
-const fmt = v => Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
+const fmt   = v => Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
+const fmtCi = v => Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
 
 const STATUS_CFG = {
   'Pago':      { bg:'bg-emerald-100', text:'text-emerald-700', dot:'bg-emerald-500' },
@@ -23,23 +27,298 @@ const STATUS_CFG = {
 
 const FILTERS = ['Todos', 'Pago', 'Pendente', 'Em Atraso']
 
+const MESES_ABREV = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+function refLabel(mesRef) {
+  if (!mesRef) return '—'
+  const [year, month] = mesRef.split('-')
+  return `${MESES_ABREV[parseInt(month, 10) - 1]}/${year}`
+}
+
+// ── Calcula data de vencimento do boleto (YYYY-MM-DD) ────────────
+function calcDueDate(mesRef, dueDay) {
+  if (!mesRef || !dueDay) return null
+  const [year, month] = mesRef.split('-')
+  return `${year}-${month}-${String(dueDay).padStart(2, '0')}`
+}
+
+// Formata data YYYY-MM-DD para dd/mm/aaaa
+function fmtDate(iso) {
+  if (!iso) return '—'
+  const d = iso.includes('T') ? new Date(iso) : new Date(iso + 'T12:00:00')
+  return d.toLocaleDateString('pt-BR')
+}
+
 // ── Mapeia linha do banco ─────────────────────────────────────────
 const mapCob = row => ({
-  id:         row.id,
-  tenant:     row.inquilinos?.nome    || '—',
-  property:   row.contratos?.imovel   || '—',
-  totalValue: Number(row.valor_total) || 0,
-  value:      Number(row.valor_aluguel) || 0,
-  dueDay:     row.dia_vencimento,
-  status:     row.status || 'Pendente',
-  mesRef:     row.mes_referencia,
-  emissao:    row.data_emissao,
+  id:              row.id,
+  tenant:          row.inquilinos?.nome    || '—',
+  cpf:             row.inquilinos?.cpf     || '',
+  email:           row.inquilinos?.email   || '',
+  property:        row.contratos?.imovel   || '—',
+  totalValue:      Number(row.valor_total) || 0,
+  value:           Number(row.valor_aluguel) || 0,
+  seguroFinanceiro:Number(row.contratos?.seguro_financeiro) || 0,
+  seguroIncendio:  Number(row.contratos?.seguro_incendio)   || 0,
+  iptu:            Number(row.contratos?.iptu)              || 0,
+  dueDay:          row.dia_vencimento,
+  status:          row.status || 'Pendente',
+  mesRef:          row.mes_referencia,
+  emissao:         row.data_emissao,
 })
 
+// ── Modal Boleto Bancário ─────────────────────────────────────────
+function BoletoPIXModal({ cob, pixKey, onClose }) {
+  const [state, setState]           = useState('loading') // loading | ok | error | noPix | noCpf
+  const [boletoData, setBoletoData] = useState(null)
+  const [errMsg, setErrMsg]         = useState('')
+  const [copiedLine, setCopiedLine] = useState(false)
+  const [copiedPix, setCopiedPix]   = useState(false)
+
+  useEffect(() => {
+    if (state === 'loading') return
+    const handle = e => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handle)
+    return () => document.removeEventListener('keydown', handle)
+  }, [onClose, state])
+
+  useEffect(() => {
+    if (!pixKey)     { setState('noPix'); return }
+    if (!cob.cpf)    { setState('noCpf'); return }
+    generate()
+  }, [])
+
+  const generate = async () => {
+    setState('loading')
+    setErrMsg('')
+
+    // Itens discriminados — aparecem no corpo do boleto
+    const additionalInfo = []
+    if (cob.value > 0)            additionalInfo.push({ key: 'Aluguel',          value: fmtCi(cob.value) })
+    if (cob.seguroFinanceiro > 0) additionalInfo.push({ key: 'Seguro Financeiro', value: fmtCi(cob.seguroFinanceiro) })
+    if (cob.seguroIncendio   > 0) additionalInfo.push({ key: 'Seguro Incêndio',   value: fmtCi(cob.seguroIncendio) })
+    if (cob.iptu             > 0) additionalInfo.push({ key: 'IPTU',              value: fmtCi(cob.iptu) })
+    additionalInfo.push({ key: 'Total', value: fmtCi(cob.totalValue) })
+
+    // Descrição resumida para o campo comment (aparece no extrato e no histórico)
+    const comment = [
+      `Aluguel ref. ${refLabel(cob.mesRef)}`,
+      cob.property ? `– ${cob.property}` : '',
+    ].filter(Boolean).join(' ')
+
+    try {
+      const res = await fetch('/.netlify/functions/openpix-create-charge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          value:          Math.round(cob.totalValue * 100),
+          correlationID:  cob.id,
+          comment,
+          additionalInfo,
+          clientPixKey:   pixKey,
+          dueDate:        calcDueDate(cob.mesRef, cob.dueDay),
+          customer: {
+            name:  cob.tenant,
+            taxID: cob.cpf,
+            email: cob.email || undefined,
+          },
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) { setErrMsg(data.error || 'Erro ao gerar boleto'); setState('error'); return }
+      setBoletoData(data)
+      setState('ok')
+    } catch (err) {
+      setErrMsg(err.message)
+      setState('error')
+    }
+  }
+
+  const copy = (text, setter) => {
+    navigator.clipboard.writeText(text)
+    setter(true)
+    setTimeout(() => setter(false), 2500)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center text-lg">🏦</div>
+            <div>
+              <p className="font-bold text-slate-900 text-sm">Boleto Bancário</p>
+              <p className="text-xs text-slate-400">{cob.tenant} · {refLabel(cob.mesRef)}</p>
+            </div>
+          </div>
+          {state !== 'loading' && (
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">
+              <IcClose c="w-4 h-4"/>
+            </button>
+          )}
+        </div>
+
+        {/* Loading */}
+        {state === 'loading' && (
+          <div className="flex flex-col items-center justify-center py-16 gap-4">
+            <div className="w-10 h-10 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"/>
+            <p className="text-sm text-slate-500">Emitindo boleto…</p>
+          </div>
+        )}
+
+        {/* Sem chave PIX */}
+        {state === 'noPix' && (
+          <div className="p-6 text-center">
+            <p className="text-4xl mb-3">🔑</p>
+            <p className="font-semibold text-slate-800 mb-1">Chave PIX não configurada</p>
+            <p className="text-sm text-slate-500 mb-4">Configure sua chave PIX em <strong>Configurações → Integrações</strong>.</p>
+            <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm">Fechar</button>
+          </div>
+        )}
+
+        {/* Sem CPF do inquilino */}
+        {state === 'noCpf' && (
+          <div className="p-6 text-center">
+            <p className="text-4xl mb-3">📋</p>
+            <p className="font-semibold text-slate-800 mb-1">CPF do inquilino não cadastrado</p>
+            <p className="text-sm text-slate-500 mb-4">O CPF é obrigatório para emissão de boleto bancário. Atualize o cadastro de <strong>{cob.tenant}</strong> em Clientes.</p>
+            <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm">Fechar</button>
+          </div>
+        )}
+
+        {/* Erro */}
+        {state === 'error' && (
+          <div className="p-6 text-center">
+            <p className="text-4xl mb-3">⚠️</p>
+            <p className="font-semibold text-slate-800 mb-1">Erro ao emitir boleto</p>
+            <p className="text-sm text-red-500 bg-red-50 rounded-xl px-4 py-3 mb-4">{errMsg}</p>
+            <div className="flex gap-3">
+              <button onClick={generate} className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm">Tentar novamente</button>
+              <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm">Fechar</button>
+            </div>
+          </div>
+        )}
+
+        {/* Sucesso */}
+        {state === 'ok' && boletoData && (
+          <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+
+            {/* Vencimento */}
+            {boletoData.dueDate && (
+              <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
+                <span className="text-xs font-semibold text-amber-700">Vencimento</span>
+                <span className="text-sm font-bold text-amber-800">{fmtDate(boletoData.dueDate)}</span>
+              </div>
+            )}
+
+            {/* Linha digitável */}
+            {boletoData.digitableLine && (
+              <div>
+                <p className="text-xs font-semibold text-slate-400 mb-1.5">LINHA DIGITÁVEL</p>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                  <p className="text-xs text-slate-700 font-mono tracking-wide break-all">{boletoData.digitableLine}</p>
+                  <button
+                    onClick={() => copy(boletoData.digitableLine, setCopiedLine)}
+                    className={`w-full flex items-center justify-center gap-1.5 text-xs font-semibold py-1.5 rounded-lg transition-all ${
+                      copiedLine ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`}>
+                    <IcCopy c="w-3 h-3"/>
+                    {copiedLine ? 'Copiado!' : 'Copiar linha digitável'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* PDF do boleto */}
+            {boletoData.bankSlipUrl && (
+              <a href={boletoData.bankSlipUrl} target="_blank" rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-slate-800 text-white text-sm font-semibold hover:bg-slate-700 transition-colors">
+                📄 Abrir PDF do Boleto
+              </a>
+            )}
+
+            {/* PIX embutido (opcional, colapsável) */}
+            {boletoData.brCode && (
+              <details className="group">
+                <summary className="cursor-pointer text-xs font-semibold text-slate-400 hover:text-slate-600 list-none flex items-center gap-1.5">
+                  <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
+                  Pagar via PIX (opcional)
+                </summary>
+                <div className="mt-2 space-y-2">
+                  <div className="flex justify-center">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(boletoData.brCode)}`}
+                      alt="QR Code PIX"
+                      className="w-40 h-40 rounded-xl border border-slate-100"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-2.5">
+                    <p className="flex-1 text-xs text-slate-600 font-mono truncate">{boletoData.brCode}</p>
+                    <button onClick={() => copy(boletoData.brCode, setCopiedPix)}
+                      className={`flex-shrink-0 flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg transition-all ${
+                        copiedPix ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`}>
+                      <IcCopy c="w-3 h-3"/>
+                      {copiedPix ? 'Copiado!' : 'Copiar'}
+                    </button>
+                  </div>
+                </div>
+              </details>
+            )}
+
+            {/* Discriminativo */}
+            <div>
+              <p className="text-xs font-semibold text-slate-400 mb-1.5">COMPOSIÇÃO DO VALOR</p>
+              <div className="bg-slate-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
+                {cob.value > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Aluguel</span><span className="font-medium">{fmt(cob.value)}</span>
+                  </div>
+                )}
+                {cob.seguroFinanceiro > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Seguro Financeiro</span><span className="font-medium">{fmt(cob.seguroFinanceiro)}</span>
+                  </div>
+                )}
+                {cob.seguroIncendio > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Seguro Incêndio</span><span className="font-medium">{fmt(cob.seguroIncendio)}</span>
+                  </div>
+                )}
+                {cob.iptu > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>IPTU</span><span className="font-medium">{fmt(cob.iptu)}</span>
+                  </div>
+                )}
+                <div className="border-t border-slate-200 pt-1.5 mt-1 flex justify-between font-bold text-slate-800">
+                  <span>Total</span><span>{fmt(cob.totalValue)}</span>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-center text-xs text-slate-400">
+              Taxa ImobiNota: {fmt((boletoData.fee || 299) / 100)} · Você recebe {fmt((boletoData.clientSplit || 0) / 100)} após compensação
+            </p>
+
+            <button onClick={onClose} className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50">Fechar</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Opções de ação no BatchModal ──────────────────────────────────
+const BATCH_ACTIONS = [
+  { id: 'boleto', label: 'Somente Boletos PIX', icon: '💳', desc: 'Gera cobranças PIX via OpenPIX para cada inquilino' },
+  { id: 'nfse',   label: 'Somente NFS-e',       icon: '📄', desc: 'Emite notas fiscais de serviço (em breve)' },
+  { id: 'ambos',  label: 'Boleto PIX + NFS-e',   icon: '⚡', desc: 'Gera boleto e emite NFS-e juntos (em breve)' },
+]
+
 // ── Modal Gerar e Enviar em Massa ─────────────────────────────────
-function BatchModal({ contracts, user, mesRef: initialMes, onClose, onDone }) {
-  const [step, setStep]     = useState('pick')
-  const [mesRef, setMesRef] = useState(initialMes)
+function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDone }) {
+  const [step, setStep]         = useState('pick')
+  const [action, setAction]     = useState('boleto')
+  const [mesRef, setMesRef]     = useState(initialMes)
   const [preview, setPreview]   = useState(null)
   const [progress, setProgress] = useState(0)
   const [logs, setLogs]         = useState([])
@@ -65,6 +344,10 @@ function BatchModal({ contracts, user, mesRef: initialMes, onClose, onDone }) {
     return () => document.removeEventListener('keydown', handle)
   }, [onClose, step])
 
+  const selectedAction = BATCH_ACTIONS.find(a => a.id === action)
+  const needsPix = action === 'boleto' || action === 'ambos'
+  const canConfirm = preview && preview.toCreate > 0 && !(needsPix && !pixKey)
+
   const confirm = async () => {
     setStep('running')
     setProgress(0)
@@ -78,9 +361,39 @@ function BatchModal({ contracts, user, mesRef: initialMes, onClose, onDone }) {
       return
     }
 
-    const total = res.created
-    const names = contracts.map(c => c.tenant?.split(' ')[0]).filter(Boolean)
-    let sent = 0
+    const total  = res.created
+    const names  = contracts.map(c => c.tenant?.split(' ')[0]).filter(Boolean)
+    let sent     = 0
+    let boletosFails = 0
+
+    // Gera boletos PIX para cada cobrança criada (se ação inclui boleto)
+    if (needsPix && pixKey && res.createdIds?.length) {
+      for (const cob of res.createdIds) {
+        try {
+          const linhas = []
+          if ((cob.value || 0) > 0)            linhas.push(`Aluguel ${fmtCi(cob.value)}`)
+          if ((cob.seguroFinanceiro || 0) > 0)  linhas.push(`Seg.Fin ${fmtCi(cob.seguroFinanceiro)}`)
+          if ((cob.seguroIncendio || 0) > 0)    linhas.push(`Seg.Inc ${fmtCi(cob.seguroIncendio)}`)
+          if ((cob.iptu || 0) > 0)              linhas.push(`IPTU ${fmtCi(cob.iptu)}`)
+          linhas.push(`Total ${fmtCi(cob.totalValue)}`)
+          linhas.push(`Ref: ${refLabel(cob.mesRef)}`)
+
+          await fetch('/.netlify/functions/openpix-create-charge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              value:         Math.round((cob.totalValue || 0) * 100),
+              correlationID: cob.id,
+              comment:       linhas.join(' | '),
+              clientPixKey:  pixKey,
+              expiresIn:     2592000,
+            }),
+          })
+        } catch { boletosFails++ }
+        await new Promise(r => setTimeout(r, 120))
+      }
+    }
+
     const iv = setInterval(() => {
       const batch = Math.min(3, total - sent)
       for (let i = 0; i < batch; i++) {
@@ -92,7 +405,7 @@ function BatchModal({ contracts, user, mesRef: initialMes, onClose, onDone }) {
       if (sent >= total) {
         clearInterval(iv)
         setTimeout(() => {
-          setResult({ created: total, skipped: res.skipped, fails: 0, error: null })
+          setResult({ created: total, skipped: res.skipped, fails: boletosFails, error: null })
           setStep('done')
           onDone()
         }, 400)
@@ -110,10 +423,41 @@ function BatchModal({ contracts, user, mesRef: initialMes, onClose, onDone }) {
           <div className="p-7">
             <div className="w-14 h-14 bg-indigo-100 rounded-2xl flex items-center justify-center mb-5 text-3xl">🚀</div>
             <h2 className="text-xl font-bold text-slate-900 mb-1">Gerar e Enviar em Massa</h2>
-            <p className="text-sm text-slate-500 mb-4">Selecione o mês de referência:</p>
+            <p className="text-sm text-slate-500 mb-4">Selecione o mês e o que deseja gerar:</p>
 
             <MonthPicker value={mesRef} onChange={v => { setMesRef(v); setPreview(null) }}/>
 
+            {/* Seleção de ação */}
+            <div className="mt-4 space-y-2">
+              {BATCH_ACTIONS.map(a => (
+                <button key={a.id} onClick={() => setAction(a.id)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all ${
+                    action === a.id
+                      ? 'border-indigo-500 bg-indigo-50'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}>
+                  <span className="text-xl">{a.icon}</span>
+                  <div className="flex-1">
+                    <p className={`text-sm font-semibold ${action === a.id ? 'text-indigo-800' : 'text-slate-700'}`}>{a.label}</p>
+                    <p className={`text-xs mt-0.5 ${action === a.id ? 'text-indigo-500' : 'text-slate-400'}`}>{a.desc}</p>
+                  </div>
+                  {action === a.id && (
+                    <div className="w-4 h-4 rounded-full bg-indigo-500 flex items-center justify-center flex-shrink-0">
+                      <IcCheck c="w-3 h-3 text-white stroke-[3]"/>
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Aviso se sem chave PIX */}
+            {needsPix && !pixKey && (
+              <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
+                ⚠️ Configure sua chave PIX de recebimento em <strong>Configurações → Integrações</strong> antes de gerar boletos.
+              </div>
+            )}
+
+            {/* Preview */}
             {preview ? (
               <div className={`mt-3 rounded-xl px-4 py-3 text-sm ${
                 preview.toCreate > 0
@@ -132,21 +476,11 @@ function BatchModal({ contracts, user, mesRef: initialMes, onClose, onDone }) {
               </div>
             )}
 
-            <div className="bg-slate-50 rounded-xl p-4 mt-4 space-y-2">
-              {[['💳','Registrar cobrança no sistema'],
-                ['📄','Emitir NFS-e (em breve)'],
-                ['📧','Enviar e-mail ao inquilino (em breve)']].map(([ico,txt]) => (
-                <div key={txt} className="flex items-center gap-3 text-sm text-slate-600">
-                  <span>{ico}</span><span>{txt}</span>
-                </div>
-              ))}
-            </div>
-
             <div className="flex gap-3 mt-6">
               <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50">Cancelar</button>
-              <button onClick={confirm} disabled={!preview || preview.toCreate === 0}
+              <button onClick={confirm} disabled={!canConfirm}
                 className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold flex items-center justify-center gap-2 shadow-md shadow-indigo-200 disabled:opacity-40 disabled:cursor-not-allowed">
-                <IcZap c="w-4 h-4"/> Confirmar e Enviar
+                <span>{selectedAction?.icon}</span> Confirmar
               </button>
             </div>
           </div>
@@ -223,13 +557,22 @@ function StatusBadge({ status }) {
 // ── Página principal ──────────────────────────────────────────────
 export default function Cobrancas() {
   const { user }  = useAuth()
-  const [mesRef, setMesRef]     = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
+  const [mesRef, setMesRef]       = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
   const [cobrancas, setCobrancas] = useState([])
-  const [contracts, setContracts] = useState([]) // para BatchModal
-  const [loading, setLoading]   = useState(true)
-  const [filter, setFilter]     = useState('Todos')
+  const [contracts, setContracts] = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [filter, setFilter]       = useState('Todos')
   const [showBatch, setShowBatch] = useState(false)
   const [updatingId, setUpdatingId] = useState(null)
+  const [pixKey, setPixKey]       = useState(null)
+  const [boletoCob, setBoletoCob] = useState(null)
+
+  // Carrega chave PIX do perfil
+  useEffect(() => {
+    if (!user) return
+    supabase.from('profiles').select('pix_key_recebimento').eq('id', user.id).single()
+      .then(({ data }) => setPixKey(data?.pix_key_recebimento || null))
+  }, [user])
 
   // ── Carrega cobranças do mês ──────────────────────────────────
   const load = async () => {
@@ -237,17 +580,15 @@ export default function Cobrancas() {
     setLoading(true)
     const ref = mesStr(mesRef)
 
-    // Cobranças do mês
     const { data, error } = await supabase
       .from('cobrancas')
-      .select('*, contratos(imovel), inquilinos(nome)')
+      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu), inquilinos(nome, cpf, email)')
       .eq('user_id', user.id)
       .eq('mes_referencia', ref)
       .order('created_at', { ascending: false })
 
     if (!error) setCobrancas((data || []).map(mapCob))
 
-    // Contratos para o BatchModal
     const { data: ctrs } = await supabase
       .from('contratos')
       .select('id, inquilino_id, imovel, valor_aluguel, seguro_financeiro, seguro_incendio, iptu, dia_vencimento, inquilinos(nome)')
@@ -393,7 +734,7 @@ export default function Cobrancas() {
                 <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden lg:table-cell">Venc.</th>
                 <th className="text-right px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Valor</th>
                 <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Status</th>
-                <th className="px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide text-right">Ação</th>
+                <th className="px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -418,25 +759,38 @@ export default function Cobrancas() {
                   <td className="px-5 py-3.5 text-right">
                     {updatingId === c.id ? (
                       <div className="w-4 h-4 border-2 border-slate-200 border-t-indigo-500 rounded-full animate-spin inline-block"/>
-                    ) : c.status === 'Pago' ? (
-                      <span className="text-xs text-slate-300">—</span>
                     ) : (
-                      <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => updateStatus(c.id, 'Pago')}
-                          className="text-xs text-emerald-600 font-semibold hover:underline whitespace-nowrap">
-                          ✓ Marcar Pago
-                        </button>
-                        {c.status === 'Pendente' && (
-                          <button onClick={() => updateStatus(c.id, 'Em Atraso')}
-                            className="text-xs text-red-500 font-semibold hover:underline whitespace-nowrap">
-                            Em Atraso
+                      <div className="flex items-center justify-end gap-2 flex-wrap">
+                        {/* Boleto PIX — apenas para cobranças não pagas */}
+                        {c.status !== 'Pago' && (
+                          <button onClick={() => setBoletoCob(c)}
+                            className="flex items-center gap-1 text-xs text-indigo-600 font-semibold border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors">
+                            <IcQR c="w-3 h-3"/>
+                            Boleto PIX
                           </button>
                         )}
-                        {c.status === 'Em Atraso' && (
-                          <button onClick={() => updateStatus(c.id, 'Pendente')}
-                            className="text-xs text-amber-600 font-semibold hover:underline whitespace-nowrap">
-                            Pendente
-                          </button>
+
+                        {c.status === 'Pago' ? (
+                          <span className="text-xs text-slate-300">—</span>
+                        ) : (
+                          <>
+                            <button onClick={() => updateStatus(c.id, 'Pago')}
+                              className="text-xs text-emerald-600 font-semibold hover:underline whitespace-nowrap">
+                              ✓ Marcar Pago
+                            </button>
+                            {c.status === 'Pendente' && (
+                              <button onClick={() => updateStatus(c.id, 'Em Atraso')}
+                                className="text-xs text-red-500 font-semibold hover:underline whitespace-nowrap">
+                                Em Atraso
+                              </button>
+                            )}
+                            {c.status === 'Em Atraso' && (
+                              <button onClick={() => updateStatus(c.id, 'Pendente')}
+                                className="text-xs text-amber-600 font-semibold hover:underline whitespace-nowrap">
+                                Pendente
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     )}
@@ -448,14 +802,23 @@ export default function Cobrancas() {
         )}
       </div>
 
-      {/* ── Modal ──────────────────────────────────────────── */}
+      {/* ── Modais ─────────────────────────────────────────── */}
       {showBatch && (
         <BatchModal
           contracts={contracts}
           user={user}
+          pixKey={pixKey}
           mesRef={mesRef}
           onClose={() => setShowBatch(false)}
           onDone={load}
+        />
+      )}
+
+      {boletoCob && (
+        <BoletoPIXModal
+          cob={boletoCob}
+          pixKey={pixKey}
+          onClose={() => setBoletoCob(null)}
         />
       )}
     </div>
