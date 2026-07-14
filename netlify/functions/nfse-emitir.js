@@ -7,9 +7,11 @@
 //   5. Faz POST com mTLS na API do SEFIN Nacional
 //   6. Grava resultado em nfse_emissoes no Supabase
 
-const https   = require('https')
-const forge   = require('node-forge')
-const crypto  = require('crypto')
+const https        = require('https')
+const forge        = require('node-forge')
+const crypto       = require('crypto')
+const fs           = require('fs')
+const { spawnSync } = require('child_process')
 
 // ── URLs do SEFIN Nacional ────────────────────────────────────────
 const SEFIN_URL_PROD = 'https://sefin.nfse.gov.br/sefinne/nfse'
@@ -211,35 +213,62 @@ function decryptPassword(encHex, keyHex) {
 }
 
 function parsePfx(pfxBuffer, password) {
-  const pfxDer = forge.util.createBuffer(pfxBuffer.toString('binary'))
-  const pfxAsn = forge.asn1.fromDer(pfxDer)
-
-  // node-forge só suporta SHA-1 MAC. Certificados modernos usam SHA-256 MAC.
-  // Tentativa 1: strict (verifica MAC) — funciona com SHA-1
-  // Tentativa 2: strict=false (pula verificação MAC) — necessário para SHA-256
-  let pfx
+  // Tenta via node-forge primeiro (SHA-1 MAC — certs antigos)
   try {
-    pfx = forge.pkcs12.pkcs12FromAsn1(pfxAsn, true, password)
-    console.log('[nfse-emitir] parsePfx: MAC SHA-1 verificado OK')
-  } catch (e) {
-    if (e.message && e.message.includes('MAC could not be verified')) {
-      console.log('[nfse-emitir] parsePfx: MAC SHA-256 detectado, prosseguindo sem verificação MAC')
-      pfx = forge.pkcs12.pkcs12FromAsn1(pfxAsn, false, password)
-    } else {
-      throw e
+    const pfxDer  = forge.util.createBuffer(pfxBuffer.toString('binary'))
+    const pfxAsn  = forge.asn1.fromDer(pfxDer)
+    const pfx     = forge.pkcs12.pkcs12FromAsn1(pfxAsn, true, password)
+    console.log('[nfse-emitir] parsePfx: node-forge OK (SHA-1 MAC)')
+
+    const certBags = pfx.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag] || []
+    const keyBags  = pfx.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag] || []
+    if (!certBags.length || !keyBags.length) throw new Error('Certificado .pfx inválido ou corrompido')
+
+    return {
+      privateKey: keyBags[0].key,
+      certPem:    forge.pki.certificateToPem(certBags[0].cert),
+      certForge:  certBags[0].cert,
     }
+  } catch (e) {
+    if (!e.message?.includes('MAC could not be verified')) throw e
   }
 
-  const certBags = pfx.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag] || []
-  const keyBags  = pfx.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag] || []
+  // Fallback: usa OpenSSL do sistema (suporta SHA-256 MAC — certs modernos)
+  console.log('[nfse-emitir] parsePfx: node-forge falhou (SHA-256 MAC), usando OpenSSL')
+  const ts      = Date.now()
+  const pfxPath = `/tmp/nfse_${ts}.pfx`
+  const pemPath = `/tmp/nfse_${ts}.pem`
+  try {
+    fs.writeFileSync(pfxPath, pfxBuffer)
+    const res = spawnSync('openssl', [
+      'pkcs12', '-in', pfxPath, '-out', pemPath,
+      '-nodes', '-passin', `pass:${password}`
+    ], { timeout: 15000 })
 
-  if (!certBags.length || !keyBags.length) throw new Error('Certificado .pfx inválido ou corrompido')
+    if (res.status !== 0) {
+      const stderr = res.stderr?.toString() || ''
+      console.error('[nfse-emitir] OpenSSL stderr:', stderr)
+      throw new Error(`OpenSSL não conseguiu abrir o .pfx: ${stderr.slice(0, 200)}`)
+    }
 
-  const certForge  = certBags[0].cert
-  const privateKey = keyBags[0].key
-  const certPem    = forge.pki.certificateToPem(certForge)
+    const pem = fs.readFileSync(pemPath, 'utf8')
+    const certMatches = [...pem.matchAll(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g)]
+    const keyMatch    = pem.match(/-----BEGIN (PRIVATE KEY|RSA PRIVATE KEY)-----[\s\S]+?-----END (PRIVATE KEY|RSA PRIVATE KEY)-----/)
 
-  return { privateKey, certPem, certForge }
+    if (!certMatches.length || !keyMatch) throw new Error('OpenSSL: cert ou chave privada não encontrados no .pfx')
+
+    const certPem  = certMatches[0][0]
+    const keyPem   = keyMatch[0]
+    const certForge  = forge.pki.certificateFromPem(certPem)
+    const privateKey = forge.pki.privateKeyFromPem(keyPem)
+
+    console.log('[nfse-emitir] parsePfx: OpenSSL OK')
+    return { privateKey, certPem, certForge }
+  } finally {
+    try { fs.unlinkSync(pfxPath) } catch {}
+    try { fs.unlinkSync(pemPath) } catch {}
+  }
+
 }
 
 // ── Monta a DPS XML (sem assinatura) ─────────────────────────────
