@@ -972,9 +972,13 @@ export default function Config() {
       <div className="flex justify-end mt-6">
         <button
           onClick={save}
-          disabled={saving}
-          className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-          {saving ? 'Salvando…' : 'Salvar alterações'}
+          disabled={saving || saved}
+          className={`px-6 py-2.5 rounded-xl font-semibold text-sm transition-colors ${
+            saved
+              ? 'bg-green-500 text-white cursor-default'
+              : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50'
+          }`}>
+          {saved ? '✓ Alterações salvas' : saving ? 'Salvando…' : 'Salvar alterações'}
         </button>
       </div>
 

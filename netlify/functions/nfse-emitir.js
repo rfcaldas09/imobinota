@@ -83,9 +83,19 @@ async function handle(event) {
 
   // ── 3. Baixa o certificado do Storage ──────────────────────────
   const certBytes = await downloadCert(SUPABASE_URL, SERVICE_KEY, p.nfse_cert_path)
-  const certPassword = p.nfse_cert_password_enc
-    ? decryptPassword(p.nfse_cert_password_enc, CERT_KEY)
-    : ''
+
+  if (!p.nfse_cert_password_enc) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'Senha do certificado não encontrada. Acesse Configurações → Fiscal / NFS-e, re-envie o arquivo .pfx e informe a senha.' }) }
+  }
+  if (!CERT_KEY) {
+    return { statusCode: 500, body: JSON.stringify({ error: 'NFSE_CERT_KEY não configurada nas variáveis de ambiente do servidor.' }) }
+  }
+
+  const certPassword = decryptPassword(p.nfse_cert_password_enc, CERT_KEY)
+  if (!certPassword) {
+    return { statusCode: 500, body: JSON.stringify({ error: 'Falha ao descriptografar a senha do certificado. Verifique se NFSE_CERT_KEY no servidor é a mesma usada no upload.' }) }
+  }
+  console.log('[nfse-emitir] certPassword decriptada OK, tamanho:', certPassword.length)
 
   // ── 4. Extrai chave privada e certificado do .pfx ──────────────
   const { privateKey, certPem, certForge } = parsePfx(certBytes, certPassword)
@@ -192,14 +202,12 @@ async function downloadCert(supabaseUrl, serviceKey, certPath) {
 
 function decryptPassword(encHex, keyHex) {
   if (!keyHex || !encHex) return ''
-  try {
-    const key = Buffer.from(keyHex, 'hex')
-    const ivHex  = encHex.slice(0, 32)
-    const ctHex  = encHex.slice(32)
-    const iv     = Buffer.from(ivHex, 'hex')
-    const decipher = crypto.createDecipheriv('aes-128-cbc', key, iv)
-    return decipher.update(ctHex, 'hex', 'utf8') + decipher.final('utf8')
-  } catch { return '' }
+  const key      = Buffer.from(keyHex, 'hex')
+  const ivHex    = encHex.slice(0, 32)
+  const ctHex    = encHex.slice(32)
+  const iv       = Buffer.from(ivHex, 'hex')
+  const decipher = crypto.createDecipheriv('aes-128-cbc', key, iv)
+  return decipher.update(ctHex, 'hex', 'utf8') + decipher.final('utf8')
 }
 
 function parsePfx(pfxBuffer, password) {
