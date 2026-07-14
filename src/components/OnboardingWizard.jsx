@@ -4,8 +4,6 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 
-const obKey = uid => `nf_ob_v1_${uid}`
-
 // ── ISS por município (IBGE) — valor sugerido, confirmar na prefeitura ────────
 const ISS_IBGE = {
   '4202008': '2,00', // Blumenau SC
@@ -251,26 +249,26 @@ export function useOnboarding() {
 
   const check = useCallback(async () => {
     if (!user) { setState({ loading: false, wizardOpen: false, pixSet: false }); return }
-    const done = !!localStorage.getItem(obKey(user.id))
     const { data } = await supabase
       .from('profiles')
-      .select('pix_key_recebimento, company_name, cnpj')
+      .select('pix_key_recebimento, company_name, cnpj, onboarding_done')
       .eq('id', user.id)
       .maybeSingle()
-    const pixSet = !!data?.pix_key_recebimento
-    // Usuário já tem dados cadastrados — marca como concluído e não abre wizard
-    const profileComplete = !!(data?.company_name && data?.cnpj)
-    if (profileComplete && !done) {
-      localStorage.setItem(obKey(user.id), '1')
+    const pixSet           = !!data?.pix_key_recebimento
+    const profileComplete  = !!(data?.company_name && data?.cnpj)
+    const dismissed        = !!data?.onboarding_done
+    // Se perfil já está preenchido, marca como concluído automaticamente
+    if (profileComplete && !dismissed) {
+      await supabase.from('profiles').update({ onboarding_done: true }).eq('id', user.id)
     }
-    setState({ loading: false, wizardOpen: !done && !profileComplete, pixSet })
+    setState({ loading: false, wizardOpen: !dismissed && !profileComplete, pixSet })
   }, [user])
 
   useEffect(() => { check() }, [check])
 
   const openWizard  = () => setState(s => ({ ...s, wizardOpen: true }))
-  const closeWizard = (pixConfigured = false) => {
-    if (user) localStorage.setItem(obKey(user.id), '1')
+  const closeWizard = async (pixConfigured = false) => {
+    if (user) await supabase.from('profiles').update({ onboarding_done: true }).eq('id', user.id)
     setState(s => ({ ...s, wizardOpen: false, pixSet: pixConfigured || s.pixSet }))
   }
 
@@ -692,13 +690,6 @@ export default function OnboardingWizard({ onComplete }) {
   const isDone  = current.id === 'done'
   const stepIdx = step - 1
 
-  // Garante localStorage ao chegar na tela done (evita bug do link externo)
-  useEffect(() => {
-    if (current.id === 'done' && user) {
-      localStorage.setItem(obKey(user.id), '1')
-    }
-  }, [current.id, user])
-
   const handleNext = async () => {
     setError('')
 
@@ -738,7 +729,7 @@ export default function OnboardingWizard({ onComplete }) {
     }
 
     if (isDone) {
-      if (user) localStorage.setItem(obKey(user.id), '1')
+      if (user) await supabase.from('profiles').update({ onboarding_done: true }).eq('id', user.id)
       onComplete?.()
       return
     }
@@ -747,15 +738,15 @@ export default function OnboardingWizard({ onComplete }) {
   }
 
   // Chamado pelos botões da tela done
-  const handleNavigate = (path) => {
-    if (user) localStorage.setItem(obKey(user.id), '1')
+  const handleNavigate = async (path) => {
+    if (user) await supabase.from('profiles').update({ onboarding_done: true }).eq('id', user.id)
     onComplete?.()
     navigate(path)
   }
 
-  // Fechar/dispensar wizard — seta localStorage para não reabrir
-  const handleClose = () => {
-    if (user) localStorage.setItem(obKey(user.id), '1')
+  // Fechar/dispensar wizard — grava onboarding_done no Supabase
+  const handleClose = async () => {
+    if (user) await supabase.from('profiles').update({ onboarding_done: true }).eq('id', user.id)
     onComplete?.()
   }
 
