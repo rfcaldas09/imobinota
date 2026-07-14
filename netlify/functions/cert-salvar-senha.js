@@ -39,6 +39,7 @@ exports.handler = async (event) => {
   if (!password) return { statusCode: 400, headers, body: JSON.stringify({ error: 'Senha não informada' }) }
 
   // ── Criptografar a senha com NFSE_CERT_KEY ──────────────────
+  console.log('[cert-salvar-senha] CERT_KEY configurada:', !!CERT_KEY, '| tamanho da senha recebida:', password.length)
   let encPassword = ''
   if (CERT_KEY) {
     const key = Buffer.from(CERT_KEY, 'hex')
@@ -46,6 +47,7 @@ exports.handler = async (event) => {
     const cipher = crypto.createCipheriv('aes-128-cbc', key, iv)
     const enc = Buffer.concat([cipher.update(password, 'utf8'), cipher.final()])
     encPassword = iv.toString('hex') + enc.toString('hex')
+    console.log('[cert-salvar-senha] criptografia OK, encPassword.length:', encPassword.length)
   } else {
     // Sem chave: avisa mas não salva em plain text — bloqueia
     return {
