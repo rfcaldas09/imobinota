@@ -18,7 +18,7 @@ const PLANS = {
     color:    'indigo',
     features: [
       'Até 100 contratos ativos',
-      'R$ 1,35 por boleto pago',
+      'R$ 2,99 por boleto pago',
       'Emissão de boletos via OpenPIX',
       'NFS-e integrado (API Nacional)',
       'Envio de e-mails automático',
@@ -39,7 +39,7 @@ const PLANS = {
     features: [
       'Tudo do Essencial',
       'Contratos ilimitados',
-      'R$ 1,20 por boleto pago',
+      'R$ 2,99 por boleto pago',
       'Suporte prioritário via WhatsApp',
     ],
     pixKey:     '12.345.678/0001-90',

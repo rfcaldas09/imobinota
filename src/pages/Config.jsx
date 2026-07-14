@@ -161,8 +161,10 @@ export default function Config() {
     // Template
     emailSubject: 'Boleto e NFS-e de {{mes}}/{{ano}} — {{imovel}}',
     emailBody:    DEFAULT_BODY,
-    // API
-    openPix: '',
+    // API / Recebimentos
+    pixKeyRecebimento: '',
+    pixKeyType:        'cpf',
+    subaccountCreated: false,
   })
 
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
@@ -199,8 +201,10 @@ export default function Config() {
           // Template
           emailSubject: data?.email_subject || 'Boleto e NFS-e de {{mes}}/{{ano}} — {{imovel}}',
           emailBody:    data?.email_body    || DEFAULT_BODY,
-          // API
-          openPix: data?.openpix_api_key || '',
+          // API / Recebimentos
+          pixKeyRecebimento: data?.pix_key_recebimento   || '',
+          pixKeyType:        data?.pix_key_type          || 'cpf',
+          subaccountCreated: data?.openpix_subaccount_created || false,
         }))
         setLoadingProfile(false)
       })
@@ -246,8 +250,30 @@ export default function Config() {
         email_body:    f.emailBody,
       })
     } else if (tab === 'api') {
+      // Se a chave PIX foi preenchida, cria/atualiza a subconta no OpenPIX
+      if (f.pixKeyRecebimento) {
+        try {
+          const subRes = await fetch('/.netlify/functions/openpix-create-subaccount', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: f.company || 'Cliente ImobiNota', pixKey: f.pixKeyRecebimento }),
+          })
+          const subData = await subRes.json()
+          if (!subRes.ok && subRes.status !== 404) {
+            // 404 = function não deployada ainda (dev local) — ignora
+            setSaving(false)
+            setSaved(false)
+            alert(`Erro ao validar chave PIX: ${subData.error || 'Verifique a chave e tente novamente.'}`)
+            return
+          }
+          Object.assign(payload, { openpix_subaccount_created: true })
+        } catch {
+          // offline ou dev local — salva mesmo assim
+        }
+      }
       Object.assign(payload, {
-        openpix_api_key: f.openPix,
+        pix_key_recebimento: f.pixKeyRecebimento,
+        pix_key_type:        f.pixKeyType,
       })
     }
 
@@ -565,24 +591,81 @@ export default function Config() {
 
       {/* ── API ──────────────────────────────────────────────────── */}
       {tab === 'api' && (
-        <div className="bg-white border border-slate-100 rounded-2xl p-5">
-          <h3 className="font-semibold text-slate-800 mb-4 text-sm">⚡ Integrações de API</h3>
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-slate-500 block mb-1">OpenPIX — API Key</label>
-              <Inp value={f.openPix} onChange={e => set('openPix', e.target.value)} type="password" placeholder="sk-prod-••••••••••••••••" mono/>
-              <p className="text-xs text-slate-400 mt-1">Obtenha em app.openpix.com.br → Configurações → API.</p>
+        <div className="space-y-4">
+          {/* Banner de status */}
+          {f.subaccountCreated ? (
+            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-sm text-emerald-700">
+              <span className="text-lg">✅</span>
+              <div>
+                <p className="font-semibold">Conta de recebimento configurada</p>
+                <p className="text-xs text-emerald-600 mt-0.5">Os pagamentos dos seus inquilinos serão transferidos automaticamente para sua chave PIX.</p>
+              </div>
             </div>
-            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-xs text-amber-700">
-              <span>⚠️</span>
-              <span>O webhook do OpenPIX deve apontar para: <code className="font-mono bg-amber-100 px-1 rounded">https://app.imobinota.com.br/api/webhook/openpix</code></span>
+          ) : (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+              <span className="text-lg">⚠️</span>
+              <div>
+                <p className="font-semibold">Chave PIX não configurada</p>
+                <p className="text-xs text-amber-600 mt-0.5">Configure sua chave PIX abaixo para receber os pagamentos dos seus inquilinos.</p>
+              </div>
             </div>
-            <div className="pt-2 border-t border-slate-100">
-              <p className="text-xs text-slate-400 leading-relaxed">
-                A chave de API do Resend é configurada na aba <strong>E-mail</strong>.
-                Mantenha todas as chaves em segurança — nunca as compartilhe ou exponha no front-end.
-              </p>
+          )}
+
+          <div className="bg-white border border-slate-100 rounded-2xl p-5">
+            <h3 className="font-semibold text-slate-800 mb-1 text-sm">🏦 Conta para recebimento</h3>
+            <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+              Informe a chave PIX da sua conta (Itaú ou qualquer banco). Os pagamentos dos inquilinos
+              serão transferidos automaticamente para esta conta após cada boleto pago — sem nenhuma ação manual sua.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-slate-500 block mb-1">Tipo de chave PIX</label>
+                <select
+                  value={f.pixKeyType}
+                  onChange={e => set('pixKeyType', e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="cpf">CPF</option>
+                  <option value="cnpj">CNPJ</option>
+                  <option value="email">E-mail</option>
+                  <option value="telefone">Telefone</option>
+                  <option value="aleatoria">Chave aleatória (EVP)</option>
+                </select>
+              </div>
+
+              <Row
+                label="Chave PIX"
+                hint={
+                  f.pixKeyType === 'cpf'       ? 'Ex: 123.456.789-00' :
+                  f.pixKeyType === 'cnpj'      ? 'Ex: 12.345.678/0001-90' :
+                  f.pixKeyType === 'email'     ? 'Ex: financeiro@suaempresa.com.br' :
+                  f.pixKeyType === 'telefone'  ? 'Ex: +5547999998888' :
+                  'Cole a chave aleatória gerada pelo seu banco'
+                }>
+                <Inp
+                  value={f.pixKeyRecebimento}
+                  onChange={e => set('pixKeyRecebimento', e.target.value)}
+                  placeholder={
+                    f.pixKeyType === 'cpf'       ? '123.456.789-00' :
+                    f.pixKeyType === 'cnpj'      ? '12.345.678/0001-90' :
+                    f.pixKeyType === 'email'     ? 'financeiro@empresa.com.br' :
+                    f.pixKeyType === 'telefone'  ? '+5547999998888' :
+                    'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+                  }
+                  mono
+                />
+              </Row>
             </div>
+          </div>
+
+          <div className="bg-white border border-slate-100 rounded-2xl p-5">
+            <h3 className="font-semibold text-slate-800 mb-3 text-sm">ℹ️ Como funciona</h3>
+            <ol className="space-y-2 text-xs text-slate-500 leading-relaxed">
+              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">1.</span>Seu inquilino recebe o boleto e paga via PIX.</li>
+              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">2.</span>O ImobiNota retém a taxa de serviço de R$ 2,99 por boleto pago.</li>
+              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">3.</span>O restante é transferido instantaneamente para a sua chave PIX acima.</li>
+              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">4.</span>Você vê tudo no dashboard em tempo real. Nenhuma ação manual necessária.</li>
+            </ol>
           </div>
         </div>
       )}
