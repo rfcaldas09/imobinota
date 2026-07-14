@@ -820,7 +820,7 @@ export default function Contratos() {
         inquilino_id = inq.id
       }
       // 2. Criar contrato
-      const { error } = await supabase.from('contratos').insert({
+      const { data: newContract, error } = await supabase.from('contratos').insert({
         user_id: user.id, inquilino_id,
         imovel:            data.property,
         valor_aluguel:     data.value,
@@ -831,8 +831,31 @@ export default function Contratos() {
         data_inicio:       data.start || null,
         data_fim:          data.end   || null,
         status:            data.status,
-      })
+      }).select().single()
       if (error) throw error
+
+      // 3. Auto-criar cobrança no mês corrente (ou próximo se dia já passou)
+      try {
+        const today = new Date()
+        const dueDay = parseInt(data.dueDay, 10)
+        const thisMonthDue = new Date(today.getFullYear(), today.getMonth(), dueDay)
+        const mesRef = thisMonthDue >= today
+          ? new Date(today.getFullYear(), today.getMonth(), 1)
+          : new Date(today.getFullYear(), today.getMonth() + 1, 1)
+        const totalValue = Number(data.value) + Number(data.seguroFinanceiro)
+          + Number(data.seguroIncendio) + Number(data.iptu)
+        await emitirUmaCobranca(user.id, {
+          id:               newContract.id,
+          inquilino_id,
+          value:            Number(data.value),
+          seguroFinanceiro: Number(data.seguroFinanceiro),
+          seguroIncendio:   Number(data.seguroIncendio),
+          iptu:             Number(data.iptu),
+          totalValue,
+          dueDay,
+        }, mesRef)
+      } catch { /* falha silenciosa — contrato criado com sucesso */ }
+
       setAdding(false)
       toast(`Contrato de ${data.tenant} adicionado!`, 'success')
       load()
@@ -862,6 +885,36 @@ export default function Contratos() {
         status:            data.status,
       }).eq('id', data.id)
       if (error) throw error
+
+      // Auto-atualizar cobrança do mês atual se ainda não foi paga
+      try {
+        const today = new Date()
+        const mesRefStr = new Date(today.getFullYear(), today.getMonth(), 1)
+          .toISOString().slice(0, 10)
+        const { data: cobAtual } = await supabase
+          .from('cobrancas')
+          .select('id')
+          .eq('contrato_id', data.id)
+          .eq('mes_referencia', mesRefStr)
+          .neq('status', 'Pago')
+          .maybeSingle()
+        if (cobAtual) {
+          const totalValue = Number(data.value) + Number(data.seguroFinanceiro)
+            + Number(data.seguroIncendio) + Number(data.iptu)
+          const dueDay = parseInt(data.dueDay, 10)
+          await supabase.from('cobrancas').update({
+            valor_aluguel:     Number(data.value),
+            seguro_financeiro: Number(data.seguroFinanceiro),
+            seguro_incendio:   Number(data.seguroIncendio),
+            iptu:              Number(data.iptu),
+            valor_total:       totalValue,
+            dia_vencimento:    dueDay,
+            data_vencimento:   new Date(today.getFullYear(), today.getMonth(), dueDay)
+              .toISOString().slice(0, 10),
+          }).eq('id', cobAtual.id)
+        }
+      } catch { /* falha silenciosa — contrato atualizado com sucesso */ }
+
       setEditing(null)
       setIsRenewal(false)
       toast(`Contrato de ${data.tenant} atualizado!`, 'success')

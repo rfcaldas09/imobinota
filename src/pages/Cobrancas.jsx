@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { emitirCobrancas, mesLabel, mesStr, MESES } from '../lib/cobrancas'
+import { emitirCobrancas, emitirUmaCobranca, mesLabel, mesStr, MESES } from '../lib/cobrancas'
 import MonthPicker from '../components/MonthPicker'
 
 const ic = (d, cls='') => (
@@ -16,6 +16,7 @@ const IcQR      = ({ c='' }) => ic('<rect x="2" y="2" width="8" height="8" rx="1
 const IcCopy    = ({ c='' }) => ic('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', c)
 const IcClose   = ({ c='' }) => ic('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>', c)
 const IcReceipt = ({ c='' }) => ic('<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="16" y2="14"/><line x1="8" y1="18" x2="11" y2="18"/>', c)
+const IcPlus    = ({ c='' }) => ic('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>', c)
 
 const fmt   = v => Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
 const fmtCi = v => Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
@@ -800,6 +801,175 @@ function StatusBadge({ status }) {
   )
 }
 
+// ── Modal: Adicionar cobrança manualmente ─────────────────────────
+function AdicionarCobrancaModal({ contracts, user, onClose, onDone }) {
+  const today = new Date()
+  const defaultMes = new Date(today.getFullYear(), today.getMonth(), 1)
+
+  const [selectedId, setSelectedId] = useState('')
+  const [mesRef, setMesRefLocal]    = useState(defaultMes)
+  const [f, setF] = useState({
+    value: '', seguroFinanceiro: '0', seguroIncendio: '0', iptu: '0', dueDay: '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr]       = useState('')
+
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }))
+
+  // Auto-preenche campos ao selecionar contrato
+  const handleSelectContract = (id) => {
+    setSelectedId(id)
+    const c = contracts.find(c => c.id === id)
+    if (c) {
+      setF({
+        value:            String(c.value),
+        seguroFinanceiro: String(c.seguroFinanceiro),
+        seguroIncendio:   String(c.seguroIncendio),
+        iptu:             String(c.iptu),
+        dueDay:           String(c.dueDay),
+      })
+    }
+  }
+
+  const totalValue = (Number(f.value)||0) + (Number(f.seguroFinanceiro)||0)
+    + (Number(f.seguroIncendio)||0) + (Number(f.iptu)||0)
+
+  const handleSave = async () => {
+    setErr('')
+    if (!selectedId)       { setErr('Selecione um contrato'); return }
+    if (!f.value || Number(f.value) <= 0) { setErr('Informe o valor do aluguel'); return }
+    if (!f.dueDay)         { setErr('Informe o dia de vencimento'); return }
+    setSaving(true)
+    try {
+      const contract = contracts.find(c => c.id === selectedId)
+      const result = await emitirUmaCobranca(user.id, {
+        id:               selectedId,
+        inquilino_id:     contract?.inquilino_id || null,
+        value:            Number(f.value),
+        seguroFinanceiro: Number(f.seguroFinanceiro),
+        seguroIncendio:   Number(f.seguroIncendio),
+        iptu:             Number(f.iptu),
+        totalValue,
+        dueDay:           parseInt(f.dueDay, 10),
+      }, mesRef)
+      if (result.error) { setErr(result.error); return }
+      if (result.already) {
+        setErr(`Já existe uma cobrança para este contrato em ${MESES[mesRef.getMonth()]}/${mesRef.getFullYear()}`)
+        return
+      }
+      onDone()
+      onClose()
+    } catch (e) {
+      setErr(e.message || 'Erro ao criar cobrança')
+    } finally { setSaving(false) }
+  }
+
+  // Fechar com Escape
+  useEffect(() => {
+    const h = e => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [onClose])
+
+  const inp = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500'
+  const fmt = v => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100">
+          <h2 className="text-base font-bold text-slate-900">Adicionar Cobrança</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+            <IcClose c="w-5 h-5"/>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4">
+          {/* Contrato */}
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Contrato *</label>
+            <select value={selectedId} onChange={e => handleSelectContract(e.target.value)}
+              className={inp}>
+              <option value="">Selecione um contrato…</option>
+              {contracts.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.tenant} {c.property ? `— ${c.property}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Mês de referência */}
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Mês de referência *</label>
+            <div className="flex gap-2">
+              <select value={mesRef.getMonth()} onChange={e => setMesRefLocal(new Date(mesRef.getFullYear(), Number(e.target.value), 1))}
+                className={`${inp} flex-1`}>
+                {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
+              </select>
+              <select value={mesRef.getFullYear()} onChange={e => setMesRefLocal(new Date(Number(e.target.value), mesRef.getMonth(), 1))}
+                className={`${inp} w-28`}>
+                {Array.from({ length: 4 }, (_, i) => today.getFullYear() - 1 + i).map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Valores */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">Aluguel (R$) *</label>
+              <input type="number" min="0" step="0.01" value={f.value} onChange={e => set('value', e.target.value)}
+                className={inp} placeholder="0,00"/>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">Dia de vencimento *</label>
+              <input type="number" min="1" max="28" value={f.dueDay} onChange={e => set('dueDay', e.target.value)}
+                className={inp} placeholder="1-28"/>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">Seg. Financeiro (R$)</label>
+              <input type="number" min="0" step="0.01" value={f.seguroFinanceiro} onChange={e => set('seguroFinanceiro', e.target.value)}
+                className={inp} placeholder="0,00"/>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">Seg. Incêndio (R$)</label>
+              <input type="number" min="0" step="0.01" value={f.seguroIncendio} onChange={e => set('seguroIncendio', e.target.value)}
+                className={inp} placeholder="0,00"/>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">IPTU (R$)</label>
+              <input type="number" min="0" step="0.01" value={f.iptu} onChange={e => set('iptu', e.target.value)}
+                className={inp} placeholder="0,00"/>
+            </div>
+            <div className="flex flex-col justify-end">
+              <p className="text-xs text-slate-500 mb-1">Total</p>
+              <p className="text-base font-bold text-slate-800">{fmt(totalValue)}</p>
+            </div>
+          </div>
+
+          {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-3 px-6 pb-6">
+          <button onClick={onClose} disabled={saving}
+            className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 disabled:opacity-40">
+            Cancelar
+          </button>
+          <button onClick={handleSave} disabled={saving}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-40 shadow-sm">
+            {saving ? 'Salvando…' : <><IcPlus c="w-4 h-4"/> Adicionar</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Página principal ──────────────────────────────────────────────
 export default function Cobrancas() {
   const { user }  = useAuth()
@@ -813,6 +983,7 @@ export default function Cobrancas() {
   const [pixKey, setPixKey]       = useState(null)
   const [boletoCob, setBoletoCob] = useState(null)
   const [nfseCob, setNfseCob]     = useState(null) // cobrança selecionada para NFS-e
+  const [addCob, setAddCob]       = useState(false) // abrir modal de adicionar cobrança
 
   // Carrega chave PIX do perfil
   useEffect(() => {
@@ -845,6 +1016,7 @@ export default function Cobrancas() {
       id:               r.id,
       inquilino_id:     r.inquilino_id,
       tenant:           r.inquilinos?.nome || '',
+      property:         r.imovel           || '',
       value:            Number(r.valor_aluguel)     || 0,
       seguroFinanceiro: Number(r.seguro_financeiro) || 0,
       seguroIncendio:   Number(r.seguro_incendio)   || 0,
@@ -908,6 +1080,10 @@ export default function Cobrancas() {
           <button onClick={load} disabled={loading} title="Atualizar"
             className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40">
             <IcRefresh c={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}/>
+          </button>
+          <button onClick={() => setAddCob(true)}
+            className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-50 shadow-sm whitespace-nowrap">
+            <IcPlus c="w-4 h-4"/> Adicionar Cobrança
           </button>
           <button onClick={() => setShowBatch(true)}
             className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:from-indigo-700 hover:to-purple-700 shadow-md shadow-indigo-200 whitespace-nowrap">
@@ -1081,6 +1257,15 @@ export default function Cobrancas() {
           cob={nfseCob}
           user={user}
           onClose={() => setNfseCob(null)}
+        />
+      )}
+
+      {addCob && (
+        <AdicionarCobrancaModal
+          contracts={contracts}
+          user={user}
+          onClose={() => setAddCob(false)}
+          onDone={load}
         />
       )}
     </div>
