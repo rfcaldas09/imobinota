@@ -217,8 +217,8 @@ export default function Plano() {
   const [payingPlan, setPayingPlan] = useState(null) // null | 'essencial' | 'pro'
 
   const daysLeft  = sub.daysLeft ?? 0
-  const urgent    = daysLeft <= 3
-  const warn      = daysLeft <= 7
+  const urgent    = daysLeft <= 1
+  const warn      = daysLeft <= 2
   const planKey   = (sub.plan === 'essencial' || sub.plan === 'pro') ? sub.plan : null
 
   // Formata data legível

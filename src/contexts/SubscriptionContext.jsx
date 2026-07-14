@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from './AuthContext'
 
 // Dias de trial gratuito após primeiro cadastro
-export const TRIAL_DAYS = 7
+export const TRIAL_DAYS = 2
 
 const SubscriptionContext = createContext(null)
 
