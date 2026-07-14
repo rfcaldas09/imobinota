@@ -123,7 +123,20 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
           },
         }),
       })
-      const data = await res.json()
+
+      // Garante parse seguro — evita crash se resposta não for JSON
+      const raw = await res.text()
+      let data
+      try { data = JSON.parse(raw) } catch {
+        setErrMsg(
+          res.status === 404
+            ? 'Função não encontrada. Rode "netlify dev" em vez de "npm run dev" para testar localmente.'
+            : `Resposta inesperada do servidor (${res.status}): ${raw.slice(0, 120)}`
+        )
+        setState('error')
+        return
+      }
+
       if (!res.ok || data.error) { setErrMsg(data.error || 'Erro ao gerar boleto'); setState('error'); return }
       setBoletoData(data)
       setState('ok')
@@ -309,9 +322,9 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
 
 // ── Opções de ação no BatchModal ──────────────────────────────────
 const BATCH_ACTIONS = [
-  { id: 'boleto', label: 'Somente Boletos PIX', icon: '💳', desc: 'Gera cobranças PIX via OpenPIX para cada inquilino' },
-  { id: 'nfse',   label: 'Somente NFS-e',       icon: '📄', desc: 'Emite notas fiscais de serviço (em breve)' },
-  { id: 'ambos',  label: 'Boleto PIX + NFS-e',   icon: '⚡', desc: 'Gera boleto e emite NFS-e juntos (em breve)' },
+  { id: 'boleto', label: 'Somente Boletos', icon: '💳', desc: 'Gera e envia boletos bancários para cada inquilino' },
+  { id: 'nfse',   label: 'Somente NFS-e',  icon: '📄', desc: 'Emite notas fiscais de serviço (em breve)' },
+  { id: 'ambos',  label: 'Boleto + NFS-e', icon: '⚡', desc: 'Gera boleto e emite NFS-e juntos (em breve)' },
 ]
 
 // ── Modal Gerar e Enviar em Massa ─────────────────────────────────

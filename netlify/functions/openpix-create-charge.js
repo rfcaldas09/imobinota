@@ -1,111 +1,143 @@
 // Netlify Function — gera boleto bancário via OpenPIX (/api/v1/boleto)
-// O boleto é do tipo Boleto+PIX: o inquilino pode pagar pelo código de barras
-// (agendável nos apps de banco) OU pelo QR code PIX (instantâneo).
-//
-// O valor da taxa ImobiNota (R$2,99) fica na conta principal.
-// O restante é creditado na subconta do cliente via split e sacado automaticamente no webhook.
-//
-// ⚠️  REQUISITO: módulo Boleto habilitado na conta OpenPIX.
-//     Acesse: painel OpenPIX → Configurações → Boleto → ativar
+// Boleto+PIX: pago pelo código de barras (agendável) OU pelo QR code PIX (instantâneo).
 const FEE_CENTS = 299 // R$ 2,99 por boleto pago
 
 exports.handler = async (event) => {
+  // ── Wrapper global — captura qualquer exceção inesperada ────────
+  try {
+    return await handle(event)
+  } catch (err) {
+    console.error('[openpix-create-charge] EXCEÇÃO NÃO CAPTURADA:', err?.message, err?.stack)
+    return { statusCode: 500, body: JSON.stringify({ error: `Erro interno: ${err?.message}` }) }
+  }
+}
+
+async function handle(event) {
+  console.log('[openpix-create-charge] method:', event.httpMethod)
+
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'Método não permitido' }) }
   }
 
-  let body
-  try { body = JSON.parse(event.body) } catch {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Body inválido' }) }
+  // ── Parse do body ───────────────────────────────────────────────
+  if (!event.body) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'Body vazio' }) }
   }
 
-  const {
-    value,          // valor em centavos (ex: 150000 = R$1.500,00)
-    correlationID,  // UUID da cobrança no Supabase
-    comment,        // descrição resumida (aparece no boleto e no extrato)
-    additionalInfo, // array [{ key, value }] — itens discriminados no boleto
-    clientPixKey,   // chave PIX do cliente (subconta OpenPIX)
-    dueDate,        // "YYYY-MM-DD" — data de vencimento
-    customer,       // { name, taxID, email, phone?, address? }
-  } = body
+  let body
+  try {
+    body = JSON.parse(event.body)
+  } catch (e) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'Body inválido (não é JSON)' }) }
+  }
 
-  if (!value || !correlationID || !customer?.name || !customer?.taxID) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ error: 'value, correlationID, customer.name e customer.taxID são obrigatórios' }),
-    }
+  if (!body || typeof body !== 'object') {
+    return { statusCode: 400, body: JSON.stringify({ error: 'Body deve ser um objeto JSON' }) }
+  }
+
+  const { value, correlationID, comment, additionalInfo, clientPixKey, dueDate, customer } = body
+
+  console.log('[openpix-create-charge] payload:', {
+    value,
+    correlationID,
+    hasCpf: !!customer?.taxID,
+    hasPix: !!clientPixKey,
+    dueDate,
+  })
+
+  // ── Validações ──────────────────────────────────────────────────
+  if (!value || !correlationID) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'value e correlationID são obrigatórios' }) }
+  }
+  if (!customer || !customer.name || !customer.taxID) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'customer.name e customer.taxID (CPF) são obrigatórios' }) }
   }
 
   const APP_ID = process.env.OPENPIX_APP_ID
   if (!APP_ID) {
+    console.error('[openpix-create-charge] OPENPIX_APP_ID não definido')
     return { statusCode: 500, body: JSON.stringify({ error: 'OPENPIX_APP_ID não configurado no servidor' }) }
   }
 
-  const splitValue = Math.max(0, value - FEE_CENTS)
+  // ── Montagem do payload ─────────────────────────────────────────
+  const splitValue = Math.max(0, Number(value) - FEE_CENTS)
 
-  // Vencimento: usa o informado, ou 30 dias como fallback
   const dueDateFinal = dueDate || (() => {
     const d = new Date()
     d.setDate(d.getDate() + 30)
     return d.toISOString().split('T')[0]
   })()
 
+  const taxIDClean = String(customer.taxID).replace(/\D/g, '')
+
   const boletoBody = {
-    value,
-    correlationID,
-    comment:  comment || 'Cobrança ImobiNota',
+    value: Number(value),
+    correlationID: String(correlationID),
+    comment:  comment  || 'Cobrança ImobiNota',
     dueDate:  dueDateFinal,
-    // Itens discriminados — aparecem no corpo do boleto (campo suportado pelo OpenPIX)
-    ...(Array.isArray(additionalInfo) && additionalInfo.length > 0
-      ? { additionalInfo }
-      : {}),
+    ...(Array.isArray(additionalInfo) && additionalInfo.length > 0 ? { additionalInfo } : {}),
     customer: {
-      name:  customer.name,
-      taxID: customer.taxID.replace(/\D/g, ''), // CPF/CNPJ só dígitos
-      ...(customer.email   ? { email: customer.email }                       : {}),
-      ...(customer.phone   ? { phone: customer.phone.replace(/\D/g, '') }    : {}),
-      ...(customer.address ? { address: customer.address }                   : {}),
+      name:  String(customer.name),
+      taxID: taxIDClean,
+      ...(customer.email ? { email: String(customer.email) } : {}),
+      ...(customer.phone ? { phone: String(customer.phone).replace(/\D/g, '') } : {}),
     },
     ...(clientPixKey && splitValue > 0 ? {
       splits: [{
-        pixKey:    clientPixKey,
+        pixKey:    String(clientPixKey),
         value:     splitValue,
         splitType: 'SPLIT_SUB_ACCOUNT',
       }],
     } : {}),
   }
 
+  console.log('[openpix-create-charge] boletoBody:', JSON.stringify(boletoBody))
+
+  // ── Chamada à API OpenPIX ───────────────────────────────────────
+  const res = await fetch('https://api.openpix.com.br/api/v1/boleto', {
+    method: 'POST',
+    headers: {
+      'Authorization': APP_ID,
+      'Content-Type':  'application/json',
+    },
+    body: JSON.stringify(boletoBody),
+  })
+
+  const rawText = await res.text()
+  console.log('[openpix-create-charge] OpenPIX status:', res.status, '| body:', rawText.slice(0, 300))
+
+  let data = {}
   try {
-    const res = await fetch('https://api.openpix.com.br/api/v1/boleto', {
-      method: 'POST',
-      headers: {
-        'Authorization': APP_ID,
-        'Content-Type':  'application/json',
-      },
-      body: JSON.stringify(boletoBody),
-    })
-
-    const data = await res.json()
-
-    if (!res.ok) {
-      const msg = data?.error || data?.message || `Erro OpenPIX: ${res.status}`
-      console.error('[openpix-create-charge] Erro:', JSON.stringify(data))
-      return { statusCode: 400, body: JSON.stringify({ error: msg, detail: data }) }
+    data = JSON.parse(rawText)
+  } catch {
+    if (res.status === 404 || rawText.toLowerCase().includes('not found')) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: 'Módulo Boleto não habilitado na conta OpenPIX. Acesse: Configurações → Boleto.' }),
+      }
     }
-
     return {
-      statusCode: 200,
-      body: JSON.stringify({
-        ok: true,
-        digitableLine: data.boleto?.digitableLine || null, // linha digitável
-        bankSlipUrl:   data.boleto?.bankSlipUrl   || null, // PDF do boleto
-        dueDate:       data.boleto?.expiresDate   || dueDateFinal,
-        brCode:        data.charge?.brCode        || null, // PIX copia-e-cola embutido
-        fee:           FEE_CENTS,
-        clientSplit:   splitValue,
-      }),
+      statusCode: 400,
+      body: JSON.stringify({ error: `Resposta inesperada OpenPIX (${res.status}): ${rawText.slice(0, 200)}` }),
     }
-  } catch (err) {
-    return { statusCode: 500, body: JSON.stringify({ error: err.message }) }
+  }
+
+  if (!res.ok) {
+    const msg = data?.error || data?.message || data?.errors?.[0]?.message || `Erro OpenPIX: ${res.status}`
+    console.error('[openpix-create-charge] Erro OpenPIX:', JSON.stringify(data))
+    return { statusCode: 400, body: JSON.stringify({ error: msg, detail: data }) }
+  }
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      ok:            true,
+      digitableLine: data.boleto?.digitableLine || null,
+      bankSlipUrl:   data.boleto?.bankSlipUrl   || null,
+      dueDate:       data.boleto?.expiresDate   || dueDateFinal,
+      brCode:        data.charge?.brCode        || null,
+      fee:           FEE_CENTS,
+      clientSplit:   splitValue,
+    }),
   }
 }
