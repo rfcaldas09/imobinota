@@ -56,7 +56,11 @@ async function handle(event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'OPENPIX_APP_ID não configurado no servidor' }) }
   }
 
-  const splitValue = Math.max(0, Number(value) - FEE_CENTS)
+  // Taxa exata da OpenPIX: 0,80% por PIX recebido, mín R$0,50 (50 cents), máx R$5,00 (500 cents).
+  // O split precisa ser < value - taxa_openpix, então descontamos os dois valores separadamente.
+  // NotaFacil fica com R$2,99; OpenPIX fica com a taxa deles; cliente fica com o restante.
+  const openPixFee = Math.min(Math.max(Math.round(Number(value) * 0.008), 50), 500)
+  const splitValue = Math.max(0, Number(value) - FEE_CENTS - openPixFee)
 
   const chargeBody = {
     value:         Number(value),
