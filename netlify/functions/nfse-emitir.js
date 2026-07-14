@@ -7,11 +7,9 @@
 //   5. Faz POST com mTLS na API do SEFIN Nacional
 //   6. Grava resultado em nfse_emissoes no Supabase
 
-const https        = require('https')
-const forge        = require('node-forge')
-const crypto       = require('crypto')
-const fs           = require('fs')
-const { spawnSync } = require('child_process')
+const https  = require('https')
+const forge  = require('node-forge')
+const crypto = require('crypto')
 
 // ── URLs do SEFIN Nacional ────────────────────────────────────────
 const SEFIN_URL_PROD = 'https://sefin.nfse.gov.br/sefinne/nfse'
@@ -212,63 +210,48 @@ function decryptPassword(encHex, keyHex) {
   return decipher.update(ctHex, 'hex', 'utf8') + decipher.final('utf8')
 }
 
+function extractFromPfx(pfx) {
+  const certBags = pfx.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag] || []
+  const keyBags  = pfx.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag] || []
+  if (!certBags.length || !keyBags.length) throw new Error('Certificado .pfx inválido ou corrompido')
+  return {
+    privateKey: keyBags[0].key,
+    certPem:    forge.pki.certificateToPem(certBags[0].cert),
+    certForge:  certBags[0].cert,
+  }
+}
+
 function parsePfx(pfxBuffer, password) {
-  // Tenta via node-forge primeiro (SHA-1 MAC — certs antigos)
+  const pfxDer = forge.util.createBuffer(pfxBuffer.toString('binary'))
+  const pfxAsn = forge.asn1.fromDer(pfxDer)
+
+  // Tentativa 1: verificação normal de MAC (SHA-1 — certs antigos)
   try {
-    const pfxDer  = forge.util.createBuffer(pfxBuffer.toString('binary'))
-    const pfxAsn  = forge.asn1.fromDer(pfxDer)
-    const pfx     = forge.pkcs12.pkcs12FromAsn1(pfxAsn, true, password)
-    console.log('[nfse-emitir] parsePfx: node-forge OK (SHA-1 MAC)')
-
-    const certBags = pfx.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag] || []
-    const keyBags  = pfx.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag] || []
-    if (!certBags.length || !keyBags.length) throw new Error('Certificado .pfx inválido ou corrompido')
-
-    return {
-      privateKey: keyBags[0].key,
-      certPem:    forge.pki.certificateToPem(certBags[0].cert),
-      certForge:  certBags[0].cert,
-    }
+    const pfx = forge.pkcs12.pkcs12FromAsn1(pfxAsn, true, password)
+    console.log('[nfse-emitir] parsePfx: MAC SHA-1 OK')
+    return extractFromPfx(pfx)
   } catch (e) {
     if (!e.message?.includes('MAC could not be verified')) throw e
   }
 
-  // Fallback: usa OpenSSL do sistema (suporta SHA-256 MAC — certs modernos)
-  console.log('[nfse-emitir] parsePfx: node-forge falhou (SHA-256 MAC), usando OpenSSL')
-  const ts      = Date.now()
-  const pfxPath = `/tmp/nfse_${ts}.pfx`
-  const pemPath = `/tmp/nfse_${ts}.pem`
+  // Tentativa 2: remove macData do ASN.1 para pular verificação de MAC
+  // Necessário para certs modernos (SHA-256 MAC) — node-forge só suporta SHA-1
+  // O PKCS#12 interno: [version, authSafe, macData?]
+  // Se macData não existe (.length <= 2), node-forge pula automaticamente
+  console.log('[nfse-emitir] parsePfx: SHA-256 MAC detectado, bypassando via ASN.1')
+  if (pfxAsn.value.length > 2) pfxAsn.value.splice(2)
+
   try {
-    fs.writeFileSync(pfxPath, pfxBuffer)
-    const res = spawnSync('openssl', [
-      'pkcs12', '-in', pfxPath, '-out', pemPath,
-      '-nodes', '-passin', `pass:${password}`
-    ], { timeout: 15000 })
-
-    if (res.status !== 0) {
-      const stderr = res.stderr?.toString() || ''
-      console.error('[nfse-emitir] OpenSSL stderr:', stderr)
-      throw new Error(`OpenSSL não conseguiu abrir o .pfx: ${stderr.slice(0, 200)}`)
-    }
-
-    const pem = fs.readFileSync(pemPath, 'utf8')
-    const certMatches = [...pem.matchAll(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g)]
-    const keyMatch    = pem.match(/-----BEGIN (PRIVATE KEY|RSA PRIVATE KEY)-----[\s\S]+?-----END (PRIVATE KEY|RSA PRIVATE KEY)-----/)
-
-    if (!certMatches.length || !keyMatch) throw new Error('OpenSSL: cert ou chave privada não encontrados no .pfx')
-
-    const certPem  = certMatches[0][0]
-    const keyPem   = keyMatch[0]
-    const certForge  = forge.pki.certificateFromPem(certPem)
-    const privateKey = forge.pki.privateKeyFromPem(keyPem)
-
-    console.log('[nfse-emitir] parsePfx: OpenSSL OK')
-    return { privateKey, certPem, certForge }
-  } finally {
-    try { fs.unlinkSync(pfxPath) } catch {}
-    try { fs.unlinkSync(pemPath) } catch {}
+    const pfx = forge.pkcs12.pkcs12FromAsn1(pfxAsn, true, password)
+    console.log('[nfse-emitir] parsePfx: MAC bypass OK')
+    return extractFromPfx(pfx)
+  } catch (e2) {
+    console.error('[nfse-emitir] parsePfx erro pós-bypass:', e2.message)
+    throw new Error(
+      `Certificado .pfx incompatível com o servidor. Tente re-exportar com algoritmos legados ` +
+      `(openssl pkcs12 -legacy). Detalhe: ${e2.message}`
+    )
   }
-
 }
 
 // ── Monta a DPS XML (sem assinatura) ─────────────────────────────
