@@ -3,17 +3,19 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { LC116 } from '../lib/lc116'
 
-// ── Criptografia da senha do certificado (AES-128-CBC via SubtleCrypto) ─
-async function encryptPassword(password, keyHex) {
-  if (!keyHex || !password) return ''
-  const keyBytes = hexToBytes(keyHex)
-  const iv       = crypto.getRandomValues(new Uint8Array(16))
-  const key      = await crypto.subtle.importKey('raw', keyBytes, { name:'AES-CBC' }, false, ['encrypt'])
-  const enc      = await crypto.subtle.encrypt({ name:'AES-CBC', iv }, key, new TextEncoder().encode(password))
-  return bytesToHex(iv) + bytesToHex(new Uint8Array(enc))
+// ── Salva senha do certificado via função server-side (criptografa com NFSE_CERT_KEY) ─
+async function salvarSenhaCert(password, certPath, jwt) {
+  const res = await fetch('/.netlify/functions/cert-salvar-senha', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt}` },
+    body: JSON.stringify({ password, certPath }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `Erro ao salvar senha (${res.status})`)
+  }
+  return true
 }
-const hexToBytes = hex => new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)))
-const bytesToHex = buf => Array.from(buf).map(b => b.toString(16).padStart(2,'0')).join('')
 
 // ── Máscaras de input ─────────────────────────────────────────
 const digits = v => v.replace(/\D/g, '')
@@ -537,27 +539,22 @@ export default function Config() {
                 setCertUploading(true)
                 setCertMsg(null)
                 try {
-                  // Sobe o arquivo para Supabase Storage: certificados-nfse/{userId}/{filename}
+                  // 1. Sobe o arquivo para Supabase Storage: certificados-nfse/{userId}/{filename}
                   const path = `${user.id}/${Date.now()}_${file.name}`
                   const { error } = await supabase.storage
                     .from('certificados-nfse')
                     .upload(path, file, { upsert: true, contentType: 'application/x-pkcs12' })
                   if (error) throw error
 
-                  // Criptografa a senha (se houver) com a chave de ambiente
-                  // Nota: NFSE_CERT_KEY precisa estar configurado no .env e no Netlify
-                  let encPassword = ''
-                  if (f.certPassword) {
-                    const keyHex = import.meta.env.VITE_NFSE_CERT_KEY || ''
-                    encPassword = keyHex ? await encryptPassword(f.certPassword, keyHex) : ''
-                  }
+                  // 2. Salva path no profile (a senha é salva via função server-side abaixo)
+                  await supabase.from('profiles').upsert({ id: user.id, nfse_cert_path: path })
 
-                  // Grava path e senha criptografada no profile
-                  await supabase.from('profiles').upsert({
-                    id: user.id,
-                    nfse_cert_path: path,
-                    ...(encPassword ? { nfse_cert_password_enc: encPassword } : {}),
-                  })
+                  // 3. Envia a senha para ser criptografada e salva no servidor
+                  //    (NFSE_CERT_KEY nunca sai do servidor — seguro)
+                  if (f.certPassword) {
+                    const { data: { session } } = await supabase.auth.getSession()
+                    await salvarSenhaCert(f.certPassword, path, session?.access_token || '')
+                  }
 
                   set('certOk', true)
                   set('certNome', file.name)
@@ -962,20 +959,25 @@ export default function Config() {
           <div className="bg-white border border-slate-100 rounded-2xl p-5">
             <h3 className="font-semibold text-slate-800 mb-3 text-sm">ℹ️ Como funciona</h3>
             <ol className="space-y-2 text-xs text-slate-500 leading-relaxed">
-              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">1.</span>Seu cliente recebe o boleto e paga via PIX.</li>
-              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">2.</span>O NotaFacil retém a taxa de serviço de R$ 2,99 por boleto pago.</li>
-              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">3.</span>O restante é transferido instantaneamente para a sua chave PIX acima.</li>
-              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">4.</span>Você vê tudo no dashboard em tempo real. Nenhuma ação manual necessária.</li>
+              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">1.</span>Seu cliente recebe o boletoSeu cliente recebe o boleto e paga via PIX.</li>
+              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">2.</span>O pagamento entra na sua conta instantaneamente.</li>
+              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">3.</span>O sistema marca a cobrança como <strong>Pago</strong> automaticamente.</li>
             </ol>
           </div>
+
         </div>
       )}
 
-      {/* Botão salvar */}
-      <button onClick={save} disabled={saving || loadingProfile}
-        className={`w-full py-3 rounded-xl font-semibold text-white transition-all mt-2 disabled:opacity-60 ${saved ? 'bg-emerald-500' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
-        {saving ? 'Salvando…' : saved ? '✓ Salvo com sucesso!' : 'Salvar Configurações'}
-      </button>
+      {/* ── Botão salvar ─────────────────────────────────── */}
+      <div className="flex justify-end mt-6">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+          {saving ? 'Salvando…' : 'Salvar alterações'}
+        </button>
+      </div>
+
     </div>
   )
 }

@@ -6,7 +6,7 @@ import { useSubscription } from '../contexts/SubscriptionContext'
 const PLANS = {
   essencial: {
     id:       'essencial',
-    name:     'NotaFacil Essencial',
+    name:     'Essencial',
     price:    197,
     color:    'indigo',
     features: [
@@ -21,7 +21,7 @@ const PLANS = {
   },
   pro: {
     id:       'pro',
-    name:     'NotaFacil Pro',
+    name:     'Pro',
     price:    297,
     color:    'purple',
     features: [
@@ -255,7 +255,7 @@ export default function Plano() {
               {sub.isTrial ? 'Período de teste' : 'Plano ativo'}
             </p>
             <p className="text-xl font-bold text-slate-900">
-              {planKey ? PLANS[planKey].name : sub.isTrial ? 'NotaFacil Trial' : 'Sem plano ativo'}
+              {planKey ? PLANS[planKey].name : sub.isTrial ? 'Experimentação' : 'Sem plano ativo'}
             </p>
             {sub.planoFim && (
               <p className="text-slate-500 text-sm mt-0.5">

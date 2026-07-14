@@ -170,9 +170,9 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
             </Row>
           </div>
 
-          {/* Imóvel */}
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Imóvel</p>
-          <Row label="Identificação do Imóvel *">
+          {/* Endereço */}
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Endereço</p>
+          <Row label="Endereço *">
             <FormInp value={f.property} onChange={e => set('property', e.target.value)} placeholder="Ex: Ap. 201 — R. XV de Novembro, 450"/>
           </Row>
           <div className="grid grid-cols-2 gap-3">
@@ -293,7 +293,7 @@ function DocModal({ type, contract: c, onClose, onToast }) {
           <div className="bg-slate-50 border border-slate-200 rounded-xl divide-y divide-slate-100 text-sm mb-4">
             {[
               [isBoleto ? 'Pagador' : 'Tomador', c.tenant],
-              ['Imóvel', c.property],
+              ['Endereço', c.property],
               [isBoleto ? 'Vencimento' : 'Competência',
                isBoleto ? dueStr : now.toLocaleDateString('pt-BR',{month:'long',year:'numeric'})],
             ].map(([k, v]) => (
@@ -420,7 +420,7 @@ function ScanModal({ contract: c, onClose, onToast }) {
               <h3 className="font-bold text-slate-900 text-lg mb-1">Escanear Contrato</h3>
               <p className="text-sm text-slate-500 mb-4">
                 Cliente: <strong className="text-slate-800">{c.tenant}</strong><br/>
-                Imóvel: {c.property}
+                Endereço: {c.property}
               </p>
               <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center mb-4">
                 <IcScan c="w-8 h-8 text-slate-300 mx-auto mb-3"/>
@@ -456,7 +456,7 @@ function ScanModal({ contract: c, onClose, onToast }) {
               <h3 className="font-bold text-slate-900 text-lg mb-1">Escaneamento concluído!</h3>
               <p className="text-sm text-slate-500 mb-4">Dados extraídos e vinculados ao contrato.</p>
               <div className="bg-slate-50 rounded-xl p-4 space-y-2 text-sm mb-4">
-                {[['Cliente',c.tenant],['Imóvel',c.property],
+                {[['Cliente',c.tenant],['Endereço',c.property],
                   ['Vigência',`${fmtDate(c.start)} → ${fmtDate(c.end)}`],
                   ['Valor',fmt(c.value)]].map(([k,v]) => (
                   <div key={k} className="flex justify-between">
@@ -537,7 +537,7 @@ function ContractDrawer({ contract: c, onClose, onEdit, onScan, onDelete, onToas
 
             <div className="space-y-2">
               {[
-                ['Imóvel', c.property],
+                ['Endereço', c.property],
                 ['E-mail', c.email || '—'],
                 ['Telefone', c.phone || '—'],
                 ['Vencimento', `Dia ${c.dueDay} de cada mês`],
@@ -871,7 +871,7 @@ export default function Contratos() {
         <div className="relative flex-1 min-w-48">
           <IcSearch c="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
           <input value={search} onChange={handleSearch}
-            placeholder="Buscar por cliente, imóvel ou CPF…"
+            placeholder="Buscar por cliente, endereço ou CPF…"
             className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"/>
         </div>
         <div className="flex bg-white border border-slate-200 rounded-xl p-1 gap-1">
@@ -917,7 +917,7 @@ export default function Contratos() {
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Cliente</th>
-                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Imóvel</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Endereço</th>
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">
                   {isPorVencer ? 'Término' : 'Venc.'}
                 </th>
@@ -1031,3 +1031,4 @@ export default function Contratos() {
     </div>
   )
 }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          

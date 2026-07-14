@@ -33,11 +33,11 @@ export default function Sidebar() {
 
   // Widget de plano — derivado do SubscriptionContext
   const planName = sub?.isTrial
-    ? 'NotaFacil Trial'
+    ? 'Experimentação'
     : sub?.plan === 'pro'
-    ? 'NotaFacil Pro'
+    ? 'Pro'
     : sub?.plan === 'essencial'
-    ? 'NotaFacil Essencial'
+    ? 'Essencial'
     : 'Sem plano ativo'
 
   const endDate   = sub?.isTrial ? sub?.trialEnd : sub?.planoFim

@@ -233,6 +233,15 @@ const maskCpfCnpj = raw => {
   if (d.length <= 12) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8)}`
   return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`
 }
+const maskPhone = raw => {
+  const d = raw.replace(/\D/g, '').slice(0, 11)
+  if (d.length === 0) return ''
+  if (d.length <= 2)  return `(${d}`
+  if (d.length <= 6)  return `(${d.slice(0,2)}) ${d.slice(2)}`
+  if (d.length <= 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`
+  return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`
+}
+
 const maskAliquota = raw => {
   const c = raw.replace(/[^\d,]/g, '').replace(/,+/g, ',')
   const [int, dec] = c.split(',')
@@ -360,16 +369,19 @@ function StepEmpresa({ company, setCompany, cnpj, setCnpj, inscMun, setInscMun, 
               className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-indigo-400 bg-white"/>
           </div>
           <div>
-            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">Inscrição municipal *</label>
-            <input type="text" value={inscMun} onChange={e => setInscMun(e.target.value)}
-              placeholder="0000000-0"
+            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">
+                Inscrição municipal *
+                <span className="ml-1 normal-case font-normal text-slate-400" title="Obrigatória para emissão de NFS-e. Consta no alvará ou junto à prefeitura do seu município.">ⓘ</span>
+              </label>
+            <input type="text" value={inscMun} onChange={e => setInscMun(e.target.value.replace(/[^0-9a-zA-Z\-\/\.]/g, '').slice(0, 20))}
+              placeholder="Ex: 94389348"
               className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-indigo-400 bg-white"/>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">Telefone</label>
-            <input type="tel" value={telefone} onChange={e => setTelefone(e.target.value)}
+            <input type="tel" value={telefone} onChange={e => setTelefone(maskPhone(e.target.value))}
               placeholder="(47) 99999-0000"
               className="w-full px-4 py-2.5 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-indigo-400 bg-white"/>
           </div>
@@ -849,3 +861,4 @@ export default function OnboardingWizard({ onComplete }) {
     </div>
   )
 }
+  
