@@ -1,93 +1,48 @@
 import { useState, useEffect } from 'react'
-
-// ── Dados do plano atual (mockado — virá do Supabase via OpenPIX) ──
-const CURRENT = {
-  plan:       'essencial',
-  startDate:  '18/06/2026',
-  renewDate:  '18/07/2026',
-  totalDays:  30,
-  usedDays:   19,
-}
+import { useAuth } from '../contexts/AuthContext'
+import { useSubscription } from '../contexts/SubscriptionContext'
 
 // ── Planos disponíveis ────────────────────────────────────────────
 const PLANS = {
   essencial: {
     id:       'essencial',
     name:     'NotaFacil Essencial',
-    price:    297,
+    price:    197,
     color:    'indigo',
     features: [
-      'Até 100 contratos ativos',
-      'R$ 2,99 por boleto pago',
-      'Emissão de boletos via OpenPIX',
+      'Até 50 contratos ativos',
+      'R$ 2,99 por cobrança paga',
+      'Emissão e envio de cobrança via PIX',
       'NFS-e integrado (API Nacional)',
       'Envio de e-mails automático',
       'Dashboard e relatórios',
       'Suporte via e-mail',
     ],
-    // Mock PIX — substituir pelos dados reais do OpenPIX
-    pixKey:     '12.345.678/0001-90',
-    pixKeyType: 'CNPJ',
-    pixPayload: '00020126580014BR.GOV.BCB.PIX0136a629532e-7693-4846-b028-f142a1d7d1935204000053039865802BR5913TechLinker6008Joinville62070503***63041D3D',
-    beneficiary:'TechLinker Soluções Ltda.',
   },
   pro: {
     id:       'pro',
     name:     'NotaFacil Pro',
-    price:    497,
+    price:    297,
     color:    'purple',
     features: [
       'Tudo do Essencial',
       'Contratos ilimitados',
-      'R$ 2,99 por boleto pago',
+      'R$ 2,99 por cobrança paga',
       'Suporte prioritário via WhatsApp',
     ],
-    pixKey:     '12.345.678/0001-90',
-    pixKeyType: 'CNPJ',
-    pixPayload: '00020126580014BR.GOV.BCB.PIX0136a629532e-7693-4846-b028-f142a1d7d1935204000053039865802BR5913TechLinker6008Joinville62070503***63041D3D',
-    beneficiary:'TechLinker Soluções Ltda.',
   },
 }
 
-// ── QR Code mockado (SVG puro, sem dependências) ─────────────────
-function FakeQR({ size = 148 }) {
-  const N = 21, cell = size / N
-  const isFinderBorder = (r, c) => {
-    const inTL = r < 7 && c < 7
-    const inTR = r < 7 && c >= N - 7
-    const inBL = r >= N - 7 && c < 7
-    if (!inTL && !inTR && !inBL) return false
-    if (inTL) return r===0||r===6||c===0||c===6
-    if (inTR) return r===0||r===6||c===N-7||c===N-1
-    return r===N-7||r===N-1||c===0||c===6
-  }
-  const isFinderDot = (r, c) =>
-    (r>=2&&r<=4&&c>=2&&c<=4) ||
-    (r>=2&&r<=4&&c>=N-5&&c<=N-3) ||
-    (r>=N-5&&r<=N-3&&c>=2&&c<=4)
-
-  const cells = []
-  for (let r = 0; r < N; r++) {
-    for (let c = 0; c < N; c++) {
-      const inFinder = (r<7&&c<7)||(r<7&&c>=N-7)||(r>=N-7&&c<7)
-      let dark
-      if (inFinder) {
-        dark = isFinderBorder(r,c) || isFinderDot(r,c)
-      } else {
-        dark = (r*31 + c*17 + r*c*7) % 100 < 45
-      }
-      if (dark) cells.push({ r, c })
-    }
-  }
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <rect width={size} height={size} fill="white" rx="4"/>
-      {cells.map(({ r, c }) => (
-        <rect key={`${r}-${c}`} x={c*cell+0.5} y={r*cell+0.5}
-          width={cell-0.5} height={cell-0.5} fill="#1e293b"/>
-      ))}
-    </svg>
+// ── QR Code via API pública (sem dependências) ───────────────────
+function QRCodeImg({ brCode, size = 160 }) {
+  if (!brCode) return (
+    <div style={{ width: size, height: size }}
+      className="bg-slate-100 rounded-xl flex items-center justify-center">
+      <div className="w-6 h-6 border-2 border-slate-300 border-t-indigo-500 rounded-full animate-spin"/>
+    </div>
   )
+  const url = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(brCode)}`
+  return <img src={url} alt="QR Code PIX" width={size} height={size} className="rounded-xl border border-slate-200 shadow-sm"/>
 }
 
 // ── Card de plano ─────────────────────────────────────────────────
@@ -146,9 +101,12 @@ function PlanCard({ plan, isCurrent, isPaying, onAssinar }) {
   )
 }
 
-// ── Painel de pagamento PIX ───────────────────────────────────────
-function PixPanel({ plan, onClose }) {
-  const [copied, setCopied] = useState(false)
+// ── Painel de pagamento PIX (real via OpenPIX) ────────────────────
+function PixPanel({ plan, userId, onClose, onPaid }) {
+  const [brCode, setBrCode]   = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState('')
+  const [copied, setCopied]   = useState(false)
 
   useEffect(() => {
     const handle = e => { if (e.key === 'Escape') onClose() }
@@ -156,8 +114,35 @@ function PixPanel({ plan, onClose }) {
     return () => document.removeEventListener('keydown', handle)
   }, [onClose])
 
-  const copyKey = () => {
-    navigator.clipboard?.writeText(plan.pixPayload).catch(() => {})
+  // Gera cobrança ao abrir o painel
+  useEffect(() => {
+    let cancelled = false
+    const generate = async () => {
+      setLoading(true); setError('')
+      try {
+        const res = await fetch('/.netlify/functions/plano-pagar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ planId: plan.id, userId }),
+        })
+        const data = await res.json()
+        if (!cancelled) {
+          if (!res.ok || data.error) { setError(data.error || 'Erro ao gerar cobrança'); return }
+          setBrCode(data.brCode)
+        }
+      } catch (err) {
+        if (!cancelled) setError(err.message)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    generate()
+    return () => { cancelled = true }
+  }, [plan.id, userId])
+
+  const copyCode = () => {
+    if (!brCode) return
+    navigator.clipboard?.writeText(brCode).catch(() => {})
     setCopied(true)
     setTimeout(() => setCopied(false), 2500)
   }
@@ -176,42 +161,50 @@ function PixPanel({ plan, onClose }) {
         <button onClick={onClose} className="text-slate-300 hover:text-slate-500 text-xl leading-none">×</button>
       </div>
 
-      <div className="flex gap-5 items-start">
-        {/* QR Code */}
-        <div className="shrink-0 p-2 border border-slate-200 rounded-xl bg-white shadow-sm">
-          <FakeQR size={148}/>
-          <p className="text-center text-xs text-slate-400 mt-1.5">Escaneie com seu banco</p>
+      {loading ? (
+        <div className="flex items-center justify-center py-10 text-slate-400 text-sm gap-3">
+          <div className="w-5 h-5 border-2 border-slate-200 border-t-indigo-500 rounded-full animate-spin"/>
+          Gerando QR Code…
         </div>
-
-        {/* Detalhes */}
-        <div className="flex-1 space-y-3">
-          <div className={`rounded-xl px-4 py-3 ${accent.bgLight} border ${accent.border}`}>
-            <p className={`text-xs font-semibold mb-0.5 ${accent.text}`}>Valor a pagar</p>
-            <p className="text-2xl font-black text-slate-900">R$ {plan.price.toFixed(2).replace('.',',')}</p>
+      ) : error ? (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{error}</div>
+      ) : (
+        <div className="flex gap-5 items-start">
+          {/* QR Code real */}
+          <div className="shrink-0 p-2 border border-slate-200 rounded-xl bg-white shadow-sm">
+            <QRCodeImg brCode={brCode} size={152}/>
+            <p className="text-center text-xs text-slate-400 mt-1.5">Escaneie com seu banco</p>
           </div>
 
-          <div>
-            <p className="text-xs text-slate-400 mb-0.5">Beneficiário</p>
-            <p className="text-sm font-semibold text-slate-800">{plan.beneficiary}</p>
-          </div>
+          {/* Detalhes */}
+          <div className="flex-1 space-y-3">
+            <div className={`rounded-xl px-4 py-3 ${accent.bgLight} border ${accent.border}`}>
+              <p className={`text-xs font-semibold mb-0.5 ${accent.text}`}>Valor a pagar</p>
+              <p className="text-2xl font-black text-slate-900">R$ {plan.price.toFixed(2).replace('.',',')}</p>
+            </div>
 
-          <div>
-            <p className="text-xs text-slate-400 mb-0.5">Chave {plan.pixKeyType}</p>
-            <p className="text-sm font-mono text-slate-700 break-all">{plan.pixKey}</p>
-          </div>
+            {brCode && (
+              <div>
+                <p className="text-xs text-slate-400 mb-1">Código PIX copia e cola</p>
+                <p className="text-xs font-mono text-slate-600 break-all bg-slate-50 rounded-lg p-2 leading-relaxed">
+                  {brCode.slice(0, 60)}…
+                </p>
+              </div>
+            )}
 
-          <button onClick={copyKey}
-            className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${
-              copied ? 'bg-emerald-500 text-white' : `${accent.bg} text-white hover:opacity-90`
-            }`}>
-            {copied ? '✅ Copiado!' : '📋 Copiar código PIX'}
-          </button>
+            <button onClick={copyCode} disabled={!brCode}
+              className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 ${
+                copied ? 'bg-emerald-500 text-white' : `${accent.bg} text-white hover:opacity-90`
+              }`}>
+              {copied ? '✅ Copiado!' : '📋 Copiar código PIX'}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       <p className="text-xs text-slate-400 mt-4 text-center leading-relaxed">
-        Após o pagamento o acesso é liberado automaticamente em até 1h útil.
-        Dúvidas? <strong className="text-slate-600">financeiro@notafacil.com.br</strong>
+        Após o pagamento o acesso é liberado automaticamente.
+        Dúvidas? <strong className="text-slate-600">contato@notafacilapp.com.br</strong>
       </p>
     </div>
   )
@@ -219,15 +212,27 @@ function PixPanel({ plan, onClose }) {
 
 // ── Página principal ──────────────────────────────────────────────
 export default function Plano() {
+  const { user }  = useAuth()
+  const sub       = useSubscription()
   const [payingPlan, setPayingPlan] = useState(null) // null | 'essencial' | 'pro'
 
-  const remaining = CURRENT.totalDays - CURRENT.usedDays
-  const pct       = Math.round(CURRENT.usedDays / CURRENT.totalDays * 100)
-  const urgent    = remaining <= 5
-  const warn      = remaining <= 10
+  const daysLeft  = sub.daysLeft ?? 0
+  const urgent    = daysLeft <= 3
+  const warn      = daysLeft <= 7
+  const planKey   = (sub.plan === 'essencial' || sub.plan === 'pro') ? sub.plan : null
+
+  // Formata data legível
+  const fmtDate = d => d ? new Date(d).toLocaleDateString('pt-BR') : '—'
 
   const handleAssinar = (planId) => {
     setPayingPlan(prev => prev === planId ? null : planId)
+  }
+
+  const statusLabel = () => {
+    if (sub.loading)   return 'Carregando…'
+    if (sub.isTrial)   return `Trial gratuito — ${daysLeft} dia${daysLeft !== 1 ? 's' : ''} restante${daysLeft !== 1 ? 's' : ''}`
+    if (!sub.isActive) return 'Assinatura encerrada'
+    return `${daysLeft} dia${daysLeft !== 1 ? 's' : ''} restante${daysLeft !== 1 ? 's' : ''}`
   }
 
   return (
@@ -239,37 +244,47 @@ export default function Plano() {
 
       {/* Status do plano atual */}
       <div className={`bg-white border rounded-2xl p-5 border-l-4 ${
-        urgent ? 'border-l-red-500 border-red-100'
-        : warn  ? 'border-l-amber-400 border-amber-100'
+        !sub.isActive ? 'border-l-red-500 border-red-100'
+        : urgent ? 'border-l-red-500 border-red-100'
+        : warn   ? 'border-l-amber-400 border-amber-100'
         : 'border-l-indigo-500 border-slate-100'
       }`}>
-        <div className="flex items-start justify-between mb-4">
+        <div className="flex items-start justify-between mb-3">
           <div>
-            <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Plano ativo</p>
-            <p className="text-xl font-bold text-slate-900">{PLANS[CURRENT.plan].name}</p>
-            <p className="text-slate-500 text-sm mt-0.5">
-              Renova em {CURRENT.renewDate} · R$ {PLANS[CURRENT.plan].price.toFixed(2).replace('.',',')}/mês
+            <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">
+              {sub.isTrial ? 'Período de teste' : 'Plano ativo'}
             </p>
+            <p className="text-xl font-bold text-slate-900">
+              {planKey ? PLANS[planKey].name : sub.isTrial ? 'NotaFacil Trial' : 'Sem plano ativo'}
+            </p>
+            {sub.planoFim && (
+              <p className="text-slate-500 text-sm mt-0.5">
+                Renova em {fmtDate(sub.planoFim)} · R$ {planKey ? PLANS[planKey].price.toFixed(2).replace('.',',') : '—'}/mês
+              </p>
+            )}
+            {sub.isTrial && sub.trialEnd && (
+              <p className="text-slate-500 text-sm mt-0.5">
+                Trial encerra em {fmtDate(sub.trialEnd)}
+              </p>
+            )}
           </div>
-          <span className={`text-sm font-semibold px-3 py-1.5 rounded-full flex-shrink-0 ${
-            urgent ? 'bg-red-100 text-red-700'
-            : warn  ? 'bg-amber-100 text-amber-700'
+          <span className={`text-sm font-semibold px-3 py-1.5 rounded-full flex-shrink-0 ml-3 ${
+            !sub.isActive ? 'bg-red-100 text-red-700'
+            : urgent ? 'bg-red-100 text-red-700'
+            : warn   ? 'bg-amber-100 text-amber-700'
             : 'bg-emerald-100 text-emerald-700'
           }`}>
-            {remaining} dias restantes
+            {statusLabel()}
           </span>
         </div>
-        <div className="w-full bg-slate-100 rounded-full h-2 mb-1.5">
-          <div className={`h-2 rounded-full transition-all ${urgent ? 'bg-red-500' : warn ? 'bg-amber-400' : 'bg-indigo-500'}`}
-            style={{ width: `${pct}%` }}/>
-        </div>
-        <div className="flex justify-between text-xs text-slate-400">
-          <span>{CURRENT.startDate}</span>
-          <span>{CURRENT.usedDays} de {CURRENT.totalDays} dias usados</span>
-          <span>{CURRENT.renewDate}</span>
-        </div>
-        {urgent && (
-          <div className="mt-3 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-700">
+
+        {!sub.isActive && (
+          <div className="mt-2 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-700">
+            ⚠️ Seu acesso está encerrado. Assine um plano para retomar.
+          </div>
+        )}
+        {sub.isActive && urgent && (
+          <div className="mt-2 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-700">
             ⚠️ Seu plano vence em breve! Realize o pagamento para não ter interrupção.
           </div>
         )}
@@ -281,30 +296,20 @@ export default function Plano() {
           <PlanCard
             key={plan.id}
             plan={plan}
-            isCurrent={plan.id === CURRENT.plan}
+            isCurrent={sub.plan === plan.id}
             isPaying={payingPlan === plan.id}
-            onAssinar={handleAssinar}
-          />
+            o
         ))}
       </div>
 
-      {/* Painel de pagamento PIX — aparece quando um plano é selecionado */}
+      {/* Painel de pagamento PIX */}
       {payingPlan && (
         <PixPanel
           plan={PLANS[payingPlan]}
+          userId={user?.id}
           onClose={() => setPayingPlan(null)}
         />
       )}
-
-      {/* Em breve */}
-      <div className="bg-white border border-slate-100 rounded-2xl p-4 opacity-70">
-        <span className="text-2xl mb-2 block">🏷️</span>
-        <p className="font-semibold text-slate-800 text-sm mb-1">Boleto automático</p>
-        <p className="text-xs text-slate-400 leading-relaxed">
-          Geração e envio automático do boleto de renovação 10 dias antes do vencimento.
-        </p>
-        <span className="inline-block mt-2 text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium">Em breve</span>
-      </div>
     </div>
   )
 }

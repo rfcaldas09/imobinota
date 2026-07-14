@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { SubscriptionProvider } from './contexts/SubscriptionContext'
 import Layout from './components/Layout'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
@@ -10,6 +11,7 @@ import Relatorios from './pages/Relatorios'
 import Inquilinos from './pages/Inquilinos'
 import Config from './pages/Config'
 import Plano from './pages/Plano'
+import OnboardingWizard, { useOnboarding } from './components/OnboardingWizard'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -21,14 +23,21 @@ function PrivateRoute({ children }) {
   return user ? children : <Navigate to="/" replace />
 }
 
+function AppContent() {
+  const { wizardOpen, closeWizard } = useOnboarding()
+  return (
+    <>
+      <AppRoutes />
+      {wizardOpen && <OnboardingWizard onComplete={() => closeWizard(true)} />}
+    </>
+  )
+}
+
 function AppRoutes() {
   return (
     <Routes>
-      {/* Rotas públicas */}
       <Route path="/"      element={<Landing />} />
       <Route path="/login" element={<Login />} />
-
-      {/* Rotas privadas */}
       <Route path="/dashboard"  element={<PrivateRoute><Layout><Dashboard /></Layout></PrivateRoute>} />
       <Route path="/contratos"  element={<PrivateRoute><Layout><Contratos /></Layout></PrivateRoute>} />
       <Route path="/cobrancas"  element={<PrivateRoute><Layout><Cobrancas /></Layout></PrivateRoute>} />
@@ -36,9 +45,7 @@ function AppRoutes() {
       <Route path="/inquilinos" element={<PrivateRoute><Layout><Inquilinos /></Layout></PrivateRoute>} />
       <Route path="/config"     element={<PrivateRoute><Layout><Config /></Layout></PrivateRoute>} />
       <Route path="/plano"      element={<PrivateRoute><Layout><Plano /></Layout></PrivateRoute>} />
-
-      {/* Fallback */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*"           element={<Navigate to="/" replace />} />
     </Routes>
   )
 }
@@ -47,7 +54,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <SubscriptionProvider>
+          <AppContent />
+        </SubscriptionProvider>
       </AuthProvider>
     </BrowserRouter>
   )

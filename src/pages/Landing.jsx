@@ -191,7 +191,7 @@ function DashboardMockup() {
           {/* Tabela contratos */}
           <div className="bg-white rounded-xl overflow-hidden">
             <div className="grid grid-cols-4 px-3 py-1.5 bg-slate-50 text-[9px] font-bold text-slate-400 uppercase tracking-wide">
-              <span>Inquilino</span><span>Imóvel</span><span className="text-right">Valor</span><span className="text-center">Status</span>
+              <span>Cliente</span><span>Imóvel</span><span className="text-right">Valor</span><span className="text-center">Status</span>
             </div>
             {[
               ['Maria S.','Ap. 302 – Beira-Mar','R$ 1.850','Pago','emerald'],
@@ -410,7 +410,7 @@ export default function Landing() {
             {[
               {icon:'📄',title:'NFS-e Nacional integrada',desc:'Emissão automática para cada contrato, direto pelo painel. Sem acessar o portal da prefeitura.'},
               {icon:'🔐',title:'Certificado A1 gerenciado',desc:'Armazenamos e renovamos seu certificado digital com segurança. Você não precisa se preocupar.'},
-              {icon:'⚡',title:'Disparo em massa em 1 clique',desc:'Gere e envie boleto + NFS-e para todos os inquilinos de uma vez. De horas para menos de 5 minutos.'},
+              {icon:'⚡',title:'Disparo em massa em 1 clique',desc:'Gere e envie boleto + NFS-e para todos os clientes de uma vez. De horas para menos de 5 minutos.'},
             ].map(c => (
               <div key={c.title} className="bg-white border border-amber-100 rounded-2xl p-6 shadow-sm">
                 <span className="text-3xl mb-4 block">{c.icon}</span>
@@ -465,8 +465,8 @@ export default function Landing() {
           <div className="grid md:grid-cols-3 gap-6">
             {[
               {icon:'📊',title:'Controles em planilha',desc:'Dados espalhados em Excel, WhatsApp e e-mail. Sem histórico confiável, sem visibilidade real.'},
-              {icon:'🧾',title:'Boletos um por um',desc:'Gerar boleto manualmente para cada inquilino todo mês. Processo lento, sujeito a erros e esquecimentos.'},
-              {icon:'📄',title:'NFS-e manual e demorada',desc:'Emitir nota fiscal para cada inquilino no portal da prefeitura. Horas por mês perdidas sem necessidade.'},
+              {icon:'🧾',title:'Boletos um por um',desc:'Gerar boleto manualmente para cada cliente todo mês. Processo lento, sujeito a erros e esquecimentos.'},
+              {icon:'📄',title:'NFS-e manual e demorada',desc:'Emitir nota fiscal para cada cliente no portal da prefeitura. Horas por mês perdidas sem necessidade.'},
               {icon:'📅',title:'Contratos vencendo sem aviso',desc:'Sem alertas automáticos, contratos vencem e ficam em situação irregular sem que ninguém perceba.'},
               {icon:'😰',title:'Inadimplência invisível',desc:'Sem dashboard, é difícil saber quem está em atraso. A inadimplência cresce em silêncio.'},
               {icon:'📁',title:'Documentos físicos perdidos',desc:'Contratos em papel ou arquivos soltos no computador. Sem centralização, qualquer auditoria vira caos.'},
@@ -491,11 +491,11 @@ export default function Landing() {
           </div>
           <div className="grid md:grid-cols-3 gap-6">
             {[
-              {icon:'📋',color:'indigo',title:'Gestão completa de contratos',desc:'Cadastre inquilinos, imóveis e contratos em minutos. Tudo centralizado, organizado e acessível de qualquer lugar.'},
+              {icon:'📋',color:'indigo',title:'Gestão completa de contratos',desc:'Cadastre clientes, imóveis e contratos em minutos. Tudo centralizado, organizado e acessível de qualquer lugar.'},
               {icon:'⚡',color:'purple',title:'Disparo em massa com 1 clique',desc:'Gere boletos + NFS-e para todos os contratos do mês e envie por e-mail automaticamente. De horas para minutos.'},
               {icon:'📈',color:'emerald',title:'Dashboard financeiro completo',desc:'Acompanhe adimplência, valores em aberto e histórico de pagamentos com gráficos claros e em tempo real.'},
               {icon:'🔔',color:'amber',title:'Alertas de contratos vencendo',desc:'Receba avisos automáticos de contratos próximos do vencimento. Negocie e renove com antecedência, sem surpresas.'},
-              {icon:'💸',color:'sky',title:'PIX com baixa automática',desc:'Inquilinos pagam via PIX e a baixa é registrada automaticamente. Sem conferência manual, sem trabalho extra.'},
+              {icon:'💸',color:'sky',title:'PIX com baixa automática',desc:'Clientes pagam via PIX e a baixa é registrada automaticamente. Sem conferência manual, sem trabalho extra.'},
               {icon:'🗂️',color:'slate',title:'Digitalização de contratos',desc:'Suba e armazene contratos em PDF com segurança. Acesse qualquer documento a qualquer hora, de qualquer dispositivo.'},
             ].map(f => (
               <div key={f.title} className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm">
@@ -518,8 +518,8 @@ export default function Landing() {
           </div>
           <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
             {[
-              {num:'1',title:'Cadastre seus contratos uma vez',desc:'Importe ou cadastre manualmente inquilinos, imóveis e valores. Feito isso, nunca mais precisará repetir.'},
-              {num:'2',title:'Clique em "Gerar e Enviar Tudo"',desc:'Um clique gera boleto + NFS-e e dispara por e-mail para todos os inquilinos automaticamente.'},
+              {num:'1',title:'Cadastre seus contratos uma vez',desc:'Importe ou cadastre manualmente clientes, imóveis e valores. Feito isso, nunca mais precisará repetir.'},
+              {num:'2',title:'Clique em "Gerar e Enviar Tudo"',desc:'Um clique gera boleto + NFS-e e dispara por e-mail para todos os clientes automaticamente.'},
               {num:'3',title:'Acompanhe pagamentos em tempo real',desc:'O dashboard atualiza à medida que os pagamentos chegam. Veja quem pagou, quem está pendente e quem está em atraso.'},
             ].map(s => (
               <div key={s.num} className="text-center">
@@ -544,7 +544,7 @@ export default function Landing() {
           </div>
           <div className="grid md:grid-cols-3 gap-6">
             {[
-              {name:'Marcos A.',role:'Gestora de Imóveis — Blumenau',quote:'"Antes levava 3 dias para emitir boleto e nota de todos os inquilinos. Hoje faço em 5 minutos. Não tem como voltar atrás."',initial:'M',destaque:false},
+              {name:'Marcos A.',role:'Gestora de Imóveis — Blumenau',quote:'"Antes levava 3 dias para emitir boleto e nota de todos os clientes. Hoje faço em 5 minutos. Não tem como voltar atrás."',initial:'M',destaque:false},
               {name:'Carla S.',role:'Proprietária — Joinville',quote:'"A NFS-e integrada foi o que me convenceu. Já estava preocupada com a nova regulação de agosto — o NotaFacil resolveu isso e muito mais."',initial:'C',destaque:true},
               {name:'Ricardo P.',role:'Gestor Independente — Curitiba',quote:'"O dashboard de inadimplência me deu visibilidade que eu nunca tive. Reduzi meu atraso em 40% no primeiro mês."',initial:'R',destaque:false},
             ].map(t => (

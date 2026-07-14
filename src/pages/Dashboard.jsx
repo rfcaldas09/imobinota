@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { emitirCobrancas, mesLabel, mesStr, MESES } from '../lib/cobrancas'
+import { mesLabel, mesStr, MESES } from '../lib/cobrancas'
 import MonthPicker from '../components/MonthPicker'
 
 const ic = (d, cls='') => (
@@ -9,9 +9,7 @@ const ic = (d, cls='') => (
     strokeLinecap="round" strokeLinejoin="round" className={`w-5 h-5 ${cls}`}
     dangerouslySetInnerHTML={{ __html: d }} />
 )
-const IcSend     = ({ c='' }) => ic('<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>', c)
 const IcCheck    = ({ c='' }) => ic('<polyline points="20 6 9 17 4 12"/>', c)
-const IcZap      = ({ c='' }) => ic('<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>', c)
 const IcCalendar = ({ c='' }) => ic('<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>', c)
 const IcRefresh  = ({ c='' }) => ic('<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>', c)
 
@@ -37,197 +35,6 @@ const mapRow = row => ({
                     (Number(row.seguro_incendio)||0) + (Number(row.iptu)||0),
 })
 
-// ── Modal Gerar e Enviar em Massa ──────────────────────────────────
-function BatchModal({ contracts, user, onClose }) {
-  const [step, setStep]     = useState('pick') // pick → running → done
-  const [mesRef, setMesRef] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
-  const [preview, setPreview]   = useState(null) // { toCreate, skipped }
-  const [progress, setProgress] = useState(0)
-  const [logs, setLogs]         = useState([])
-  const [result, setResult]     = useState(null)
-
-  // Carrega preview: quantos já têm cobrança no mês selecionado
-  useEffect(() => {
-    if (!user || !contracts.length) return
-    setPreview(null)
-    const ref = new Date(mesRef.getFullYear(), mesRef.getMonth(), 1).toISOString().slice(0, 10)
-    import('../lib/supabase').then(({ supabase }) =>
-      supabase.from('cobrancas').select('contrato_id')
-        .eq('user_id', user.id).eq('mes_referencia', ref)
-        .then(({ data }) => {
-          const ids = new Set((data || []).map(e => e.contrato_id))
-          const toCreate = contracts.filter(c => !ids.has(c.id)).length
-          setPreview({ toCreate, skipped: contracts.length - toCreate })
-        })
-    )
-  }, [mesRef, user, contracts])
-
-  useEffect(() => {
-    if (step === 'running') return
-    const handle = e => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', handle)
-    return () => document.removeEventListener('keydown', handle)
-  }, [onClose, step])
-
-  const confirm = async () => {
-    setStep('running')
-    setProgress(0)
-    setLogs([])
-
-    // 1. Cria registros reais no banco
-    const res = await emitirCobrancas(user.id, contracts, mesRef)
-
-    if (res.error) {
-      setResult({ created: 0, skipped: res.skipped, fails: 0, error: res.error })
-      setStep('done')
-      return
-    }
-
-    const total = res.created
-    if (total === 0) {
-      setResult({ created: 0, skipped: res.skipped, fails: 0, error: null })
-      setStep('done')
-      return
-    }
-
-    // 2. Simula envio (boleto/NFS-e/e-mail — integração futura)
-    const names = contracts.map(c => c.tenant.split(' ')[0]).filter(Boolean)
-    let sent = 0
-    const iv = setInterval(() => {
-      const batch = Math.min(3, total - sent)
-      for (let i = 0; i < batch; i++) {
-        const name = names[(sent + i) % (names.length || 1)] || 'Inquilino'
-        setLogs(l => [...l.slice(-50), { name, ok: true }])
-      }
-      sent = Math.min(sent + batch, total)
-      setProgress(sent)
-      if (sent >= total) {
-        clearInterval(iv)
-        setTimeout(() => {
-          setResult({ created: total, skipped: res.skipped, fails: 0, error: null })
-          setStep('done')
-        }, 400)
-      }
-    }, 180)
-  }
-
-  const pct = result?.created > 0 ? Math.round((progress / result.created) * 100) : 0
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
-
-        {/* ── Seleção de mês ── */}
-        {step === 'pick' && (
-          <div className="p-7">
-            <div className="w-14 h-14 bg-indigo-100 rounded-2xl flex items-center justify-center mb-5 text-3xl">🚀</div>
-            <h2 className="text-xl font-bold text-slate-900 mb-1">Gerar e Enviar em Massa</h2>
-            <p className="text-sm text-slate-500 mb-5">Selecione o mês de referência da cobrança:</p>
-
-            <MonthPicker value={mesRef} onChange={v => { setMesRef(v); setPreview(null) }}/>
-
-            {preview ? (
-              <div className={`mt-4 rounded-xl px-4 py-3 text-sm ${preview.toCreate > 0 ? 'bg-indigo-50 border border-indigo-200 text-indigo-800' : 'bg-amber-50 border border-amber-200 text-amber-800'}`}>
-                {preview.toCreate > 0 ? (
-                  <>
-                    <strong>{preview.toCreate} cobrança{preview.toCreate !== 1 ? 's' : ''}</strong> serão geradas para {mesLabel(mesRef)}.
-                    {preview.skipped > 0 && <span className="text-indigo-500"> ({preview.skipped} já emitidas — serão ignoradas)</span>}
-                  </>
-                ) : (
-                  <>⚠️ Todos os contratos já têm cobrança emitida para {mesLabel(mesRef)}.</>
-                )}
-              </div>
-            ) : (
-              <div className="mt-4 h-12 flex items-center justify-center text-slate-300 text-xs">
-                <div className="w-4 h-4 border-2 border-slate-200 border-t-slate-400 rounded-full animate-spin mr-2"/>
-                Verificando…
-              </div>
-            )}
-
-            <div className="bg-slate-50 rounded-xl p-4 mt-4 space-y-2">
-              {[['💳','Registrar cobrança no sistema'],
-                ['📄','Emitir NFS-e (em breve)'],
-                ['📧','Enviar e-mail para o inquilino (em breve)']].map(([ico,txt]) => (
-                <div key={txt} className="flex items-center gap-3 text-sm text-slate-600">
-                  <span>{ico}</span><span>{txt}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50">Cancelar</button>
-              <button onClick={confirm} disabled={!preview || preview.toCreate === 0}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold flex items-center justify-center gap-2 shadow-md shadow-indigo-200 disabled:opacity-40 disabled:cursor-not-allowed">
-                <IcZap c="w-4 h-4"/> Confirmar e Enviar
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── Progresso ── */}
-        {step === 'running' && (
-          <div className="p-6">
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
-                <div className="w-5 h-5 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin"/>
-              </div>
-              <div>
-                <p className="font-bold text-slate-900">Processando {mesLabel(mesRef)}…</p>
-                <p className="text-sm text-slate-400">Não feche esta janela</p>
-              </div>
-            </div>
-            {result?.created > 0 && (
-              <div className="mb-4">
-                <div className="flex justify-between text-sm mb-1.5">
-                  <span className="text-slate-600">{progress} <span className="text-slate-400">de {result.created}</span></span>
-                  <span className="font-bold text-indigo-600">{pct}%</span>
-                </div>
-                <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all" style={{ width:`${pct}%` }}/>
-                </div>
-              </div>
-            )}
-            <div className="bg-slate-950 rounded-xl p-3 h-44 overflow-y-auto font-mono text-xs space-y-1">
-              {logs.slice(-30).map((l, i) => (
-                <div key={i} className="text-emerald-400">✓ Cobrança registrada para {l.name}</div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Resultado ── */}
-        {step === 'done' && (
-          <div className="p-7 text-center">
-            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <IcCheck c="w-8 h-8 text-emerald-600"/>
-            </div>
-            <h2 className="text-xl font-bold text-slate-900 mb-1">
-              {result?.error ? 'Erro ao processar' : 'Cobranças geradas!'}
-            </h2>
-            <p className="text-slate-500 text-sm mb-5 capitalize">{mesLabel(mesRef)}</p>
-            {result?.error ? (
-              <p className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-3 mb-5">{result.error}</p>
-            ) : (
-              <div className="grid grid-cols-3 gap-3 mb-5">
-                {[
-                  { v: result?.created ?? 0,  l:'Geradas',  bg:'bg-emerald-50', c:'text-emerald-700' },
-                  { v: result?.skipped ?? 0,  l:'Ignoradas', bg:'bg-slate-50',   c:'text-slate-600'  },
-                  { v: result?.fails   ?? 0,  l:'Falhas',   bg:'bg-red-50',     c:'text-red-600'    },
-                ].map(({ v, l, bg, c }) => (
-                  <div key={l} className={`${bg} rounded-xl py-3`}>
-                    <p className={`text-2xl font-bold ${c}`}>{v}</p>
-                    <p className={`text-xs ${c} opacity-70 mt-0.5`}>{l}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-            <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800">Fechar</button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
 
 // ── Mapeia linha de cobrança ────────────────────────────────────────
 const mapCob = row => ({
@@ -248,14 +55,13 @@ export default function Dashboard() {
   const [mesRef, setMesRef] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
   const [ano, setAno]       = useState(() => new Date().getFullYear())
   const [loading, setLoading]     = useState(true)
-  const [batch, setBatch]         = useState(false)
   const [lastUpdated, setLastUpdated] = useState(null)
 
   const load = async () => {
     if (!user) return
     setLoading(true)
 
-    // Contratos (sempre — usado em vencimentos + BatchModal)
+    // Contratos (sempre — usado em vencimentos)
     const { data: ctrData } = await supabase
       .from('contratos')
       .select('*, inquilinos(nome)')
@@ -429,10 +235,6 @@ export default function Dashboard() {
           <button onClick={load} disabled={loading} title="Atualizar"
             className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-all">
             <IcRefresh c={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}/>
-          </button>
-          <button onClick={() => setBatch(true)} disabled={contracts.length === 0}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-40 transition-all shadow-md shadow-indigo-200/50">
-            <IcSend c="w-4 h-4"/> Gerar e Enviar Tudo
           </button>
         </div>
       </div>
@@ -734,7 +536,6 @@ export default function Dashboard() {
         </>
       )}
 
-      {batch && <BatchModal contracts={contracts} user={user} onClose={() => setBatch(false)}/>}
     </div>
   )
 }

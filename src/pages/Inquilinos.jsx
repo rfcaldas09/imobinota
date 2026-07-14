@@ -99,7 +99,7 @@ export default function Inquilinos() {
         <div>
           <h1 className="text-xl font-bold text-slate-900">Clientes</h1>
           <p className="text-sm text-slate-500">
-            {loading ? 'Carregando…' : `${filtered.length} de ${inquilinos.length} inquilino${inquilinos.length !== 1 ? 's' : ''}`}
+            {loading ? 'Carregando…' : `${filtered.length} de ${inquilinos.length} cliente${inquilinos.length !== 1 ? 's' : ''}`}
           </p>
         </div>
         <button onClick={load} disabled={loading} title="Atualizar"
@@ -126,13 +126,13 @@ export default function Inquilinos() {
       {loading ? (
         <div className="flex items-center justify-center py-24 text-slate-400 text-sm">
           <div className="w-5 h-5 border-2 border-slate-200 border-t-indigo-500 rounded-full animate-spin mr-3"/>
-          Carregando inquilinos…
+          Carregando clientes…
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-24">
           <p className="text-4xl mb-3">{search ? '🔍' : '👤'}</p>
           <p className="text-slate-500 font-medium text-sm">
-            {search ? 'Nenhum inquilino encontrado' : 'Nenhum inquilino cadastrado'}
+            {search ? 'Nenhum cliente encontrado' : 'Nenhum cliente cadastrado'}
           </p>
           {search && (
             <button onClick={() => setSearch('')} className="mt-2 text-indigo-600 text-sm hover:underline">
@@ -191,7 +191,7 @@ export default function Inquilinos() {
 
             {/* Cabeçalho */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <h2 className="font-bold text-slate-900">Perfil do Inquilino</h2>
+              <h2 className="font-bold text-slate-900">Perfil do Cliente</h2>
               <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-700">
                 <IcX c="w-5 h-5"/>
               </button>

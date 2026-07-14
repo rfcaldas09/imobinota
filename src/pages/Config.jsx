@@ -97,7 +97,7 @@ const MUNICIPIOS_SUL = [
 ]
 
 const VARS = [
-  { v:'{{inquilino}}', label:'Inquilino' },
+  { v:'{{inquilino}}', label:'Cliente' },
   { v:'{{imovel}}',    label:'Imóvel' },
   { v:'{{valor}}',     label:'Valor total' },
   { v:'{{vencimento}}',label:'Vencimento' },
@@ -726,10 +726,10 @@ export default function Config() {
                 <span>✅</span>
                 <span>O envio é feito pela infraestrutura do NotaFacil — configure apenas o nome e o e-mail de resposta abaixo.</span>
               </div>
-              <Row label="Nome de exibição" hint='Aparece no campo "De:" para o inquilino'>
+              <Row label="Nome de exibição" hint='Aparece no campo "De:" para o cliente'>
                 <Inp value={f.fromName} onChange={e => set('fromName', e.target.value)} placeholder="Ex: Vasselai Imóveis"/>
               </Row>
-              <Row label="Responder para (Reply-To)" hint="Quando o inquilino responder, a mensagem chega neste endereço">
+              <Row label="Responder para (Reply-To)" hint="Quando o cliente responder, a mensagem chega neste endereço">
                 <Inp value={f.replyTo} onChange={e => set('replyTo', e.target.value)} type="email" placeholder="contato@suaempresa.com.br"/>
               </Row>
             </div>
@@ -766,7 +766,7 @@ export default function Config() {
       {tab === 'template' && (
         <div className="bg-white border border-slate-100 rounded-2xl p-5">
           <h3 className="font-semibold text-slate-800 mb-1 text-sm">✉️ Template do E-mail de Cobrança</h3>
-          <p className="text-xs text-slate-500 mb-3">Use as variáveis abaixo — substituídas automaticamente para cada inquilino.</p>
+          <p className="text-xs text-slate-500 mb-3">Use as variáveis abaixo — substituídas automaticamente para cada cliente.</p>
 
           {/* Chips de variáveis */}
           <div className="flex flex-wrap gap-1.5 mb-4">
@@ -865,7 +865,7 @@ export default function Config() {
               <span className="text-lg">✅</span>
               <div>
                 <p className="font-semibold">Conta de recebimento configurada</p>
-                <p className="text-xs text-emerald-600 mt-0.5">Os pagamentos dos seus inquilinos serão transferidos automaticamente para sua chave PIX.</p>
+                <p className="text-xs text-emerald-600 mt-0.5">Os pagamentos dos seus clientes serão transferidos automaticamente para sua chave PIX.</p>
               </div>
             </div>
           ) : (
@@ -873,7 +873,7 @@ export default function Config() {
               <span className="text-lg">⚠️</span>
               <div>
                 <p className="font-semibold">Chave PIX não configurada</p>
-                <p className="text-xs text-amber-600 mt-0.5">Configure sua chave PIX abaixo para receber os pagamentos dos seus inquilinos.</p>
+                <p className="text-xs text-amber-600 mt-0.5">Configure sua chave PIX abaixo para receber os pagamentos dos seus clientes.</p>
               </div>
             </div>
           )}
@@ -881,7 +881,7 @@ export default function Config() {
           <div className="bg-white border border-slate-100 rounded-2xl p-5">
             <h3 className="font-semibold text-slate-800 mb-1 text-sm">🏦 Conta para recebimento</h3>
             <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-              Informe a chave PIX da sua conta (Itaú ou qualquer banco). Os pagamentos dos inquilinos
+              Informe a chave PIX da sua conta (Itaú ou qualquer banco). Os pagamentos dos clientes
               serão transferidos automaticamente para esta conta após cada boleto pago — sem nenhuma ação manual sua.
             </p>
 
@@ -928,7 +928,7 @@ export default function Config() {
           <div className="bg-white border border-slate-100 rounded-2xl p-5">
             <h3 className="font-semibold text-slate-800 mb-3 text-sm">ℹ️ Como funciona</h3>
             <ol className="space-y-2 text-xs text-slate-500 leading-relaxed">
-              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">1.</span>Seu inquilino recebe o boleto e paga via PIX.</li>
+              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">1.</span>Seu cliente recebe o boleto e paga via PIX.</li>
               <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">2.</span>O NotaFacil retém a taxa de serviço de R$ 2,99 por boleto pago.</li>
               <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">3.</span>O restante é transferido instantaneamente para a sua chave PIX acima.</li>
               <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">4.</span>Você vê tudo no dashboard em tempo real. Nenhuma ação manual necessária.</li>

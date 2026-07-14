@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { emitirUmaCobranca, mesLabel, MESES } from '../lib/cobrancas'
 import MonthPicker from '../components/MonthPicker'
 import Badge from '../components/Badge'
+import OnboardingWizard, { OnboardingBanner, useOnboarding } from '../components/OnboardingWizard'
 
 const ic = (d, cls='') => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -19,7 +20,6 @@ const IcMail    = ({ c='' }) => ic('<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 
 const IcPencil  = ({ c='' }) => ic('<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>', c)
 const IcChevR   = ({ c='' }) => ic('<polyline points="9 18 15 12 9 6"/>', c)
 const IcChevL   = ({ c='' }) => ic('<polyline points="15 18 9 12 15 6"/>', c)
-const IcZap     = ({ c='' }) => ic('<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>', c)
 const IcScan    = ({ c='' }) => ic('<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="3" y1="12" x2="21" y2="12"/>', c)
 const IcTrash   = ({ c='' }) => ic('<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>', c)
 
@@ -139,8 +139,8 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
         </div>
 
         <div className="overflow-y-auto px-6 pb-2 space-y-3 flex-1">
-          {/* Inquilino */}
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Inquilino</p>
+          {/* Cliente */}
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Cliente</p>
           <div className="grid grid-cols-2 gap-3">
             <Row label="Nome Completo *">
               <FormInp value={f.tenant} onChange={e => set('tenant', e.target.value)} placeholder="Nome completo"/>
@@ -157,7 +157,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Row label="E-mail">
-              <FormInp value={f.email} onChange={e => set('email', e.target.value)} type="email" placeholder="inquilino@email.com"/>
+              <FormInp value={f.email} onChange={e => set('email', e.target.value)} type="email" placeholder="cliente@email.com"/>
             </Row>
             <Row label={`Telefone${f.phone && !isPhoneValid(f.phone) ? ' — incompleto' : ''}`}>
               <FormInp
@@ -382,117 +382,6 @@ function DocModal({ type, contract: c, onClose, onToast }) {
   )
 }
 
-// ── Batch Modal ────────────────────────────────────────────────────
-function BatchModal({ total: totalContracts, onClose }) {
-  const [step, setStep]         = useState('idle')
-  const [progress, setProgress] = useState(0)
-  const [logs, setLogs]         = useState([])
-  const [fails, setFails]       = useState(0)
-
-  useEffect(() => {
-    if (step === 'running') return
-    const handle = e => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', handle)
-    return () => document.removeEventListener('keydown', handle)
-  }, [onClose, step])
-
-  const run = () => {
-    setStep('running')
-    let sent = 0, fc = 0
-    const names = ['Maria Aparecida','João Carlos','Ana Paula','Carlos Eduardo','Fernanda Oliveira']
-    const iv = setInterval(() => {
-      const batch = Math.min(5, totalContracts - sent)
-      for (let i = 0; i < batch; i++) {
-        const fail = Math.random() < 0.005
-        if (fail) fc++
-        setLogs(l => [...l.slice(-50), { name: names[(sent+i) % names.length], ok: !fail }])
-      }
-      sent = Math.min(sent + batch, totalContracts)
-      setProgress(sent)
-      setFails(fc)
-      if (sent >= totalContracts) { clearInterval(iv); setTimeout(() => setStep('done'), 500) }
-    }, 80)
-  }
-
-  const pct = totalContracts > 0 ? Math.round((progress / totalContracts) * 100) : 0
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
-        {step === 'idle' && (
-          <div className="p-7">
-            <div className="w-14 h-14 bg-indigo-100 rounded-2xl flex items-center justify-center mb-5 text-3xl">🚀</div>
-            <h2 className="text-xl font-bold text-slate-900 mb-2">Gerar e Enviar em Massa</h2>
-            <p className="text-slate-500 mb-4 text-sm">Para cada um dos <strong className="text-slate-700">{totalContracts} contratos ativos</strong>, a plataforma irá:</p>
-            <div className="bg-slate-50 rounded-xl p-4 mb-5 space-y-2">
-              {[['💳','Gerar boleto de cobrança','via OpenPIX'],
-                ['📄','Emitir Nota Fiscal de Serviço (NFS-e)','via API Nacional gov.br'],
-                ['📧','Enviar e-mail com ambos os documentos','para o inquilino']].map(([ico,txt,sub])=>(
-                <div key={txt} className="flex items-start gap-3 text-sm">
-                  <span className="text-lg leading-none mt-0.5">{ico}</span>
-                  <div><span className="text-slate-800 font-medium">{txt}</span><span className="text-slate-400 ml-1.5 text-xs">{sub}</span></div>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-6 text-sm text-amber-700">
-              <span className="mt-0.5 shrink-0">⚠️</span>
-              <span>Mês de referência: <strong>{new Date().toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</strong>. Contratos já emitidos serão ignorados.</span>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50">Cancelar</button>
-              <button onClick={run} disabled={totalContracts === 0}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold hover:from-indigo-700 hover:to-purple-700 flex items-center justify-center gap-2 shadow-md shadow-indigo-200 disabled:opacity-40">
-                <IcZap c="w-4 h-4"/> Confirmar e Enviar
-              </button>
-            </div>
-          </div>
-        )}
-        {step === 'running' && (
-          <div className="p-6">
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
-                <div className="w-5 h-5 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin"/>
-              </div>
-              <div>
-                <p className="font-bold text-slate-900">Processando contratos…</p>
-                <p className="text-sm text-slate-400">Não feche esta janela</p>
-              </div>
-            </div>
-            <div className="mb-4">
-              <div className="flex justify-between text-sm mb-1.5">
-                <span className="text-slate-600">{progress} <span className="text-slate-400">de {totalContracts}</span></span>
-                <span className="font-bold text-indigo-600">{pct}%</span>
-              </div>
-              <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all" style={{ width:`${pct}%` }}/>
-              </div>
-            </div>
-            <div className="bg-slate-950 rounded-xl p-3 h-48 overflow-y-auto font-mono text-xs space-y-1">
-              {logs.slice(-30).map((l,i) => (
-                <div key={i} className={l.ok ? 'text-emerald-400' : 'text-red-400'}>
-                  {l.ok ? '✓' : '✗'} {l.ok ? 'Boleto + NFS-e enviados para' : 'Falha ao enviar para'} {l.name}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {step === 'done' && (
-          <div className="p-7 text-center">
-            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <IcCheck c="w-8 h-8 text-emerald-600"/>
-            </div>
-            <h2 className="text-xl font-bold text-slate-900 mb-1">Envio concluído!</h2>
-            <p className="text-slate-500 text-sm mb-5">
-              {totalContracts - fails} enviados com sucesso
-              {fails > 0 && <span className="text-red-500"> · {fails} falhas</span>}
-            </p>
-            <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800">Fechar</button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
 
 // ── Scan Modal ────────────────────────────────────────────────────
 function ScanModal({ contract: c, onClose, onToast }) {
@@ -530,7 +419,7 @@ function ScanModal({ contract: c, onClose, onToast }) {
               </div>
               <h3 className="font-bold text-slate-900 text-lg mb-1">Escanear Contrato</h3>
               <p className="text-sm text-slate-500 mb-4">
-                Inquilino: <strong className="text-slate-800">{c.tenant}</strong><br/>
+                Cliente: <strong className="text-slate-800">{c.tenant}</strong><br/>
                 Imóvel: {c.property}
               </p>
               <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center mb-4">
@@ -567,7 +456,7 @@ function ScanModal({ contract: c, onClose, onToast }) {
               <h3 className="font-bold text-slate-900 text-lg mb-1">Escaneamento concluído!</h3>
               <p className="text-sm text-slate-500 mb-4">Dados extraídos e vinculados ao contrato.</p>
               <div className="bg-slate-50 rounded-xl p-4 space-y-2 text-sm mb-4">
-                {[['Inquilino',c.tenant],['Imóvel',c.property],
+                {[['Cliente',c.tenant],['Imóvel',c.property],
                   ['Vigência',`${fmtDate(c.start)} → ${fmtDate(c.end)}`],
                   ['Valor',fmt(c.value)]].map(([k,v]) => (
                   <div key={k} className="flex justify-between">
@@ -767,6 +656,8 @@ const mapRow = row => ({
 // ── Página principal ───────────────────────────────────────────────
 export default function Contratos() {
   const { user }  = useAuth()
+  const { pixSet } = useOnboarding()
+  const [showWizard, setShowWizard] = useState(false)
   const [contracts, setContracts] = useState([])
   const [loading, setLoading]     = useState(true)
   const [saving, setSaving]       = useState(false)
@@ -779,7 +670,6 @@ export default function Contratos() {
   const [adding, setAdding]       = useState(false)
   const [scanning, setScanning]   = useState(null)
   const [toDelete, setToDelete]   = useState(null)
-  const [showBatch, setShowBatch] = useState(false)
   const [isRenewal, setIsRenewal] = useState(false)
   const { toasts, toast }         = useToast()
 
@@ -956,6 +846,10 @@ export default function Contratos() {
 
   return (
     <div className="p-6 space-y-5 max-w-7xl mx-auto">
+      {/* Banner de onboarding — visível se chave PIX ainda não configurada */}
+      {!pixSet && <OnboardingBanner onOpen={() => setShowWizard(true)} />}
+      {showWizard && <OnboardingWizard onComplete={() => setShowWizard(false)} />}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -965,10 +859,6 @@ export default function Contratos() {
           </p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowBatch(true)}
-            className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-indigo-700 transition-colors">
-            <IcSend c="w-4 h-4"/> Gerar e Enviar Tudo
-          </button>
           <button onClick={() => setAdding(true)}
             className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-50 transition-colors">
             <IcPlus c="w-4 h-4"/> Novo Contrato
@@ -981,7 +871,7 @@ export default function Contratos() {
         <div className="relative flex-1 min-w-48">
           <IcSearch c="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
           <input value={search} onChange={handleSearch}
-            placeholder="Buscar por inquilino, imóvel ou CPF…"
+            placeholder="Buscar por cliente, imóvel ou CPF…"
             className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"/>
         </div>
         <div className="flex bg-white border border-slate-200 rounded-xl p-1 gap-1">
@@ -1026,7 +916,7 @@ export default function Contratos() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
-                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Inquilino</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Cliente</th>
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Imóvel</th>
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">
                   {isPorVencer ? 'Término' : 'Venc.'}
@@ -1132,7 +1022,6 @@ export default function Contratos() {
           onClose={() => setAdding(false)} onSave={handleAdd}/>
       )}
       {scanning && <ScanModal contract={scanning} onClose={() => setScanning(null)} onToast={toast}/>}
-      {showBatch && <BatchModal total={contracts.length} onClose={() => setShowBatch(false)}/>}
       {toDelete && (
         <DeleteModal contract={toDelete} deleting={deleting}
           onConfirm={handleDelete} onClose={() => setToDelete(null)}/>

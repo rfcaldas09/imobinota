@@ -72,34 +72,68 @@ exports.handler = async (event) => {
     }
   }
 
-  // ── 2. Atualiza cobrança no Supabase → status Pago ─────────────────────────
+  // ── 2. Detecta se é pagamento de PLANO ou de COBRANÇA de aluguel ──────────────
+  // correlationID de plano: "plano-{userId}-{planId}-{YYYYMM}"
+  const isPlanPayment = correlationID && /^plano-/.test(correlationID)
+
   let supabaseResult = null
   if (SUPABASE_URL && SUPABASE_SVC_KEY && correlationID) {
     try {
-      const patch = await fetch(
-        `${SUPABASE_URL}/rest/v1/cobrancas?id=eq.${correlationID}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'apikey':        SUPABASE_SVC_KEY,
-            'Authorization': `Bearer ${SUPABASE_SVC_KEY}`,
-            'Content-Type':  'application/json',
-            'Prefer':        'return=minimal',
-          },
-          body: JSON.stringify({
-            status:         'Pago',
-            data_pagamento: new Date().toISOString(),
-          }),
-        }
-      )
-      supabaseResult = { ok: patch.ok, status: patch.status }
+      if (isPlanPayment) {
+        // ── Ativa assinatura do usuário ──────────────────────────────
+        // correlationID: plano-{userId}-{planId}-YYYYMM
+        const parts  = correlationID.split('-') // ['plano', userId, planId, YYYYMM]
+        const userId = parts[1]
+        const planId = parts[2]
+        const fim    = new Date()
+        fim.setDate(fim.getDate() + 30) // 30 dias a partir do pagamento
+
+        const patch = await fetch(
+          `${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`,
+          {
+            method: 'PATCH',
+            headers: {
+              'apikey':        SUPABASE_SVC_KEY,
+              'Authorization': `Bearer ${SUPABASE_SVC_KEY}`,
+              'Content-Type':  'application/json',
+              'Prefer':        'return=minimal',
+            },
+            body: JSON.stringify({
+              plano_tipo:    planId,
+              plano_fim:     fim.toISOString(),
+              plano_inicio:  new Date().toISOString(),
+            }),
+          }
+        )
+        supabaseResult = { ok: patch.ok, status: patch.status, type: 'plano', planId, userId }
+        console.log('[openpix-webhook] Plano ativado:', { userId, planId, fim })
+      } else {
+        // ── Marca cobrança de aluguel como Pago ──────────────────────
+        const patch = await fetch(
+          `${SUPABASE_URL}/rest/v1/cobrancas?id=eq.${correlationID}`,
+          {
+            method: 'PATCH',
+            headers: {
+              'apikey':        SUPABASE_SVC_KEY,
+              'Authorization': `Bearer ${SUPABASE_SVC_KEY}`,
+              'Content-Type':  'application/json',
+              'Prefer':        'return=minimal',
+            },
+            body: JSON.stringify({
+              status:         'Pago',
+              data_pagamento: new Date().toISOString(),
+            }),
+          }
+        )
+        supabaseResult = { ok: patch.ok, status: patch.status, type: 'cobranca' }
+      }
     } catch (err) {
       supabaseResult = { ok: false, error: err.message }
       console.error('[openpix-webhook] Erro ao atualizar Supabase:', err.message)
     }
   } else {
-    supabaseResult = { ok: false, error: 'SUPABASE_URL ou SUPABASE_SERVICE_KEY não configurados' }
-    console.warn('[openpix-webhook] Supabase não configurado — cobrança NÃO atualizada no banco')
+    supabaseResult = { ok: false, error: 'SUPABASE_URL ou SUPABASE_SERVICE_KEY nao configurados' }
+    console.warn('[openpix-webhook] Supabase nao configurado')
   }
 
   console.log('[openpix-webhook] CHARGE_COMPLETED processado', {

@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { useSubscription } from '../contexts/SubscriptionContext'
 import { emitirCobrancas, emitirUmaCobranca, mesLabel, mesStr, MESES } from '../lib/cobrancas'
 import MonthPicker from '../components/MonthPicker'
+import OnboardingWizard, { OnboardingBanner } from '../components/OnboardingWizard'
 
 const ic = (d, cls='') => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -556,13 +558,14 @@ function NfseModal({ cob, user, onClose }) {
 
 // ── Opções de ação no BatchModal ──────────────────────────────────
 const BATCH_ACTIONS = [
-  { id: 'boleto', label: 'Somente Cobranças', icon: '💳', desc: 'Gera e registra cobranças para cada inquilino' },
+  { id: 'boleto', label: 'Somente Cobranças', icon: '💳', desc: 'Gera e registra cobranças para cada cliente' },
   { id: 'nfse',   label: 'Somente NFS-e',    icon: '📄', desc: 'Emite notas fiscais de serviço (em breve)' },
   { id: 'ambos',  label: 'Cobrança + NFS-e', icon: '⚡', desc: 'Gera cobrança e emite NFS-e juntos (em breve)' },
 ]
 
 // ── Modal Gerar e Enviar em Massa ─────────────────────────────────
 function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDone }) {
+  const { isActive } = useSubscription()
   const [step, setStep]         = useState('pick')
   const [action, setAction]     = useState('boleto')
   const [mesRef, setMesRef]     = useState(initialMes)
@@ -593,7 +596,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
 
   const selectedAction = BATCH_ACTIONS.find(a => a.id === action)
   const needsPix = action === 'boleto' || action === 'ambos'
-  const canConfirm = preview && preview.toCreate > 0 && !(needsPix && !pixKey)
+  const canConfirm = isActive && preview && preview.toCreate > 0 && !(needsPix && !pixKey)
 
   const confirm = async () => {
     setStep('running')
@@ -644,7 +647,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
     const iv = setInterval(() => {
       const batch = Math.min(3, total - sent)
       for (let i = 0; i < batch; i++) {
-        const name = names[(sent + i) % (names.length || 1)] || 'Inquilino'
+        const name = names[(sent + i) % (names.length || 1)] || 'Cliente'
         setLogs(l => [...l.slice(-50), { name }])
       }
       sent = Math.min(sent + batch, total)
@@ -671,6 +674,16 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
             <div className="w-14 h-14 bg-indigo-100 rounded-2xl flex items-center justify-center mb-5 text-3xl">🚀</div>
             <h2 className="text-xl font-bold text-slate-900 mb-1">Gerar e Enviar em Massa</h2>
             <p className="text-sm text-slate-500 mb-4">Selecione o mês e o que deseja gerar:</p>
+
+            {!isActive && (
+              <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800 flex items-start gap-2">
+                <span className="text-lg leading-none">🔒</span>
+                <div>
+                  <strong>Plano inativo.</strong> Assine um plano para confirmar o envio.{' '}
+                  <a href="/plano" className="underline font-semibold">Ver planos →</a>
+                </div>
+              </div>
+            )}
 
             <MonthPicker value={mesRef} onChange={v => { setMesRef(v); setPreview(null) }}/>
 
@@ -905,14 +918,14 @@ function AdicionarCobrancaModal({ contracts, user, onClose, onDone }) {
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Mês de referência *</label>
             <div className="flex gap-2">
-              <select value={mesRef.getMonth()} onChange={e => setMesRefLocal(new Date(mesRef.getFullYear(), Number(e.target.value), 1))}
-                className={`${inp} flex-1`}>
-                {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
+              <select value={String(mesRef.getMonth())} onChange={e => setMesRefLocal(new Date(mesRef.getFullYear(), Number(e.target.value), 1))}
+                className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                {MESES.map((m, i) => <option key={i} value={String(i)}>{m}</option>)}
               </select>
-              <select value={mesRef.getFullYear()} onChange={e => setMesRefLocal(new Date(Number(e.target.value), mesRef.getMonth(), 1))}
-                className={`${inp} w-28`}>
+              <select value={String(mesRef.getFullYear())} onChange={e => setMesRefLocal(new Date(Number(e.target.value), mesRef.getMonth(), 1))}
+                className="w-28 px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 {Array.from({ length: 4 }, (_, i) => today.getFullYear() - 1 + i).map(y => (
-                  <option key={y} value={y}>{y}</option>
+                  <option key={y} value={String(y)}>{y}</option>
                 ))}
               </select>
             </div>
@@ -972,7 +985,9 @@ function AdicionarCobrancaModal({ contracts, user, onClose, onDone }) {
 
 // ── Página principal ──────────────────────────────────────────────
 export default function Cobrancas() {
-  const { user }  = useAuth()
+  const { user }    = useAuth()
+  const { isActive } = useSubscription()
+  const [showWizard, setShowWizard] = useState(false)
   const [mesRef, setMesRef]       = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
   const [cobrancas, setCobrancas] = useState([])
   const [contracts, setContracts] = useState([])
@@ -1066,6 +1081,9 @@ export default function Cobrancas() {
 
   return (
     <div className="p-6 space-y-5 max-w-6xl mx-auto">
+      {/* Banner de onboarding — visível se chave PIX ainda não configurada */}
+      {!pixKey && <OnboardingBanner onOpen={() => setShowWizard(true)} />}
+      {showWizard && <OnboardingWizard onComplete={() => { setShowWizard(false); supabase.from('profiles').select('pix_key_recebimento').eq('id', user.id).single().then(({ data }) => setPixKey(data?.pix_key_recebimento || null)) }} />}
 
       {/* ── Header ─────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -1152,7 +1170,7 @@ export default function Cobrancas() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Inquilino</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Cliente</th>
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden md:table-cell">Imóvel</th>
                 <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden lg:table-cell">Venc.</th>
                 <th className="text-right px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Valor</th>
@@ -1186,18 +1204,32 @@ export default function Cobrancas() {
                       <div className="flex items-center justify-end gap-2 flex-wrap">
                         {/* Gerar Cobrança — apenas para cobranças não pagas */}
                         {c.status !== 'Pago' && (
-                          <button onClick={() => setBoletoCob(c)}
-                            className="flex items-center gap-1 text-xs text-indigo-600 font-semibold border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors">
+                          <button
+                            onClick={() => isActive ? setBoletoCob(c) : null}
+                            disabled={!isActive}
+                            title={!isActive ? 'Assine um plano para gerar cobranças' : ''}
+                            className={`flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors ${
+                              isActive
+                                ? 'text-indigo-600 border-indigo-200 bg-indigo-50 hover:bg-indigo-100'
+                                : 'text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed'
+                            }`}>
                             <IcQR c="w-3 h-3"/>
-                            Gerar Cobrança
+                            {isActive ? 'Gerar Cobrança' : '🔒 Gerar Cobrança'}
                           </button>
                         )}
 
                         {/* Emitir NFS-e */}
-                        <button onClick={() => setNfseCob(c)}
-                          className="flex items-center gap-1 text-xs text-emerald-700 font-semibold border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors">
+                        <button
+                          onClick={() => isActive ? setNfseCob(c) : null}
+                          disabled={!isActive}
+                          title={!isActive ? 'Assine um plano para emitir NFS-e' : ''}
+                          className={`flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors ${
+                            isActive
+                              ? 'text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100'
+                              : 'text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed'
+                          }`}>
                           <IcReceipt c="w-3 h-3"/>
-                          Emitir NFS-e
+                          {isActive ? 'Emitir NFS-e' : '🔒 Emitir NFS-e'}
                         </button>
 
                         {c.status === 'Pago' ? (
@@ -1233,17 +1265,18 @@ export default function Cobrancas() {
       </div>
 
       {/* ── Modais ─────────────────────────────────────────── */}
+
+      {/* ── Modais ─────────────────────────────────────────── */}
       {showBatch && (
         <BatchModal
           contracts={contracts}
           user={user}
           pixKey={pixKey}
-          mesRef={mesRef}
+          mesRef={mesStr(mesRef)}
           onClose={() => setShowBatch(false)}
-          onDone={load}
+          onDone={() => { setShowBatch(false); load() }}
         />
       )}
-
       {boletoCob && (
         <BoletoPIXModal
           cob={boletoCob}
@@ -1251,21 +1284,19 @@ export default function Cobrancas() {
           onClose={() => setBoletoCob(null)}
         />
       )}
-
       {nfseCob && (
         <NfseModal
           cob={nfseCob}
           user={user}
-          onClose={() => setNfseCob(null)}
+          onClose={() => { setNfseCob(null); load() }}
         />
       )}
-
       {addCob && (
         <AdicionarCobrancaModal
           contracts={contracts}
           user={user}
           onClose={() => setAddCob(false)}
-          onDone={load}
+          onDone={() => { setAddCob(false); load() }}
         />
       )}
     </div>
