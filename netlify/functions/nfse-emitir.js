@@ -7,10 +7,11 @@
 //   5. GZip + Base64 → POST JSON com mTLS na API do SEFIN Nacional
 //   6. Grava resultado em nfse_emissoes no Supabase
 
-const https  = require('https')
-const forge  = require('node-forge')
-const crypto = require('crypto')
-const zlib   = require('zlib')
+const https      = require('https')
+const forge      = require('node-forge')
+const crypto     = require('crypto')
+const zlib       = require('zlib')
+const xmlCrypto  = require('xml-crypto')
 
 // ── URLs do SEFIN Nacional ────────────────────────────────────────
 // Produção:    POST https://sefin.nfse.gov.br/SefinNacional/nfse
@@ -540,54 +541,48 @@ ${totTribXml}
 </DPS>`
 }
 
-// ── XMLDSig RSA-SHA1 ──────────────────────────────────────────────
-// A assinatura é IRMÃ de infDPS (não filha), inserida antes de </DPS>
+// ── XMLDSig RSA-SHA1 com xml-crypto (C14N correto) ───────────────
+// A assinatura é IRMÃ de infDPS (não filha), usando action:"after"
 function signDps(xmlStr, privateKey, certForge) {
-  const infDpsMatch = xmlStr.match(/<infDPS[\s\S]*?<\/infDPS>/)
-  if (!infDpsMatch) throw new Error('infDPS não encontrado no XML')
-  const infDpsStr = infDpsMatch[0]
+  // Extrai o Id do infDPS para usar como referência
+  const idMatch = xmlStr.match(/infDPS[^>]*Id="([^"]+)"/)
+  if (!idMatch) throw new Error('Id do infDPS não encontrado no XML')
+  const refId = idMatch[1]
 
-  const canonical = infDpsStr.trim()
-
-  const md1 = forge.md.sha1.create()
-  md1.update(canonical, 'utf8')
-  const digestValue = forge.util.encode64(md1.digest().getBytes())
-
-  const idMatch = canonical.match(/Id="([^"]+)"/)
-  const refId = idMatch ? idMatch[1] : ''
-
-  const signedInfoContent =
-    `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>` +
-    `<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>` +
-    `<Reference URI="#${refId}">` +
-      `<Transforms>` +
-        `<Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>` +
-        `<Transform Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>` +
-      `</Transforms>` +
-      `<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>` +
-      `<DigestValue>${digestValue}</DigestValue>` +
-    `</Reference>`
-
-  const signedInfo = `<SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#">${signedInfoContent}</SignedInfo>`
-
-  const md2 = forge.md.sha1.create()
-  md2.update(signedInfo, 'utf8')
-  const sigBytes = privateKey.sign(md2)
-  const signatureValue = forge.util.encode64(sigBytes)
-
+  // Certificado em DER base64 para KeyInfo
   const certDer = forge.util.encode64(
     forge.asn1.toDer(forge.pki.certificateToAsn1(certForge)).getBytes()
   )
+  const keyPem = forge.pki.privateKeyToPem(privateKey)
 
-  const signatureXml =
-    `<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">` +
-      signedInfo +
-      `<SignatureValue>${signatureValue}</SignatureValue>` +
-      `<KeyInfo><X509Data><X509Certificate>${certDer}</X509Certificate></X509Data></KeyInfo>` +
-    `</Signature>`
+  const sig = new xmlCrypto.SignedXml({
+    privateKey:           keyPem,
+    signatureAlgorithm:   'http://www.w3.org/2000/09/xmldsig#rsa-sha1',
+    canonicalizationAlgorithm: 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315',
+  })
 
-  // Signature é IRMÃ de infDPS — inserida antes de </DPS>
-  return xmlStr.replace('</DPS>', signatureXml + '\n</DPS>')
+  sig.addReference({
+    xpath:                `//*[@Id='${refId}']`,
+    digestAlgorithm:      'http://www.w3.org/2000/09/xmldsig#sha1',
+    transforms: [
+      'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
+      'http://www.w3.org/TR/2001/REC-xml-c14n-20010315',
+    ],
+  })
+
+  sig.computeSignature(xmlStr, {
+    // "after" insere a Signature após </infDPS>, como irmã dentro de <DPS>
+    location: { reference: `//*[@Id='${refId}']`, action: 'after' },
+  })
+
+  // Substitui o KeyInfo gerado pelo xml-crypto pelo nosso com X509Certificate
+  let signed = sig.getSignedXml()
+  signed = signed.replace(
+    /<KeyInfo>[\s\S]*?<\/KeyInfo>/,
+    `<KeyInfo><X509Data><X509Certificate>${certDer}</X509Certificate></X509Data></KeyInfo>`
+  )
+
+  return signed
 }
 
 // ── POST com mTLS: GZip + Base64 + JSON ──────────────────────────
