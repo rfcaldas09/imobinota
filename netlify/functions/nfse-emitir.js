@@ -2,21 +2,36 @@
 // Fluxo:
 //   1. Baixa o certificado .pfx do Supabase Storage
 //   2. Incrementa o número sequencial de DPS no profile do usuário
-//   3. Monta o XML da DPS conforme leiaute nacional v1.00
-//   4. Assina o XML com XMLDSig RSA-SHA1 (padrão NF-e)
-//   5. Faz POST com mTLS na API do SEFIN Nacional
+//   3. Monta o XML da DPS conforme leiaute nacional v1.01
+//   4. Assina o XML com XMLDSig RSA-SHA1
+//   5. GZip + Base64 → POST JSON com mTLS na API do SEFIN Nacional
 //   6. Grava resultado em nfse_emissoes no Supabase
 
 const https  = require('https')
 const forge  = require('node-forge')
 const crypto = require('crypto')
+const zlib   = require('zlib')
 
 // ── URLs do SEFIN Nacional ────────────────────────────────────────
-const SEFIN_URL_PROD = 'https://sefin.nfse.gov.br/sefinne/nfse'
-const SEFIN_URL_TEST = 'https://adn.producaorestrita.nfse.gov.br/contribuintes/nfse'
+// Produção:    POST https://sefin.nfse.gov.br/SefinNacional/nfse
+// Homologação: POST https://sefin.producaorestrita.nfse.gov.br/SefinNacional/nfse
+const SEFIN_URL_PROD = 'https://sefin.nfse.gov.br/SefinNacional/nfse'
+const SEFIN_URL_TEST = 'https://sefin.producaorestrita.nfse.gov.br/SefinNacional/nfse'
 
 // ── Chave de criptografia para senha do cert (variável de ambiente) ─
 const CERT_KEY = process.env.NFSE_CERT_KEY // 32-char hex string → 128-bit key
+
+// ── Helpers gzip/gunzip ───────────────────────────────────────────
+function gzipBuffer(buf) {
+  return new Promise((resolve, reject) =>
+    zlib.gzip(buf, (err, result) => err ? reject(err) : resolve(result))
+  )
+}
+function gunzipBuffer(buf) {
+  return new Promise((resolve, reject) =>
+    zlib.gunzip(buf, (err, result) => err ? reject(err) : resolve(result))
+  )
+}
 
 exports.handler = async (event) => {
   try {
@@ -58,7 +73,7 @@ async function handle(event) {
     `nfse_municipio_ibge,nfse_municipio_nome,nfse_codigo_servico,nfse_serie,` +
     `nfse_ultimo_numero,nfse_cert_path,nfse_cert_password_enc,` +
     `nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,` +
-    `regime_tributario,aliquota_iss`
+    `regime_tributario,aliquota_iss,nfse_ctrib_nac`
   )
   if (!profRes.ok) throw new Error(`Erro ao buscar perfil: ${profRes.status}`)
   const profiles = await profRes.json()
@@ -72,7 +87,7 @@ async function handle(event) {
   if (!p.nfse_cert_path) return { statusCode: 400, body: JSON.stringify({ error: 'Certificado digital A1 não enviado em Configurações → Empresa' }) }
   if (!p.aliquota_iss) return { statusCode: 400, body: JSON.stringify({ error: 'Alíquota ISS não configurada em Configurações → Fiscal' }) }
 
-  // ── 2. Incrementa número da DPS (atômico via RPC não disponível — usa leitura+escrita) ─
+  // ── 2. Incrementa número da DPS ───────────────────────────────
   const novNumero = (p.nfse_ultimo_numero || 0) + 1
   const updRes = await supabaseFetch(SUPABASE_URL, SERVICE_KEY,
     `profiles?id=eq.${userId}`,
@@ -86,7 +101,7 @@ async function handle(event) {
   console.log('[nfse-emitir] cert baixado, tamanho bytes:', certBytes.length, '| path:', p.nfse_cert_path)
 
   if (!p.nfse_cert_password_enc) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Senha do certificado não encontrada. Acesse Configurações → Fiscal / NFS-e, re-envie o arquivo .pfx e informe a senha.' }) }
+    return { statusCode: 400, body: JSON.stringify({ error: 'Senha do certificado não encontrada. Acesse Configurações → NFS-e, informe a senha e salve.' }) }
   }
   if (!CERT_KEY) {
     return { statusCode: 500, body: JSON.stringify({ error: 'NFSE_CERT_KEY não configurada nas variáveis de ambiente do servidor.' }) }
@@ -102,63 +117,104 @@ async function handle(event) {
   const { privateKey, certPem, certForge } = parsePfx(certBytes, certPassword)
 
   // ── 5. Monta XML da DPS ────────────────────────────────────────
+  // Série: deve ser numérica (5 dígitos) para o Id do DPS ser válido (padrão DPS[0-9]{42})
+  // Se o usuário configurou série alfanumérica (ex: "IMOB"), usa "00001" como fallback numérico
+  const serieRaw = (p.nfse_serie || '').replace(/\D/g, '').slice(0, 5).padStart(5, '0') || '00001'
+
   const config = {
-    cnpj:            digits(p.cnpj),
-    inscMun:         p.inscricao_municipal,
-    razaoSocial:     p.company_name || 'Prestador',
-    municipioIbge:   p.nfse_municipio_ibge,
-    serie:           (p.nfse_serie || 'IMOB').slice(0, 5).padEnd(5),
-    numero:          novNumero,
-    codigoServico:   (p.nfse_codigo_servico || '6.05').replace('.', '').padStart(4, '0'),
-    aliquota:        parseFloat((p.aliquota_iss || '2').toString().replace(',', '.')).toFixed(2),
-    logradouro:      p.nfse_logradouro || 'Endereço não informado',
-    numeroEnd:       p.nfse_numero_end || 's/n',
-    bairro:          p.nfse_bairro || '',
-    cep:             digits(p.nfse_cep || '').slice(0, 8),
-    regimeTrib:      p.regime_tributario === 'simples' ? 1 : p.regime_tributario === 'real' ? 2 : 3,
+    cnpj:          digits(p.cnpj),
+    inscMun:       p.inscricao_municipal,
+    razaoSocial:   p.company_name || 'Prestador',
+    municipioIbge: p.nfse_municipio_ibge,
+    serie:         serieRaw,
+    numero:        novNumero,
+    // cTribNac: código de tributação nacional (6 dígitos)
+    // "100901" = Administração de bens e negócios (LC 116 item 10.09)
+    // O usuário pode configurar outro código em nfse_ctrib_nac
+    cTribNac:      (p.nfse_ctrib_nac || '100901').slice(0, 6).padStart(6, '0'),
+    // cTribMun: código de serviço municipal (conforme tabela da prefeitura)
+    cTribMun:      (p.nfse_codigo_servico || '').replace(/\D/g, '').slice(0, 6) || '001',
+    aliquota:      parseFloat((p.aliquota_iss || '2').toString().replace(',', '.')).toFixed(2),
+    logradouro:    p.nfse_logradouro || 'Endereço não informado',
+    numeroEnd:     p.nfse_numero_end || 's/n',
+    bairro:        p.nfse_bairro || '',
+    cep:           digits(p.nfse_cep || '').slice(0, 8),
+    // regime: 'simples' | 'lucro_presumido' | outros
+    regime:        (p.regime_tributario || 'simples'),
   }
 
   const dpsXml = buildDpsXml(config, cobData, homologacao)
   console.log('[nfse-emitir] DPS gerada, assinando...')
+  console.log('[nfse-emitir] DPS XML (primeiros 800 chars):', dpsXml.slice(0, 800))
 
   // ── 6. Assina o XML ─────────────────────────────────────────────
   const dpsAssinada = signDps(dpsXml, privateKey, certForge)
   console.log('[nfse-emitir] DPS assinada, tamanho:', dpsAssinada.length)
 
-  // ── 7. Envia para o SEFIN ──────────────────────────────────────
+  // ── 7. Envia para o SEFIN (GZip + Base64 + JSON com mTLS) ──────
   const sefinUrl = homologacao ? SEFIN_URL_TEST : SEFIN_URL_PROD
-  console.log('[nfse-emitir] enviando para SEFIN:', sefinUrl)
+  console.log('[nfse-emitir] enviando para SEFIN:', sefinUrl, '| homologacao:', homologacao)
 
   const { status: httpStatus, body: responseBody } = await postWithMtls(
     sefinUrl, dpsAssinada, certPem, forge.pki.privateKeyToPem(privateKey)
   )
-  console.log('[nfse-emitir] SEFIN status:', httpStatus, '| body:', responseBody.slice(0, 300))
+  console.log('[nfse-emitir] SEFIN status:', httpStatus, '| body:', responseBody.slice(0, 500))
 
-  if (httpStatus < 200 || httpStatus > 299) {
-    // Grava erro em nfse_emissoes
+  // SEFIN retorna 201 para sucesso
+  if (httpStatus !== 201) {
+    let errorDetail = responseBody.slice(0, 800)
+    try {
+      const errJson = JSON.parse(responseBody)
+      const erros = errJson.erros || []
+      if (erros.length > 0) {
+        errorDetail = erros.map(e => `[${e.Codigo || e.codigo}] ${e.Descricao || e.descricao}${e.Complemento || e.complemento ? ': ' + (e.Complemento || e.complemento) : ''}`).join(' | ')
+      }
+    } catch {}
+
     await gravarEmissao(SUPABASE_URL, SERVICE_KEY, {
       user_id: userId, cobranca_id: cobId,
       numero_dps: novNumero, competencia: cobData.mesRef,
       valor_servico: cobData.totalValue,
-      status: 'erro', erro_msg: `HTTP ${httpStatus}: ${responseBody.slice(0, 500)}`,
+      status: 'erro', erro_msg: `HTTP ${httpStatus}: ${errorDetail}`,
     })
     return {
       statusCode: 400,
-      body: JSON.stringify({ error: `SEFIN retornou ${httpStatus}`, detail: responseBody.slice(0, 800) }),
+      body: JSON.stringify({ error: `SEFIN retornou ${httpStatus}`, detail: errorDetail }),
     }
   }
 
-  // Extrai número da NFS-e e chave de acesso do XML de retorno
-  const numeroNfse   = extractXmlTag(responseBody, 'nNFSe')   || extractXmlTag(responseBody, 'numero')
-  const chaveAcesso  = extractXmlTag(responseBody, 'chNFSe')  || extractXmlTag(responseBody, 'chaveAcesso')
+  // ── 8. Decodifica resposta JSON do SEFIN ───────────────────────
+  let responseJson
+  try { responseJson = JSON.parse(responseBody) } catch {
+    throw new Error('Resposta do SEFIN não é JSON válido: ' + responseBody.slice(0, 200))
+  }
 
-  // ── 8. Grava emissão bem-sucedida ─────────────────────────────
+  const chaveAcesso = responseJson.chaveAcesso
+  const idDps       = responseJson.idDps
+
+  // Decodifica o XML da NFS-e autorizada (GZip + Base64)
+  let nfseXml = ''
+  if (responseJson.nfseXmlGZipB64) {
+    try {
+      const buf = Buffer.from(responseJson.nfseXmlGZipB64, 'base64')
+      const decompressed = await gunzipBuffer(buf)
+      nfseXml = decompressed.toString('utf8')
+      console.log('[nfse-emitir] NFS-e XML autorizado decodificado, tamanho:', nfseXml.length)
+    } catch (e) {
+      console.error('[nfse-emitir] erro ao decodificar nfseXmlGZipB64:', e.message)
+    }
+  }
+
+  // Extrai número da NFS-e do XML autorizado
+  const numeroNfse = extractXmlTag(nfseXml, 'nNFSe') || extractXmlTag(nfseXml, 'nNfse') || ''
+
+  // ── 9. Grava emissão bem-sucedida ─────────────────────────────
   await gravarEmissao(SUPABASE_URL, SERVICE_KEY, {
     user_id: userId, cobranca_id: cobId,
     numero_dps: novNumero, numero_nfse: numeroNfse,
     chave_acesso: chaveAcesso, competencia: cobData.mesRef,
     valor_servico: cobData.totalValue,
-    status: 'emitida', xml_nfse: responseBody,
+    status: 'emitida', xml_nfse: nfseXml || responseBody,
   })
 
   return {
@@ -168,7 +224,8 @@ async function handle(event) {
       numeroDps:   novNumero,
       numeroNfse,
       chaveAcesso,
-      xml:         responseBody,
+      idDps,
+      xml:         nfseXml,
     }),
   }
 }
@@ -176,6 +233,15 @@ async function handle(event) {
 // ── Helpers ──────────────────────────────────────────────────────
 
 function digits(v = '') { return v.replace(/\D/g, '') }
+
+function escXml(s = '') {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
 
 function supabaseFetch(url, key, path, method = 'GET', body = null) {
   const opts = {
@@ -225,7 +291,7 @@ function extractFromPfx(pfx) {
 }
 
 function parsePfx(pfxBuffer, password) {
-  // v4 — monkey-patch cobre todos os fromDer internos do forge (pkcs12 faz 24 chamadas internas)
+  // v4 — monkey-patch cobre todos os fromDer internos do forge (pkcs12 faz ~24 chamadas internas)
   console.log('[nfse-emitir] parsePfx v4 | pfxBuffer.length:', pfxBuffer.length, '| senha.length:', password.length)
 
   const origFromDer = forge.asn1.fromDer
@@ -275,130 +341,191 @@ function parsePfx(pfxBuffer, password) {
 }
 
 // ── Monta a DPS XML (sem assinatura) ─────────────────────────────
+// Conforme leiaute v1.01 SPED/SEFIN Nacional
+// Referência: https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica
 function buildDpsXml(cfg, cob, homologacao) {
-  const tpAmb  = homologacao ? '2' : '1'
-  const now    = new Date()
-  const dhEmi  = now.toISOString().replace(/\.\d+Z$/, '-03:00')
+  const tpAmb = homologacao ? '2' : '1'
+  const now = new Date()
 
-  // Tipo de inscrição: 2=CNPJ, 1=CPF
+  // Data/hora no fuso de Brasília (UTC-3), com margem de 5s contra clock drift
+  const brt = new Date(now.getTime() - 5000 - 3 * 3600 * 1000)
+  const dhEmi = brt.toISOString().replace(/\.\d+Z$/, '-03:00')
+
+  // Tipo de inscrição: 1=CPF, 2=CNPJ (DIFERENTE da NF-e!)
   const cnpjDigits = digits(cfg.cnpj)
   const tipoInsc   = cnpjDigits.length === 14 ? '2' : '1'
   const insc14     = cnpjDigits.padStart(14, '0')
-  const serie5     = cfg.serie.slice(0, 5).padEnd(5)
-  const numDps15   = String(cfg.numero).padStart(15, '0')
   const ibge7      = String(cfg.municipioIbge).slice(0, 7)
-  const id         = `DPS${ibge7}${tipoInsc}${insc14}${serie5}${numDps15}`
 
-  const mesRef = cob.mesRef || now.toISOString().slice(0, 7) // YYYY-MM
+  // Série: 5 dígitos numéricos (o Id do DPS exige DPS[0-9]{42})
+  const serie5     = String(cfg.serie || '00001').slice(0, 5).padStart(5, '0')
 
-  // Tomador
+  // nDPS: padrão XSD [1-9]{1}[0-9]{0,14} → começa com 1, nunca com zero
+  // Usamos '1' + numero padded para 15 dígitos totais
+  // O valor no Id (posição) e no elemento <nDPS> são IGUAIS
+  const nDpsStr    = '1' + String(cfg.numero).padStart(14, '0')
+
+  // Id do DPS: DPS + ibge7(7) + tipoInsc(1) + cnpj(14) + serie(5) + nDPS(15) = 45 chars
+  const id = `DPS${ibge7}${tipoInsc}${insc14}${serie5}${nDpsStr}`
+
+  const dCompet = (cob.mesRef || now.toISOString().slice(0, 7)) // YYYY-MM
+
+  // Tomador: CPF (11 dígitos) ou CNPJ (14 dígitos)
   const cpfTomador = digits(cob.cpf || '')
-  const tomadorTag = cpfTomador.length === 11
-    ? `<CPF>${cpfTomador}</CPF>`
-    : cpfTomador.length === 14
-      ? `<CNPJ>${cpfTomador}</CNPJ>`
-      : '<CPF>00000000000</CPF>'
+  let tomadorTag
+  if (cpfTomador.length === 14) {
+    tomadorTag = `<CNPJ>${cpfTomador}</CNPJ>`
+  } else if (cpfTomador.length === 11) {
+    tomadorTag = `<CPF>${cpfTomador}</CPF>`
+  } else if (cpfTomador.length > 0) {
+    // Tenta corrigir: se 11+ dígitos, tratar como CPF; se 14, CNPJ
+    tomadorTag = cpfTomador.length > 11
+      ? `<CNPJ>${cpfTomador.padStart(14, '0')}</CNPJ>`
+      : `<CPF>${cpfTomador.padStart(11, '0')}</CPF>`
+  } else {
+    // Sem CPF/CNPJ: usa cNaoNIF
+    tomadorTag = `<cNaoNIF>9</cNaoNIF>` // 9 = estrangeiro sem NIF
+  }
 
-  // Discriminação
+  // Discriminação do serviço
   const discrim = [
-    `Administração imobiliária ref. ${mesRef}`,
-    cob.property ? `Imóvel: ${cob.property}` : '',
-    cob.value > 0            ? `Aluguel: R$ ${Number(cob.value).toFixed(2)}` : '',
+    `Administracao imobiliaria ref. ${dCompet}`,
+    cob.property            ? `Imovel: ${cob.property}`                                          : '',
+    cob.value > 0           ? `Valor: R$ ${Number(cob.value).toFixed(2)}`                        : '',
     cob.seguroFinanceiro > 0 ? `Seguro Financeiro: R$ ${Number(cob.seguroFinanceiro).toFixed(2)}` : '',
-    cob.seguroIncendio > 0   ? `Seguro Incêndio: R$ ${Number(cob.seguroIncendio).toFixed(2)}` : '',
-    cob.iptu > 0             ? `IPTU: R$ ${Number(cob.iptu).toFixed(2)}` : '',
+    cob.seguroIncendio > 0  ? `Seguro Incendio: R$ ${Number(cob.seguroIncendio).toFixed(2)}`     : '',
+    cob.iptu > 0            ? `IPTU: R$ ${Number(cob.iptu).toFixed(2)}`                          : '',
     `Total: R$ ${Number(cob.totalValue).toFixed(2)}`,
   ].filter(Boolean).join(' | ')
 
-  const valorTotal = Number(cob.totalValue).toFixed(2)
+  // vServ: DEVE ser string com 2 casas decimais (XSD TSDec15V2)
+  const vServ = Number(cob.totalValue).toFixed(2)
 
-  // O namespace DEVE ser declarado no infDPS (necessário para C14N)
+  // regTrib: varia conforme regime tributário
+  // opSimpNac: 1=não ME/EPP, 2=ME/EPP sem ISSQN, 3=ME/EPP com ISSQN, 4=MEI, 5=ME/EPP imune/isento
+  const isSimples = cfg.regime === 'simples' || cfg.regime === 'mei'
+  const isMei     = cfg.regime === 'mei'
+
+  let regTribXml
+  if (isMei) {
+    regTribXml =
+      `<regTrib>\n` +
+      `<opSimpNac>4</opSimpNac>\n` +
+      `<regApTribSN>1</regApTribSN>\n` +
+      `<regEspTrib>0</regEspTrib>\n` +
+      `</regTrib>`
+  } else if (isSimples) {
+    regTribXml =
+      `<regTrib>\n` +
+      `<opSimpNac>3</opSimpNac>\n` +
+      `<regApTribSN>1</regApTribSN>\n` +
+      `<regEspTrib>0</regEspTrib>\n` +
+      `</regTrib>`
+  } else {
+    regTribXml =
+      `<regTrib>\n` +
+      `<opSimpNac>1</opSimpNac>\n` +
+      `<regEspTrib>0</regEspTrib>\n` +
+      `</regTrib>`
+  }
+
+  // totTrib: Simples Nacional usa pTotTribSN; outros usam indTotTrib
+  // ME/EPP NÃO pode usar indTotTrib (erro E0712)
+  let totTribXml
+  if (isSimples) {
+    totTribXml = `<totTrib><pTotTribSN>${cfg.aliquota}</pTotTribSN></totTrib>`
+  } else {
+    // indTotTrib: 0=estimativa terceiros, 1=ibpt, 2=não informado
+    totTribXml = `<totTrib><indTotTrib>2</indTotTrib></totTrib>`
+  }
+
+  // Endereço do prestador (opcional, mas inclui se configurado)
+  let endPrestXml = ''
+  if (cfg.logradouro && cfg.logradouro !== 'Endereço não informado') {
+    endPrestXml =
+      `<end>\n` +
+      `<xLgr>${escXml(cfg.logradouro.slice(0, 125))}</xLgr>\n` +
+      `<nro>${escXml(cfg.numeroEnd.slice(0, 10))}</nro>\n` +
+      (cfg.bairro ? `<xBairro>${escXml(cfg.bairro.slice(0, 72))}</xBairro>\n` : '') +
+      `<cMun>${ibge7}</cMun>\n` +
+      (cfg.cep ? `<CEP>${cfg.cep.padStart(8, '0')}</CEP>\n` : '') +
+      `</end>\n`
+  }
+
+  // Nome do tomador (obrigatório no elemento <toma>)
+  const xNomeToma = escXml((cob.tenant || 'Tomador').slice(0, 150))
+
   const ns = 'http://www.sped.fazenda.gov.br/nfse'
 
-  return `<?xml version="1.0" encoding="UTF-8"?>\n` +
-`<DPS xmlns="${ns}" versao="1.00">\n` +
-`<infDPS xmlns="${ns}" Id="${id}" versao="1.00">\n` +
-`<tpAmb>${tpAmb}</tpAmb>\n` +
-`<dhEmi>${dhEmi}</dhEmi>\n` +
-`<verAplic>NOTAFACIL-1.0</verAplic>\n` +
-`<serie>${escXml(cfg.serie.trim())}</serie>\n` +
-`<nDPS>${cfg.numero}</nDPS>\n` +
-`<dCompet>${mesRef}</dCompet>\n` +
-`<prest>\n` +
-(tipoInsc === '2' ? `<CNPJ>${cnpjDigits}</CNPJ>\n` : `<CPF>${cnpjDigits.slice(-11)}</CPF>\n`) +
-`<IM>${escXml(cfg.inscMun)}</IM>\n` +
-`<xNome>${escXml(cfg.razaoSocial.slice(0, 150))}</xNome>\n` +
-`<end>\n` +
-`<xLgr>${escXml(cfg.logradouro.slice(0, 125))}</xLgr>\n` +
-`<nro>${escXml(cfg.numeroEnd.slice(0, 10))}</nro>\n` +
-`<xBairro>${escXml(cfg.bairro.slice(0, 72))}</xBairro>\n` +
-`<cMun>${ibge7}</cMun>\n` +
-(cfg.cep ? `<CEP>${cfg.cep.padStart(8,'0')}</CEP>\n` : '') +
-`</end>\n` +
-`</prest>\n` +
-`<toma>\n` +
-`${tomadorTag}\n` +
-`<xNome>${escXml((cob.tenant || 'Inquilino').slice(0, 150))}</xNome>\n` +
-`</toma>\n` +
-`<serv>\n` +
-`<locPrest>\n` +
-`<cLocPrestacao>${ibge7}</cLocPrestacao>\n` +
-`</locPrest>\n` +
-`<cServ>\n` +
-`<cLC116>${cfg.codigoServico}</cLC116>\n` +
-`<xDescServ>Administracao e intermediacao de imoveis</xDescServ>\n` +
-`</cServ>\n` +
-`<infoCompl>\n` +
-`<xInfComp>${escXml(discrim.slice(0, 2000))}</xInfComp>\n` +
-`</infoCompl>\n` +
-`</serv>\n` +
-`<valores>\n` +
-`<vServPrest>\n` +
-`<vReceb>${valorTotal}</vReceb>\n` +
-`</vServPrest>\n` +
-`<trib>\n` +
-`<tribMun>\n` +
-`<tribISSQN>1</tribISSQN>\n` +
-`<pAliq>${cfg.aliquota}</pAliq>\n` +
-`</tribMun>\n` +
-`<totTrib><pTotTrib/></totTrib>\n` +
-`</trib>\n` +
-`</valores>\n` +
-`</infDPS>\n` +
-`</DPS>`
+  // ATENÇÃO: ordem dos elementos é xs:sequence — NÃO alterar a ordem!
+  // infDPS NÃO tem atributo versao (só DPS tem)
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<DPS xmlns="${ns}" versao="1.00">
+<infDPS Id="${id}">
+<tpAmb>${tpAmb}</tpAmb>
+<dhEmi>${dhEmi}</dhEmi>
+<verAplic>NOTAFACIL-1.0</verAplic>
+<serie>${serie5}</serie>
+<nDPS>${nDpsStr}</nDPS>
+<dCompet>${dCompet}</dCompet>
+<tpEmit>1</tpEmit>
+<cLocEmi>${ibge7}</cLocEmi>
+<prest>
+${tipoInsc === '2' ? `<CNPJ>${cnpjDigits}</CNPJ>` : `<CPF>${cnpjDigits.slice(-11)}</CPF>`}
+<IM>${escXml(cfg.inscMun)}</IM>
+<xNome>${escXml(cfg.razaoSocial.slice(0, 150))}</xNome>
+${endPrestXml}${regTribXml}
+</prest>
+<toma>
+${tomadorTag}
+<xNome>${xNomeToma}</xNome>
+</toma>
+<serv>
+<locPrest>
+<cLocPrestacao>${ibge7}</cLocPrestacao>
+</locPrest>
+<cServ>
+<cTribNac>${cfg.cTribNac}</cTribNac>
+<cTribMun>${cfg.cTribMun}</cTribMun>
+<xDescServ>${escXml('Administracao e intermediacao de imoveis')}</xDescServ>
+</cServ>
+<infoCompl>
+<xInfComp>${escXml(discrim.slice(0, 2000))}</xInfComp>
+</infoCompl>
+</serv>
+<valores>
+<vServPrest>
+<vServ>${vServ}</vServ>
+</vServPrest>
+<trib>
+<tribMun>
+<tribISSQN>1</tribISSQN>
+<tpRetISSQN>1</tpRetISSQN>
+<pAliq>${cfg.aliquota}</pAliq>
+</tribMun>
+${totTribXml}
+</trib>
+</valores>
+</infDPS>
+</DPS>`
 }
 
-function escXml(s = '') {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
-}
-
-// ── XMLDSig RSA-SHA1 (padrão NF-e/NFS-e brasileiro) ──────────────
+// ── XMLDSig RSA-SHA1 ──────────────────────────────────────────────
+// A assinatura é IRMÃ de infDPS (não filha), inserida antes de </DPS>
 function signDps(xmlStr, privateKey, certForge) {
-  // Extrai o bloco infDPS (com namespace próprio — necessário para C14N)
   const infDpsMatch = xmlStr.match(/<infDPS[\s\S]*?<\/infDPS>/)
   if (!infDpsMatch) throw new Error('infDPS não encontrado no XML')
   const infDpsStr = infDpsMatch[0]
 
-  // C14N simplificado: o XML é gerado de forma canônica por construção.
-  // A única normalização necessária é garantir que o namespace está no infDPS
-  // e remover a declaração XML e qualquer whitespace ao redor.
   const canonical = infDpsStr.trim()
 
-  // SHA-1 digest do infDPS
   const md1 = forge.md.sha1.create()
   md1.update(canonical, 'utf8')
   const digestValue = forge.util.encode64(md1.digest().getBytes())
 
-  // Id de referência (Id="DPS...")
   const idMatch = canonical.match(/Id="([^"]+)"/)
   const refId = idMatch ? idMatch[1] : ''
 
-  // SignedInfo (sem namespace wrapper — inserido no Signature)
   const signedInfoContent =
     `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>` +
     `<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>` +
@@ -413,18 +540,15 @@ function signDps(xmlStr, privateKey, certForge) {
 
   const signedInfo = `<SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#">${signedInfoContent}</SignedInfo>`
 
-  // Canonicaliza SignedInfo e assina com RSA-SHA1
   const md2 = forge.md.sha1.create()
   md2.update(signedInfo, 'utf8')
   const sigBytes = privateKey.sign(md2)
   const signatureValue = forge.util.encode64(sigBytes)
 
-  // Certificado em DER base64
   const certDer = forge.util.encode64(
     forge.asn1.toDer(forge.pki.certificateToAsn1(certForge)).getBytes()
   )
 
-  // Monta o elemento Signature completo
   const signatureXml =
     `<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">` +
       signedInfo +
@@ -432,35 +556,47 @@ function signDps(xmlStr, privateKey, certForge) {
       `<KeyInfo><X509Data><X509Certificate>${certDer}</X509Certificate></X509Data></KeyInfo>` +
     `</Signature>`
 
-  // Insere antes de </DPS>
+  // Signature é IRMÃ de infDPS — inserida antes de </DPS>
   return xmlStr.replace('</DPS>', signatureXml + '\n</DPS>')
 }
 
-// ── POST com mTLS (certificado do cliente) ────────────────────────
-function postWithMtls(url, body, certPem, keyPem) {
+// ── POST com mTLS: GZip + Base64 + JSON ──────────────────────────
+// Formato correto: { dpsXmlGZipB64: "<base64>" } com Content-Type: application/json
+// Sucesso: HTTP 201 com JSON { chaveAcesso, idDps, nfseXmlGZipB64, alertas }
+async function postWithMtls(url, xmlBody, certPem, keyPem) {
+  const gz = await gzipBuffer(Buffer.from(xmlBody, 'utf8'))
+  const dpsXmlGZipB64 = gz.toString('base64')
+  const jsonBody = JSON.stringify({ dpsXmlGZipB64 })
+  console.log('[nfse-emitir] XML GZip+Base64 pronto, jsonBody.length:', jsonBody.length)
+
   return new Promise((resolve, reject) => {
     const parsed = new URL(url)
+    const bodyBuf = Buffer.from(jsonBody, 'utf8')
     const options = {
-      hostname: parsed.hostname,
-      port:     parsed.port || 443,
-      path:     parsed.pathname + parsed.search,
-      method:   'POST',
-      cert:     certPem,
-      key:      keyPem,
+      hostname:           parsed.hostname,
+      port:               parsed.port || 443,
+      path:               parsed.pathname + parsed.search,
+      method:             'POST',
+      cert:               certPem,
+      key:                keyPem,
+      rejectUnauthorized: true,
       headers: {
-        'Content-Type':   'application/xml; charset=UTF-8',
-        'Accept':         'application/xml',
-        'Content-Length': Buffer.byteLength(body, 'utf8'),
+        'Content-Type':   'application/json',
+        'Accept':         'application/json',
+        'Content-Length': bodyBuf.length,
       },
     }
     const req = https.request(options, res => {
-      let data = ''
-      res.on('data', chunk => { data += chunk })
-      res.on('end',  () => resolve({ status: res.statusCode, body: data }))
+      const chunks = []
+      res.on('data', chunk => chunks.push(chunk))
+      res.on('end', () => {
+        console.log('[nfse-emitir] SEFIN response headers:', JSON.stringify(res.headers))
+        resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString('utf8') })
+      })
     })
     req.on('error', reject)
     req.setTimeout(30000, () => { req.destroy(); reject(new Error('Timeout na chamada ao SEFIN')) })
-    req.write(body, 'utf8')
+    req.write(bodyBuf)
     req.end()
   })
 }
