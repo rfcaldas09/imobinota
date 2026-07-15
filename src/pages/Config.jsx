@@ -359,6 +359,19 @@ export default function Config() {
         nfse_bairro:         f.bairro,
         nfse_cep:            f.cep,
       })
+      // Se o usuário digitou (ou re-digitou) a senha do certificado, salva via servidor
+      if (f.certPassword) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession()
+          await salvarSenhaCert(f.certPassword, null, session?.access_token || '')
+          set('certPassword', '') // limpa da UI após salvar com sucesso
+        } catch (err) {
+          setSaving(false)
+          setSaved(false)
+          alert(`Erro ao salvar senha do certificado: ${err.message}`)
+          return
+        }
+      }
     } else if (tab === 'email') {
       Object.assign(payload, {
         email_provider:  f.emailProvider,
