@@ -131,8 +131,10 @@ async function handle(event) {
     // cTribNac: código de tributação nacional (6 dígitos)
     // "100901" = Administração de bens e negócios (LC 116 item 10.09)
     cTribNac:      '100901',
-    // cTribMun: código de serviço municipal (conforme tabela da prefeitura)
-    cTribMun:      (p.nfse_codigo_servico || '').replace(/\D/g, '').slice(0, 6) || '001',
+    // cTribMun: código de serviço municipal (conforme tabela da prefeitura, opcional no XSD)
+    // Só inclui se o usuário configurou um código puramente numérico em Configurações → Fiscal
+    // (o código LC116 "6.05" não serve aqui — precisa ser o código numérico da prefeitura)
+    cTribMun:      /^\d+$/.test((p.nfse_codigo_servico || '').trim()) ? p.nfse_codigo_servico.trim() : null,
     aliquota:      parseFloat((p.aliquota_iss || '2').toString().replace(',', '.')).toFixed(2),
     logradouro:    p.nfse_logradouro || 'Endereço não informado',
     numeroEnd:     p.nfse_numero_end || 's/n',
@@ -167,24 +169,30 @@ async function handle(event) {
 
   // SEFIN retorna 201 para sucesso
   if (httpStatus !== 201) {
-    let errorDetail = responseBody.slice(0, 800)
+    // Extrai mensagem legível dos erros do SEFIN (formato JSON { erros: [{Codigo, Descricao, Complemento}] })
+    let userMessage = `Erro na comunicação com o SEFIN (HTTP ${httpStatus})`
     try {
       const errJson = JSON.parse(responseBody)
       const erros = errJson.erros || []
       if (erros.length > 0) {
-        errorDetail = erros.map(e => `[${e.Codigo || e.codigo}] ${e.Descricao || e.descricao}${e.Complemento || e.complemento ? ': ' + (e.Complemento || e.complemento) : ''}`).join(' | ')
+        userMessage = erros.map(e => {
+          const cod   = e.Codigo      || e.codigo      || ''
+          const desc  = e.Descricao   || e.descricao   || ''
+          const compl = e.Complemento || e.complemento || ''
+          return cod ? `[${cod}] ${desc}${compl ? ': ' + compl : ''}` : desc
+        }).join('\n')
       }
-    } catch {}
+    } catch { userMessage = responseBody.slice(0, 500) || userMessage }
 
     await gravarEmissao(SUPABASE_URL, SERVICE_KEY, {
       user_id: userId, cobranca_id: cobId,
       numero_dps: novNumero, competencia: cobData.mesRef,
       valor_servico: cobData.totalValue,
-      status: 'erro', erro_msg: `HTTP ${httpStatus}: ${errorDetail}`,
+      status: 'erro', erro_msg: userMessage,
     })
     return {
       statusCode: 400,
-      body: JSON.stringify({ error: `SEFIN retornou ${httpStatus}`, detail: errorDetail }),
+      body: JSON.stringify({ error: userMessage }),
     }
   }
 
@@ -509,8 +517,7 @@ ${tomadorTag}
 </locPrest>
 <cServ>
 <cTribNac>${cfg.cTribNac}</cTribNac>
-<cTribMun>${cfg.cTribMun}</cTribMun>
-<xDescServ>${escXml('Administracao e intermediacao de imoveis')}</xDescServ>
+${cfg.cTribMun ? `<cTribMun>${cfg.cTribMun}</cTribMun>\n` : ''}<xDescServ>${escXml('Administracao e intermediacao de imoveis')}</xDescServ>
 </cServ>
 <infoCompl>
 <xInfComp>${escXml(discrim.slice(0, 2000))}</xInfComp>
