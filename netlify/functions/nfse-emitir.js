@@ -443,11 +443,13 @@ function buildDpsXml(cfg, cob, homologacao) {
   if (cfg.logradouro && cfg.logradouro !== 'Endereço não informado') {
     endPrestXml =
       `<end>\n` +
+      `<endNac>\n` +
       `<xLgr>${escXml(cfg.logradouro.slice(0, 125))}</xLgr>\n` +
       `<nro>${escXml(cfg.numeroEnd.slice(0, 10))}</nro>\n` +
       (cfg.bairro ? `<xBairro>${escXml(cfg.bairro.slice(0, 72))}</xBairro>\n` : '') +
       `<cMun>${ibge7}</cMun>\n` +
       (cfg.cep ? `<CEP>${cfg.cep.padStart(8, '0')}</CEP>\n` : '') +
+      `</endNac>\n` +
       `</end>\n`
   }
 
