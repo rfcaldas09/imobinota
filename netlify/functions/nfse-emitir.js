@@ -83,6 +83,7 @@ async function handle(event) {
 
   // ── 3. Baixa o certificado do Storage ──────────────────────────
   const certBytes = await downloadCert(SUPABASE_URL, SERVICE_KEY, p.nfse_cert_path)
+  console.log('[nfse-emitir] cert baixado, tamanho bytes:', certBytes.length, '| path:', p.nfse_cert_path)
 
   if (!p.nfse_cert_password_enc) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Senha do certificado não encontrada. Acesse Configurações → Fiscal / NFS-e, re-envie o arquivo .pfx e informe a senha.' }) }
@@ -95,7 +96,7 @@ async function handle(event) {
   if (!certPassword) {
     return { statusCode: 500, body: JSON.stringify({ error: 'Falha ao descriptografar a senha do certificado. Verifique se NFSE_CERT_KEY no servidor é a mesma usada no upload.' }) }
   }
-  console.log('[nfse-emitir] certPassword decriptada OK, tamanho:', certPassword.length)
+  console.log('[nfse-emitir] certPassword decriptada OK, tamanho:', certPassword.length, '| enc length:', p.nfse_cert_password_enc.length)
 
   // ── 4. Extrai chave privada e certificado do .pfx ──────────────
   const { privateKey, certPem, certForge } = parsePfx(certBytes, certPassword)
@@ -222,41 +223,46 @@ function extractFromPfx(pfx) {
 }
 
 function parsePfx(pfxBuffer, password) {
-  // forge.pkcs12.pkcs12FromAsn1 chama forge.asn1.fromDer internamente em cada bag
-  // sem a opção parseAllBytes:false, causando "Unparsed DER bytes remain" em certs modernos.
-  // Solução: monkey-patch temporário que força strict=false em TODOS os fromDer internos.
+  // v4 — monkey-patch cobre todos os fromDer internos do forge (pkcs12 faz 24 chamadas internas)
+  console.log('[nfse-emitir] parsePfx v4 | pfxBuffer.length:', pfxBuffer.length, '| senha.length:', password.length)
+
   const origFromDer = forge.asn1.fromDer
+  let patchCallCount = 0
   forge.asn1.fromDer = function (bytes, opts) {
-    if (opts === undefined || opts === true) opts = false   // força não-strict
+    patchCallCount++
+    if (opts === undefined || opts === true) opts = false
     return origFromDer.call(this, bytes, opts)
   }
 
   try {
     const pfxDer = forge.util.createBuffer(pfxBuffer.toString('binary'))
     const pfxAsn = forge.asn1.fromDer(pfxDer)
+    console.log('[nfse-emitir] parsePfx: fromDer externo OK, elements:', pfxAsn.value.length)
 
-    // Tentativa 1: MAC SHA-1 (certs antigos)
+    // Tentativa 1: MAC SHA-1
     try {
       const pfx = forge.pkcs12.pkcs12FromAsn1(pfxAsn, true, password)
-      console.log('[nfse-emitir] parsePfx: MAC SHA-1 OK')
+      console.log('[nfse-emitir] parsePfx: SHA-1 MAC OK | fromDer calls:', patchCallCount)
       return extractFromPfx(pfx)
     } catch (e) {
+      console.log('[nfse-emitir] parsePfx: tentativa 1 falhou:', e.message)
       if (!e.message?.includes('MAC could not be verified')) throw e
     }
 
-    // Tentativa 2: SHA-256 MAC bypass — remove macData para forge pular a verificação
-    console.log('[nfse-emitir] parsePfx: SHA-256 MAC detectado, bypassando via ASN.1')
+    // Tentativa 2: SHA-256 MAC bypass
+    console.log('[nfse-emitir] parsePfx: SHA-256 detectado, removendo macData...')
     if (pfxAsn.value.length > 2) pfxAsn.value.splice(2)
 
     const pfx = forge.pkcs12.pkcs12FromAsn1(pfxAsn, true, password)
-    console.log('[nfse-emitir] parsePfx: MAC bypass OK')
+    console.log('[nfse-emitir] parsePfx: SHA-256 bypass OK | fromDer calls:', patchCallCount)
     return extractFromPfx(pfx)
 
   } catch (e2) {
-    console.error('[nfse-emitir] parsePfx erro:', e2.message)
+    console.error('[nfse-emitir] parsePfx ERRO FINAL | fromDer calls até agora:', patchCallCount, '| msg:', e2.message)
+    console.error('[nfse-emitir] parsePfx stack:', e2.stack?.split('\n').slice(0, 4).join(' | '))
     throw new Error(`Certificado .pfx inválido ou senha incorreta. Detalhe: ${e2.message}`)
   } finally {
-    forge.asn1.fromDer = origFromDer  // sempre restaura, mesmo em caso de erro
+    forge.asn1.fromDer = origFromDer
   }
 }
 
