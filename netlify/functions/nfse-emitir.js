@@ -230,7 +230,13 @@ function parsePfx(pfxBuffer, password) {
   let patchCallCount = 0
   forge.asn1.fromDer = function (bytes, opts) {
     patchCallCount++
-    if (opts === undefined || opts === true) opts = false
+    // forge 1.4.0: boolean false → {strict:false, parseAllBytes:true} — ainda falha!
+    // Precisamos forçar parseAllBytes:false explicitamente em todos os casos
+    if (opts === undefined || opts === true || opts === false) {
+      opts = { strict: false, parseAllBytes: false }
+    } else if (typeof opts === 'object' && opts !== null) {
+      opts = { ...opts, parseAllBytes: false }
+    }
     return origFromDer.call(this, bytes, opts)
   }
 
