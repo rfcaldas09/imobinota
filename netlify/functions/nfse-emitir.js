@@ -73,7 +73,7 @@ async function handle(event) {
     `nfse_municipio_ibge,nfse_municipio_nome,nfse_codigo_servico,nfse_serie,` +
     `nfse_ultimo_numero,nfse_cert_path,nfse_cert_password_enc,` +
     `nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,` +
-    `regime_tributario,aliquota_iss,nfse_ctrib_nac`
+    `regime_tributario,aliquota_iss`
   )
   if (!profRes.ok) throw new Error(`Erro ao buscar perfil: ${profRes.status}`)
   const profiles = await profRes.json()
@@ -130,8 +130,7 @@ async function handle(event) {
     numero:        novNumero,
     // cTribNac: código de tributação nacional (6 dígitos)
     // "100901" = Administração de bens e negócios (LC 116 item 10.09)
-    // O usuário pode configurar outro código em nfse_ctrib_nac
-    cTribNac:      (p.nfse_ctrib_nac || '100901').slice(0, 6).padStart(6, '0'),
+    cTribNac:      '100901',
     // cTribMun: código de serviço municipal (conforme tabela da prefeitura)
     cTribMun:      (p.nfse_codigo_servico || '').replace(/\D/g, '').slice(0, 6) || '001',
     aliquota:      parseFloat((p.aliquota_iss || '2').toString().replace(',', '.')).toFixed(2),
