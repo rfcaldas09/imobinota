@@ -187,7 +187,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
           {/* Composição financeira */}
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Composição do Boleto</p>
           <div className="grid grid-cols-2 gap-3">
-            <Row label="Aluguel (R$) *">
+            <Row label="Valor (R$) *">
               <FormInp value={f.value} onChange={e => set('value', e.target.value)} type="number" placeholder="0,00"/>
             </Row>
             <Row label="Seguro Financeiro (R$)">
