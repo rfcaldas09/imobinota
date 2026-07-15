@@ -117,6 +117,22 @@ async function handle(event) {
   // ── 4. Extrai chave privada e certificado do .pfx ──────────────
   const { privateKey, certPem, certForge } = parsePfx(certBytes, certPassword)
 
+  // Log: CNPJ do certificado vs CNPJ do perfil (para diagnosticar E0718)
+  const certSubject = certForge.subject.attributes.map(a => `${a.shortName}=${a.value}`).join(', ')
+  const certIssuer  = certForge.issuer.attributes.map(a => `${a.shortName}=${a.value}`).join(', ')
+  const certSerial  = certForge.serialNumber
+  const certValidTo = certForge.validity.notAfter
+  // O CNPJ do e-CNPJ fica no CN ou no campo OID 2.16.76.1.3.3 (serialNumber BR)
+  const certCnAttr  = certForge.subject.getField('CN')?.value || ''
+  const certSerial2 = certForge.subject.getField('serialNumber')?.value || ''
+  console.log('[nfse-emitir] CERT subject:', certSubject)
+  console.log('[nfse-emitir] CERT issuer:', certIssuer)
+  console.log('[nfse-emitir] CERT serialNumber (hex):', certSerial)
+  console.log('[nfse-emitir] CERT CN:', certCnAttr)
+  console.log('[nfse-emitir] CERT subject serialNumber:', certSerial2)
+  console.log('[nfse-emitir] CERT válido até:', certValidTo)
+  console.log('[nfse-emitir] CNPJ do perfil (digits):', digits(p.cnpj))
+
   // ── 5. Monta XML da DPS ────────────────────────────────────────
   // Série: deve ser numérica (5 dígitos) para o Id do DPS ser válido (padrão DPS[0-9]{42})
   // Se o usuário configurou série alfanumérica (ex: "IMOB"), usa "00001" como fallback numérico
