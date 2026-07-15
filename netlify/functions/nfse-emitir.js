@@ -438,20 +438,9 @@ function buildDpsXml(cfg, cob, homologacao) {
     totTribXml = `<totTrib><indTotTrib>2</indTotTrib></totTrib>`
   }
 
-  // Endereço do prestador (opcional, mas inclui se configurado)
-  let endPrestXml = ''
-  if (cfg.logradouro && cfg.logradouro !== 'Endereço não informado') {
-    endPrestXml =
-      `<end>\n` +
-      `<endNac>\n` +
-      `<xLgr>${escXml(cfg.logradouro.slice(0, 125))}</xLgr>\n` +
-      `<nro>${escXml(cfg.numeroEnd.slice(0, 10))}</nro>\n` +
-      (cfg.bairro ? `<xBairro>${escXml(cfg.bairro.slice(0, 72))}</xBairro>\n` : '') +
-      `<cMun>${ibge7}</cMun>\n` +
-      (cfg.cep ? `<CEP>${cfg.cep.padStart(8, '0')}</CEP>\n` : '') +
-      `</endNac>\n` +
-      `</end>\n`
-  }
+  // Endereço do prestador é opcional no XSD — omitido para evitar erros de sequência.
+  // A localização já está coberta por <cLocEmi> e <cLocPrestacao>.
+  const endPrestXml = ''
 
   // Nome do tomador (obrigatório no elemento <toma>)
   const xNomeToma = escXml((cob.tenant || 'Tomador').slice(0, 150))
