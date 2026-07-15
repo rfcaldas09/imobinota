@@ -346,22 +346,7 @@ export default function Config() {
         email_contato:       f.emailContato,
         endereco:            f.endereco,
       })
-    } else if (tab === 'fiscal') {
-      Object.assign(payload, {
-        regime_tributario:  f.regime,
-        aliquota_iss:       f.aliquota,
-        // NFS-e
-        nfse_municipio_ibge: f.municipioIbge,
-        nfse_municipio_nome: f.municipioNome,
-        nfse_codigo_servico: f.codigoServico,
-        nfse_serie:          'NFSE',
-        nfse_logradouro:     f.logradouro,
-        nfse_numero_end:     f.numeroEnd,
-        nfse_bairro:         f.bairro,
-        nfse_cep:            f.cep,
-      })
-      // Salva a senha do certificado se o campo tiver conteúdo
-      // Lê do DOM diretamente (ref) para capturar paste sem onChange
+      // Salva senha do certificado se preenchida (campo fica na aba Empresa)
       const certPwdValue = certPasswordRef.current?.value || f.certPassword
       if (certPwdValue) {
         try {
@@ -376,6 +361,20 @@ export default function Config() {
           return
         }
       }
+    } else if (tab === 'fiscal') {
+      Object.assign(payload, {
+        regime_tributario:  f.regime,
+        aliquota_iss:       f.aliquota,
+        // NFS-e
+        nfse_municipio_ibge: f.municipioIbge,
+        nfse_municipio_nome: f.municipioNome,
+        nfse_codigo_servico: f.codigoServico,
+        nfse_serie:          'NFSE',
+        nfse_logradouro:     f.logradouro,
+        nfse_numero_end:     f.numeroEnd,
+        nfse_bairro:         f.bairro,
+        nfse_cep:            f.cep,
+      })
     } else if (tab === 'email') {
       Object.assign(payload, {
         email_provider:  f.emailProvider,
