@@ -222,32 +222,41 @@ function extractFromPfx(pfx) {
 }
 
 function parsePfx(pfxBuffer, password) {
-  // parseAllBytes: false → ignora bytes residuais que alguns certs modernos deixam no final do DER
-  const pfxDer = forge.util.createBuffer(pfxBuffer.toString('binary'))
-  const pfxAsn = forge.asn1.fromDer(pfxDer, { parseAllBytes: false })
-
-  // Tentativa 1: verificação normal de MAC (SHA-1 — certs antigos)
-  try {
-    const pfx = forge.pkcs12.pkcs12FromAsn1(pfxAsn, true, password)
-    console.log('[nfse-emitir] parsePfx: MAC SHA-1 OK')
-    return extractFromPfx(pfx)
-  } catch (e) {
-    if (!e.message?.includes('MAC could not be verified')) throw e
+  // forge.pkcs12.pkcs12FromAsn1 chama forge.asn1.fromDer internamente em cada bag
+  // sem a opção parseAllBytes:false, causando "Unparsed DER bytes remain" em certs modernos.
+  // Solução: monkey-patch temporário que força strict=false em TODOS os fromDer internos.
+  const origFromDer = forge.asn1.fromDer
+  forge.asn1.fromDer = function (bytes, opts) {
+    if (opts === undefined || opts === true) opts = false   // força não-strict
+    return origFromDer.call(this, bytes, opts)
   }
 
-  // Tentativa 2: remove macData do ASN.1 para pular verificação de MAC
-  // Necessário para certs modernos (SHA-256 MAC) — node-forge só suporta SHA-1
-  // PKCS#12: [version, authSafe, macData?] — sem macData, forge pula a verificação
-  console.log('[nfse-emitir] parsePfx: SHA-256 MAC detectado, bypassando via ASN.1')
-  if (pfxAsn.value.length > 2) pfxAsn.value.splice(2)
-
   try {
+    const pfxDer = forge.util.createBuffer(pfxBuffer.toString('binary'))
+    const pfxAsn = forge.asn1.fromDer(pfxDer)
+
+    // Tentativa 1: MAC SHA-1 (certs antigos)
+    try {
+      const pfx = forge.pkcs12.pkcs12FromAsn1(pfxAsn, true, password)
+      console.log('[nfse-emitir] parsePfx: MAC SHA-1 OK')
+      return extractFromPfx(pfx)
+    } catch (e) {
+      if (!e.message?.includes('MAC could not be verified')) throw e
+    }
+
+    // Tentativa 2: SHA-256 MAC bypass — remove macData para forge pular a verificação
+    console.log('[nfse-emitir] parsePfx: SHA-256 MAC detectado, bypassando via ASN.1')
+    if (pfxAsn.value.length > 2) pfxAsn.value.splice(2)
+
     const pfx = forge.pkcs12.pkcs12FromAsn1(pfxAsn, true, password)
     console.log('[nfse-emitir] parsePfx: MAC bypass OK')
     return extractFromPfx(pfx)
+
   } catch (e2) {
-    console.error('[nfse-emitir] parsePfx erro pós-bypass:', e2.message)
+    console.error('[nfse-emitir] parsePfx erro:', e2.message)
     throw new Error(`Certificado .pfx inválido ou senha incorreta. Detalhe: ${e2.message}`)
+  } finally {
+    forge.asn1.fromDer = origFromDer  // sempre restaura, mesmo em caso de erro
   }
 }
 
