@@ -222,8 +222,9 @@ function extractFromPfx(pfx) {
 }
 
 function parsePfx(pfxBuffer, password) {
+  // parseAllBytes: false → ignora bytes residuais que alguns certs modernos deixam no final do DER
   const pfxDer = forge.util.createBuffer(pfxBuffer.toString('binary'))
-  const pfxAsn = forge.asn1.fromDer(pfxDer)
+  const pfxAsn = forge.asn1.fromDer(pfxDer, { parseAllBytes: false })
 
   // Tentativa 1: verificação normal de MAC (SHA-1 — certs antigos)
   try {
@@ -236,8 +237,7 @@ function parsePfx(pfxBuffer, password) {
 
   // Tentativa 2: remove macData do ASN.1 para pular verificação de MAC
   // Necessário para certs modernos (SHA-256 MAC) — node-forge só suporta SHA-1
-  // O PKCS#12 interno: [version, authSafe, macData?]
-  // Se macData não existe (.length <= 2), node-forge pula automaticamente
+  // PKCS#12: [version, authSafe, macData?] — sem macData, forge pula a verificação
   console.log('[nfse-emitir] parsePfx: SHA-256 MAC detectado, bypassando via ASN.1')
   if (pfxAsn.value.length > 2) pfxAsn.value.splice(2)
 
@@ -247,10 +247,7 @@ function parsePfx(pfxBuffer, password) {
     return extractFromPfx(pfx)
   } catch (e2) {
     console.error('[nfse-emitir] parsePfx erro pós-bypass:', e2.message)
-    throw new Error(
-      `Certificado .pfx incompatível com o servidor. Tente re-exportar com algoritmos legados ` +
-      `(openssl pkcs12 -legacy). Detalhe: ${e2.message}`
-    )
+    throw new Error(`Certificado .pfx inválido ou senha incorreta. Detalhe: ${e2.message}`)
   }
 }
 
