@@ -232,6 +232,7 @@ export default function Config() {
   const [certUploading, setCertUploading] = useState(false)
   const [certMsg, setCertMsg]   = useState(null)         // { ok, msg }
   const certInputRef            = useRef(null)
+  const certPasswordRef         = useRef(null)  // lê DOM diretamente (evita problema com paste + React state)
 
   const [f, setF] = useState({
     // Empresa
@@ -359,12 +360,15 @@ export default function Config() {
         nfse_bairro:         f.bairro,
         nfse_cep:            f.cep,
       })
-      // Se o usuário digitou (ou re-digitou) a senha do certificado, salva via servidor
-      if (f.certPassword) {
+      // Salva a senha do certificado se o campo tiver conteúdo
+      // Lê do DOM diretamente (ref) para capturar paste sem onChange
+      const certPwdValue = certPasswordRef.current?.value || f.certPassword
+      if (certPwdValue) {
         try {
           const { data: { session } } = await supabase.auth.getSession()
-          await salvarSenhaCert(f.certPassword, null, session?.access_token || '')
-          set('certPassword', '') // limpa da UI após salvar com sucesso
+          await salvarSenhaCert(certPwdValue, null, session?.access_token || '')
+          set('certPassword', '')
+          if (certPasswordRef.current) certPasswordRef.current.value = ''
         } catch (err) {
           setSaving(false)
           setSaved(false)
@@ -611,6 +615,7 @@ export default function Config() {
                 Senha do certificado
               </label>
               <input
+                ref={certPasswordRef}
                 value={f.certPassword}
                 onChange={e => set('certPassword', e.target.value)}
                 type="password"
