@@ -520,7 +520,6 @@ function buildDpsXml(cfg, cob, homologacao) {
 <cLocEmi>${ibge7}</cLocEmi>
 <prest>
 ${tipoInsc === '2' ? `<CNPJ>${cnpjDigits}</CNPJ>` : `<CPF>${cnpjDigits.slice(-11)}</CPF>`}
-<IM>${escXml(cfg.inscMun)}</IM>
 <xNome>${escXml(cfg.razaoSocial.slice(0, 150))}</xNome>
 ${endPrestXml}${regTribXml}
 </prest>
