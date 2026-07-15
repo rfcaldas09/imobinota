@@ -214,7 +214,9 @@ function decryptPassword(encHex, keyHex) {
 function extractFromPfx(pfx) {
   const certBags = pfx.getBags({ bagType: forge.pki.oids.certBag })[forge.pki.oids.certBag] || []
   const keyBags  = pfx.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })[forge.pki.oids.pkcs8ShroudedKeyBag] || []
-  if (!certBags.length || !keyBags.length) throw new Error('Certificado .pfx inválido ou corrompido')
+  if (!certBags.length) throw new Error('Nenhum certificado encontrado no .pfx')
+  if (!keyBags.length)  throw new Error('Chave privada não encontrada no .pfx')
+  if (!keyBags[0].key)  throw new Error('Senha do certificado incorreta — acesse Configurações → NFS-e, atualize a senha e salve novamente')
   return {
     privateKey: keyBags[0].key,
     certPem:    forge.pki.certificateToPem(certBags[0].cert),
