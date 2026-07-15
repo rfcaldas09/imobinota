@@ -3,7 +3,7 @@
 //   1. Baixa o certificado .pfx do Supabase Storage
 //   2. Incrementa o número sequencial de DPS no profile do usuário
 //   3. Monta o XML da DPS conforme leiaute nacional v1.01
-//   4. Assina o XML com XMLDSig RSA-SHA1
+//   4. Assina o XML com XMLDSig RSA-SHA256
 //   5. GZip + Base64 → POST JSON com mTLS na API do SEFIN Nacional
 //   6. Grava resultado em nfse_emissoes no Supabase
 
@@ -431,11 +431,11 @@ function buildDpsXml(cfg, cob, homologacao) {
   // Discriminação do serviço
   const discrim = [
     `Administracao imobiliaria ref. ${dCompet}`,
-    cob.property            ? `Imovel: ${cob.property}`                                          : '',
-    cob.value > 0           ? `Valor: R$ ${Number(cob.value).toFixed(2)}`                        : '',
+    cob.property             ? `Imovel: ${cob.property}`                                          : '',
+    cob.value > 0            ? `Valor: R$ ${Number(cob.value).toFixed(2)}`                        : '',
     cob.seguroFinanceiro > 0 ? `Seguro Financeiro: R$ ${Number(cob.seguroFinanceiro).toFixed(2)}` : '',
-    cob.seguroIncendio > 0  ? `Seguro Incendio: R$ ${Number(cob.seguroIncendio).toFixed(2)}`     : '',
-    cob.iptu > 0            ? `IPTU: R$ ${Number(cob.iptu).toFixed(2)}`                          : '',
+    cob.seguroIncendio > 0   ? `Seguro Incendio: R$ ${Number(cob.seguroIncendio).toFixed(2)}`     : '',
+    cob.iptu > 0             ? `IPTU: R$ ${Number(cob.iptu).toFixed(2)}`                          : '',
     `Total: R$ ${Number(cob.totalValue).toFixed(2)}`,
   ].filter(Boolean).join(' | ')
 
@@ -541,29 +541,30 @@ ${totTribXml}
 </DPS>`
 }
 
-// ── XMLDSig RSA-SHA1 com xml-crypto (C14N correto) ───────────────
+// ── XMLDSig RSA-SHA256 com xml-crypto (C14N correto) ─────────────
 // A assinatura é IRMÃ de infDPS (não filha), usando action:"after"
+// SEFIN Nacional (2024+) usa SHA-256; xml-crypto v6 não gera KeyInfo por
+// padrão, então injetamos o X509Certificate após </SignatureValue>
 function signDps(xmlStr, privateKey, certForge) {
-  // Extrai o Id do infDPS para usar como referência
   const idMatch = xmlStr.match(/infDPS[^>]*Id="([^"]+)"/)
   if (!idMatch) throw new Error('Id do infDPS não encontrado no XML')
   const refId = idMatch[1]
 
-  // Certificado em DER base64 para KeyInfo
+  // Certificado em DER base64 para o KeyInfo
   const certDer = forge.util.encode64(
     forge.asn1.toDer(forge.pki.certificateToAsn1(certForge)).getBytes()
   )
   const keyPem = forge.pki.privateKeyToPem(privateKey)
 
   const sig = new xmlCrypto.SignedXml({
-    privateKey:           keyPem,
-    signatureAlgorithm:   'http://www.w3.org/2000/09/xmldsig#rsa-sha1',
+    privateKey:                keyPem,
+    signatureAlgorithm:        'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256',
     canonicalizationAlgorithm: 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315',
   })
 
   sig.addReference({
-    xpath:                `//*[@Id='${refId}']`,
-    digestAlgorithm:      'http://www.w3.org/2000/09/xmldsig#sha1',
+    xpath:           `//*[@Id='${refId}']`,
+    digestAlgorithm: 'http://www.w3.org/2001/04/xmlenc#sha256',
     transforms: [
       'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
       'http://www.w3.org/TR/2001/REC-xml-c14n-20010315',
@@ -571,16 +572,16 @@ function signDps(xmlStr, privateKey, certForge) {
   })
 
   sig.computeSignature(xmlStr, {
-    // "after" insere a Signature após </infDPS>, como irmã dentro de <DPS>
     location: { reference: `//*[@Id='${refId}']`, action: 'after' },
   })
 
-  // Substitui o KeyInfo gerado pelo xml-crypto pelo nosso com X509Certificate
   let signed = sig.getSignedXml()
-  signed = signed.replace(
-    /<KeyInfo>[\s\S]*?<\/KeyInfo>/,
+
+  // xml-crypto v6 NÃO gera KeyInfo por padrão — inserimos após </SignatureValue>
+  // (KeyInfo fica dentro de <Signature>, após SignatureValue, antes de </Signature>)
+  const keyInfoXml =
     `<KeyInfo><X509Data><X509Certificate>${certDer}</X509Certificate></X509Data></KeyInfo>`
-  )
+  signed = signed.replace('</SignatureValue>', '</SignatureValue>' + keyInfoXml)
 
   return signed
 }
