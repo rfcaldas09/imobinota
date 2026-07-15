@@ -142,7 +142,13 @@ async function handle(event) {
     regime:        (p.regime_tributario || 'simples'),
   }
 
-  const dpsXml = buildDpsXml(config, cobData, homologacao)
+  let dpsXml
+  try {
+    dpsXml = buildDpsXml(config, cobData, homologacao)
+  } catch (validErr) {
+    // Erros de validação de dados (CPF/CNPJ inválido etc.) → 400 com mensagem amigável
+    return { statusCode: 400, body: JSON.stringify({ error: validErr.message }) }
+  }
   console.log('[nfse-emitir] DPS gerada, assinando...')
   console.log('[nfse-emitir] DPS XML (primeiros 800 chars):', dpsXml.slice(0, 800))
 
