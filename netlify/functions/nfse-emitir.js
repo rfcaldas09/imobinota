@@ -233,6 +233,28 @@ async function handle(event) {
 
 function digits(v = '') { return v.replace(/\D/g, '') }
 
+function validarCpf(cpf) {
+  if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false
+  let s = 0
+  for (let i = 0; i < 9; i++) s += parseInt(cpf[i]) * (10 - i)
+  let r = (s * 10) % 11; if (r === 10 || r === 11) r = 0
+  if (r !== parseInt(cpf[9])) return false
+  s = 0
+  for (let i = 0; i < 10; i++) s += parseInt(cpf[i]) * (11 - i)
+  r = (s * 10) % 11; if (r === 10 || r === 11) r = 0
+  return r === parseInt(cpf[10])
+}
+
+function validarCnpj(cnpj) {
+  if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false
+  const calc = (n) => {
+    let s = 0, p = n - 7
+    for (let i = 0; i < n; i++) { s += parseInt(cnpj[i]) * p--; if (p < 2) p = 9 }
+    const r = s % 11; return r < 2 ? 0 : 11 - r
+  }
+  return calc(12) === parseInt(cnpj[12]) && calc(13) === parseInt(cnpj[13])
+}
+
 function escXml(s = '') {
   return String(s)
     .replace(/&/g, '&amp;')
@@ -369,21 +391,26 @@ function buildDpsXml(cfg, cob, homologacao) {
 
   const dCompet = (cob.mesRef || now.toISOString().slice(0, 7)) // YYYY-MM
 
-  // Tomador: CPF (11 dígitos) ou CNPJ (14 dígitos)
+  // Tomador: CPF (11 dígitos) ou CNPJ (14 dígitos) com validação dos dígitos verificadores
   const cpfTomador = digits(cob.cpf || '')
   let tomadorTag
   if (cpfTomador.length === 14) {
+    if (!validarCnpj(cpfTomador)) {
+      throw new Error(`CNPJ do tomador "${cob.tenant}" inválido (${cpfTomador}). Corrija o cadastro do inquilino/cliente antes de emitir a NFS-e.`)
+    }
     tomadorTag = `<CNPJ>${cpfTomador}</CNPJ>`
   } else if (cpfTomador.length === 11) {
+    if (!validarCpf(cpfTomador)) {
+      throw new Error(`CPF do tomador "${cob.tenant}" inválido (${cpfTomador}). Corrija o cadastro do inquilino/cliente antes de emitir a NFS-e.`)
+    }
     tomadorTag = `<CPF>${cpfTomador}</CPF>`
   } else if (cpfTomador.length > 0) {
-    // Tenta corrigir: se 11+ dígitos, tratar como CPF; se 14, CNPJ
-    tomadorTag = cpfTomador.length > 11
-      ? `<CNPJ>${cpfTomador.padStart(14, '0')}</CNPJ>`
-      : `<CPF>${cpfTomador.padStart(11, '0')}</CPF>`
+    // Número de dígitos inesperado — usa cNaoNIF para não bloquear (código 0 = sem NIF nacional)
+    console.warn('[nfse-emitir] CPF/CNPJ do tomador com comprimento inesperado:', cpfTomador.length, '— usando cNaoNIF')
+    tomadorTag = `<cNaoNIF>0</cNaoNIF>`
   } else {
-    // Sem CPF/CNPJ: usa cNaoNIF
-    tomadorTag = `<cNaoNIF>9</cNaoNIF>` // 9 = estrangeiro sem NIF
+    // Sem CPF/CNPJ
+    tomadorTag = `<cNaoNIF>0</cNaoNIF>`
   }
 
   // Discriminação do serviço
