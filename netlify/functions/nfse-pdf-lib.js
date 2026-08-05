@@ -3,7 +3,7 @@
 // Gerador de PDF NFS-e — layout compatível com NFS-e municipal (Blumenau/SC)
 // Usa PDFKit + qrcode. Sem imagens de brasão/logo.
 
-const PDFDocument = require('pdfkit')
+const PDFDocument = require('pdfkit/js/pdfkit.standalone.js')
 const QRCode      = require('qrcode')
 
 // ── Lookup IBGE (2 primeiros dígitos) → UF ───────────────────────
