@@ -463,10 +463,15 @@ function extrairCamposPdf(xml, cobData, profile) {
   const codLc116   = cobData?.codServicoLc116 || profile?.nfse_codigo_servico || ''
   const lc116Desc  = LC116_MAP[codLc116] || ''
 
-  // Discriminação: apenas a descrição do serviço LC 116 (sem texto gerado pelo sistema)
-  const descServico = lc116Desc
-    ? `${codLc116} - ${lc116Desc}`
-    : (tag('xInfComp') || tag('xDiscServ') || '')
+  // Discriminação — prioridade:
+  // 1. cobData.discriminacao (texto livre do contrato ou capturado no mês — salvo na emissão)
+  // 2. Descrição do código LC 116 cadastrado no contrato
+  // 3. xInfComp do XML (gerado automaticamente pelo sistema)
+  const descServico = cobData?.discriminacao
+    || (lc116Desc ? `${codLc116} - ${lc116Desc}` : '')
+    || tag('xInfComp')
+    || tag('xDiscServ')
+    || ''
 
   // ── Enquadramento ─────────────────────────────────────────────
   const atividade  = lc116Desc ? `Atividade: ${codLc116} - ${lc116Desc}` : ''

@@ -169,6 +169,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
     seguroIncendio: '0', iptu: '0', dueDay: '10',
     email: '', phone: '', start: new Date().toISOString().slice(0,10),
     end: '', status: 'Ativo', codServicoLc116: '',
+    discriminacaoServico: '', solicitarDiscriminacaoMensal: false,
   }
   const [f, setF] = useState({ ...blank, ...initial })
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
@@ -192,7 +193,9 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
       iptu:             parseFloat(f.iptu)||0,
       totalValue,
       dueDay:           parseInt(f.dueDay)||10,
-      codServicoLc116:  f.codServicoLc116 || null,
+      codServicoLc116:             f.codServicoLc116             || null,
+      discriminacaoServico:        f.discriminacaoServico         || null,
+      solicitarDiscriminacaoMensal: !!f.solicitarDiscriminacaoMensal,
     })
   }
 
@@ -296,9 +299,33 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
 
           {/* Fiscal */}
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Fiscal (NFS-e)</p>
-          <div className="pb-2">
+          <div className="pb-1">
             <Lc116Picker value={f.codServicoLc116} onChange={v => set('codServicoLc116', v)} />
           </div>
+
+          <Row label="Discriminação do serviço (texto fixo)">
+            <textarea
+              value={f.discriminacaoServico}
+              onChange={e => set('discriminacaoServico', e.target.value)}
+              placeholder="Texto que aparecerá na Discriminação do Serviço da NFS-e. Deixe vazio para usar a descrição do código LC 116."
+              rows={3}
+              maxLength={2000}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+            />
+          </Row>
+
+          <label className="flex items-start gap-2.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={!!f.solicitarDiscriminacaoMensal}
+              onChange={e => set('solicitarDiscriminacaoMensal', e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <div>
+              <span className="text-sm text-slate-700 font-medium">Solicitar discriminação a cada emissão</span>
+              <p className="text-xs text-slate-400 mt-0.5">Antes de emitir, o sistema pedirá o texto — útil para contratos com número de ordem de compra ou referência que muda todo mês.</p>
+            </div>
+          </label>
         </div>
 
         <div className="flex gap-3 px-6 py-4 border-t border-slate-100">
@@ -724,7 +751,9 @@ const mapRow = row => ({
   start:            row.data_inicio,
   end:              row.data_fim,
   status:           (['Ativo','Inativo'].includes(row.status) ? row.status : 'Ativo'),
-  codServicoLc116:  row.cod_servico_lc116 || '',
+  codServicoLc116:             row.cod_servico_lc116             || '',
+  discriminacaoServico:        row.discriminacao_servico         || '',
+  solicitarDiscriminacaoMensal: !!row.solicitar_discriminacao_mensal,
   totalValue:       (Number(row.valor_aluguel)||0) + (Number(row.seguro_financeiro)||0) +
                     (Number(row.seguro_incendio)||0) + (Number(row.iptu)||0),
 })
@@ -797,7 +826,9 @@ export default function Contratos() {
         data_inicio:         data.start || null,
         data_fim:            data.end   || null,
         status:              data.status,
-        cod_servico_lc116:   data.codServicoLc116 || null,
+        cod_servico_lc116:             data.codServicoLc116             || null,
+        discriminacao_servico:         data.discriminacaoServico         || null,
+        solicitar_discriminacao_mensal: !!data.solicitarDiscriminacaoMensal,
       }).select().single()
       if (error) throw error
 
@@ -849,8 +880,10 @@ export default function Contratos() {
         dia_vencimento:      data.dueDay,
         data_inicio:         data.start || null,
         data_fim:            data.end   || null,
-        cod_servico_lc116:   data.codServicoLc116 || null,
-        status:            data.status,
+        cod_servico_lc116:             data.codServicoLc116             || null,
+        discriminacao_servico:         data.discriminacaoServico         || null,
+        solicitar_discriminacao_mensal: !!data.solicitarDiscriminacaoMensal,
+        status:                        data.status,
       }).eq('id', data.id)
       if (error) throw error
 

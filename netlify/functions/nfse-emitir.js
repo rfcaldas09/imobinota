@@ -271,6 +271,7 @@ async function handle(event) {
     chave_acesso: chaveAcesso, competencia: cobData.mesRef,
     valor_servico: cobData.totalValue,
     status: 'emitida', xml_nfse: nfseXml || responseBody,
+    discriminacao_servico: cobData.discriminacao || null,
   })
 
   // ── 10. Envia e-mail com PDF da NFS-e ─────────────────────────
@@ -485,16 +486,20 @@ function buildDpsXml(cfg, cob, homologacao) {
     tomadorTag = `<cNaoNIF>0</cNaoNIF>`
   }
 
-  // Discriminação do serviço
-  const discrim = [
-    `Administracao imobiliaria ref. ${dCompet}`,
-    cob.property             ? `Imovel: ${cob.property}`                                          : '',
-    cob.value > 0            ? `Valor: R$ ${Number(cob.value).toFixed(2)}`                        : '',
-    cob.seguroFinanceiro > 0 ? `Seguro Financeiro: R$ ${Number(cob.seguroFinanceiro).toFixed(2)}` : '',
-    cob.seguroIncendio > 0   ? `Seguro Incendio: R$ ${Number(cob.seguroIncendio).toFixed(2)}`     : '',
-    cob.iptu > 0             ? `IPTU: R$ ${Number(cob.iptu).toFixed(2)}`                          : '',
-    `Total: R$ ${Number(cob.totalValue).toFixed(2)}`,
-  ].filter(Boolean).join(' | ')
+  // Discriminação do serviço:
+  // 1. Texto livre enviado pelo frontend (fixo do contrato ou capturado mensalmente)
+  // 2. Fallback: texto automático com referência, imóvel e valores
+  const discrim = cob.discriminacao
+    ? String(cob.discriminacao).trim()
+    : [
+        `Administracao imobiliaria ref. ${dCompet}`,
+        cob.property             ? `Imovel: ${cob.property}`                                          : '',
+        cob.value > 0            ? `Valor: R$ ${Number(cob.value).toFixed(2)}`                        : '',
+        cob.seguroFinanceiro > 0 ? `Seguro Financeiro: R$ ${Number(cob.seguroFinanceiro).toFixed(2)}` : '',
+        cob.seguroIncendio > 0   ? `Seguro Incendio: R$ ${Number(cob.seguroIncendio).toFixed(2)}`     : '',
+        cob.iptu > 0             ? `IPTU: R$ ${Number(cob.iptu).toFixed(2)}`                          : '',
+        `Total: R$ ${Number(cob.totalValue).toFixed(2)}`,
+      ].filter(Boolean).join(' | ')
 
   // vServ: DEVE ser string com 2 casas decimais (XSD TSDec15V2)
   const vServ = Number(cob.totalValue).toFixed(2)

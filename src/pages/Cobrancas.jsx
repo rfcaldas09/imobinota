@@ -80,7 +80,9 @@ const mapCob = (row, lastNfse = null) => {
     seguroFinanceiro:Number(row.contratos?.seguro_financeiro) || 0,
     seguroIncendio:  Number(row.contratos?.seguro_incendio)   || 0,
     iptu:            Number(row.contratos?.iptu)              || 0,
-    codServicoLc116: row.contratos?.cod_servico_lc116         || null,
+    codServicoLc116:             row.contratos?.cod_servico_lc116             || null,
+    discriminacaoServico:        row.contratos?.discriminacao_servico         || '',
+    solicitarDiscriminacaoMensal: !!row.contratos?.solicitar_discriminacao_mensal,
     dueDay:          row.dia_vencimento,
     status:          row.status || 'Pendente',
     mesRef:          row.mes_referencia,
@@ -378,6 +380,8 @@ function NfseModal({ cob, user, onClose }) {
   const [result, setResult]     = useState(null)
   const [errMsg, setErrMsg]     = useState('')
   const [homolog, setHomolog]   = useState(false)
+  // Discriminação: pré-preenchida com o texto fixo do contrato (se houver)
+  const [discriminacao, setDiscriminacao] = useState(cob.discriminacaoServico || '')
 
   useEffect(() => {
     const handle = e => { if (e.key === 'Escape' && state !== 'loading') onClose() }
@@ -408,6 +412,7 @@ function NfseModal({ cob, user, onClose }) {
             seguroIncendio:   cob.seguroIncendio,
             iptu:             cob.iptu,
             codServicoLc116:  cob.codServicoLc116 || null,
+          discriminacao:    discriminacao        || null,
           },
         }),
       })
@@ -482,6 +487,30 @@ function NfseModal({ cob, user, onClose }) {
                 <span>Total</span><span>{fmt(cob.totalValue)}</span>
               </div>
             </div>
+
+            {/* Discriminação do serviço */}
+            {cob.solicitarDiscriminacaoMensal && (
+              <div>
+                <label className="text-xs font-semibold text-slate-500 block mb-1">
+                  Discriminação do serviço <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={discriminacao}
+                  onChange={e => setDiscriminacao(e.target.value)}
+                  placeholder="Ex: Ref. OC nº 12345 — Administração imobiliária jan/2026"
+                  rows={3}
+                  maxLength={2000}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                />
+                <p className="text-xs text-slate-400 mt-1">{discriminacao.length}/2000 caracteres</p>
+              </div>
+            )}
+            {!cob.solicitarDiscriminacaoMensal && cob.discriminacaoServico && (
+              <div className="bg-slate-50 rounded-xl px-3 py-2">
+                <p className="text-xs font-semibold text-slate-400 mb-0.5">Discriminação do serviço</p>
+                <p className="text-xs text-slate-600">{cob.discriminacaoServico}</p>
+              </div>
+            )}
 
             {/* Toggle de ambiente */}
             <label className="flex items-center gap-2.5 cursor-pointer select-none">
@@ -712,13 +741,15 @@ const BATCH_ACTIONS = [
 // ── Modal Gerar e Enviar em Massa ─────────────────────────────────
 function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDone }) {
   const { isActive } = useSubscription()
-  const [step, setStep]         = useState('pick')
+  const [step, setStep]         = useState('pick') // pick | discriminacao | running | done
   const [action, setAction]     = useState('nfse')
   const [mesRef, setMesRef]     = useState(initialMes)
   const [preview, setPreview]   = useState(null)
   const [progress, setProgress] = useState(0)
   const [logs, setLogs]         = useState([])
   const [result, setResult]     = useState(null)
+  // discriminações pendentes: { [cobrancaId]: string }
+  const [discMap, setDiscMap]   = useState({})
 
   useEffect(() => {
     if (!user || !contracts.length) return
@@ -744,8 +775,34 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
   const needsPix = action === 'boleto' || action === 'ambos'
   const canConfirm = isActive && preview && preview.toCreate > 0 && !(needsPix && !pixKey)
 
+  const buildFila = async () => {
+    const ref = mesStr(mesRef)
+    const { data: cobsDoMes } = await supabase
+      .from('cobrancas')
+      .select('id, valor_total, mes_referencia, contrato_id, contratos(imovel, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, seguro_financeiro, seguro_incendio, iptu), inquilinos(nome, cpf, email)')
+      .eq('user_id', user.id)
+      .eq('mes_referencia', ref)
+      .in('contrato_id', contracts.map(c => c.id))
+
+    return (cobsDoMes || []).map(cob => ({
+      id:              cob.id,
+      tenant:          cob.inquilinos?.nome  || '—',
+      cpf:             cob.inquilinos?.cpf   || '',
+      email:           cob.inquilinos?.email || '',
+      property:        cob.contratos?.imovel || '',
+      totalValue:      Number(cob.valor_total) || 0,
+      value:           Number(cob.valor_total) || 0,
+      seguroFinanceiro:Number(cob.contratos?.seguro_financeiro) || 0,
+      seguroIncendio:  Number(cob.contratos?.seguro_incendio)   || 0,
+      iptu:            Number(cob.contratos?.iptu)              || 0,
+      codServicoLc116:             cob.contratos?.cod_servico_lc116             || null,
+      discriminacaoServico:        cob.contratos?.discriminacao_servico         || '',
+      solicitarDiscriminacaoMensal: !!cob.contratos?.solicitar_discriminacao_mensal,
+      mesRef:          cob.mes_referencia,
+    }))
+  }
+
   const confirm = async () => {
-    setStep('running')
     setProgress(0)
     setLogs([])
     setResult(null)
@@ -759,47 +816,45 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
     }
 
     if (action !== 'nfse') {
-      // Ação futura (boleto, ambos) — progresso simulado simples
       setResult({ created: res.created, skipped: res.skipped, fails: 0, error: null })
       setStep('done')
       onDone()
       return
     }
 
-    // ── Passo 2: busca todas as cobrancas do mês destes contratos ─
-    const ref = mesStr(mesRef)
-    const { data: cobsDoMes } = await supabase
-      .from('cobrancas')
-      .select('id, valor_total, mes_referencia, contrato_id, contratos(imovel, cod_servico_lc116, seguro_financeiro, seguro_incendio, iptu), inquilinos(nome, cpf, email)')
-      .eq('user_id', user.id)
-      .eq('mes_referencia', ref)
-      .in('contrato_id', contracts.map(c => c.id))
+    // ── Passo 2: busca fila e verifica se há contratos que pedem discriminação mensal ─
+    const fila = await buildFila()
+    const precisamDiscriminacao = fila.filter(c => c.solicitarDiscriminacaoMensal)
 
-    const fila = (cobsDoMes || []).map(cob => ({
-      id:              cob.id,
-      tenant:          cob.inquilinos?.nome || '—',
-      cpf:             cob.inquilinos?.cpf  || '',
-      email:           cob.inquilinos?.email || '',
-      property:        cob.contratos?.imovel || '',
-      totalValue:      Number(cob.valor_total) || 0,
-      value:           Number(cob.valor_total) || 0,
-      seguroFinanceiro:Number(cob.contratos?.seguro_financeiro) || 0,
-      seguroIncendio:  Number(cob.contratos?.seguro_incendio)   || 0,
-      iptu:            Number(cob.contratos?.iptu)              || 0,
-      codServicoLc116: cob.contratos?.cod_servico_lc116 || null,
-      mesRef:          cob.mes_referencia,
-    }))
+    if (precisamDiscriminacao.length > 0) {
+      // Inicializa o map com o texto fixo (se houver) como sugestão
+      const init = {}
+      precisamDiscriminacao.forEach(c => { init[c.id] = c.discriminacaoServico || '' })
+      setDiscMap(init)
+      // Armazena fila no state para usar depois
+      setResult({ _fila: fila, created: res.created, skipped: res.skipped })
+      setStep('discriminacao')
+      return
+    }
 
+    // Nenhum contrato precisa de discriminação manual — vai direto
+    await runFila(fila, {}, res)
+  }
+
+  // ── Executa emissão para todos da fila ──────────────────────────
+  const runFila = async (fila, discMapLocal, prevRes) => {
+    setStep('running')
     const total = fila.length
     let ok = 0, fails = 0
 
-    // ── Passo 3: emite NFS-e para cada cobrança, uma a uma ────────
     for (let i = 0; i < fila.length; i++) {
       const cob = fila[i]
       const firstName = cob.tenant.split(' ')[0]
 
-      // Marca como "em andamento"
       setLogs(l => [...l.slice(-80), { name: firstName, status: 'pending' }])
+
+      // Discriminação: do map (mensal capturado no passo anterior) ou fixo do contrato
+      const discriminacao = discMapLocal[cob.id] || cob.discriminacaoServico || null
 
       try {
         const resp = await fetch('/.netlify/functions/nfse-emitir', {
@@ -821,6 +876,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
               seguroIncendio:   cob.seguroIncendio,
               iptu:             cob.iptu,
               codServicoLc116:  cob.codServicoLc116 || null,
+              discriminacao,
             },
           }),
         })
@@ -843,11 +899,10 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
       }
 
       setProgress(i + 1)
-      // Pequena pausa para não sobrecarregar
       if (i < fila.length - 1) await new Promise(r => setTimeout(r, 300))
     }
 
-    setResult({ created: ok, skipped: res.skipped + (total - fila.length), fails, error: null })
+    setResult({ created: ok, skipped: (prevRes?.skipped ?? 0) + (total - fila.length >= 0 ? 0 : 0), fails, error: null })
     setStep('done')
     onDone()
   }
@@ -938,6 +993,44 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
               <button onClick={confirm} disabled={!canConfirm}
                 className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold flex items-center justify-center gap-2 shadow-md shadow-indigo-200 disabled:opacity-40 disabled:cursor-not-allowed">
                 <span>{selectedAction?.icon}</span> Confirmar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'discriminacao' && result?._fila && (
+          <div className="p-6">
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="w-8 h-8 bg-amber-100 rounded-xl flex items-center justify-center text-lg">✏️</div>
+              <div>
+                <p className="font-bold text-slate-900 text-sm">Discriminação do serviço</p>
+                <p className="text-xs text-slate-400">Preencha para os contratos que exigem texto mensal</p>
+              </div>
+            </div>
+
+            <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-1">
+              {result._fila.filter(c => c.solicitarDiscriminacaoMensal).map(cob => (
+                <div key={cob.id} className="border border-slate-200 rounded-xl p-3 space-y-1.5">
+                  <p className="text-xs font-semibold text-slate-700">{cob.tenant}</p>
+                  <p className="text-xs text-slate-400">{cob.property}</p>
+                  <textarea
+                    value={discMap[cob.id] ?? ''}
+                    onChange={e => setDiscMap(m => ({ ...m, [cob.id]: e.target.value }))}
+                    placeholder="Ex: OC nº 12345 — Administração imobiliária ref. jan/2026"
+                    rows={2}
+                    maxLength={2000}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => setStep('pick')} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50">Voltar</button>
+              <button
+                onClick={() => runFila(result._fila, discMap, result)}
+                className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700 flex items-center justify-center gap-2">
+                Emitir NFS-e →
               </button>
             </div>
           </div>
@@ -1227,7 +1320,7 @@ export default function Cobrancas() {
     // Query principal — sem join nfse_emissoes (exige FK formal no banco)
     const { data, error } = await supabase
       .from('cobrancas')
-      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116), inquilinos(nome, cpf, email)')
+      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal), inquilinos(nome, cpf, email)')
       .eq('user_id', user.id)
       .eq('mes_referencia', ref)
       .order('created_at', { ascending: false })
@@ -1252,7 +1345,7 @@ export default function Cobrancas() {
 
     const { data: ctrs } = await supabase
       .from('contratos')
-      .select('id, inquilino_id, imovel, valor_aluguel, seguro_financeiro, seguro_incendio, iptu, dia_vencimento, status, inquilinos(nome)')
+      .select('id, inquilino_id, imovel, valor_aluguel, seguro_financeiro, seguro_incendio, iptu, dia_vencimento, status, discriminacao_servico, solicitar_discriminacao_mensal, inquilinos(nome)')
       .eq('user_id', user.id)
       .neq('status', 'Inativo')
 
@@ -1268,6 +1361,8 @@ export default function Cobrancas() {
       dueDay:           r.dia_vencimento,
       totalValue:       (Number(r.valor_aluguel)||0) + (Number(r.seguro_financeiro)||0) +
                         (Number(r.seguro_incendio)||0) + (Number(r.iptu)||0),
+      discriminacaoServico:        r.discriminacao_servico          || '',
+      solicitarDiscriminacaoMensal: !!r.solicitar_discriminacao_mensal,
     })))
 
     setLoading(false)

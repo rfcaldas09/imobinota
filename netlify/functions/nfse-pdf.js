@@ -86,6 +86,9 @@ async function handle(event) {
   // Fallback: se não veio do join, usa tomador_nome salvo na emissão
   if (!cobData.tenant) cobData.tenant = em.tomador_nome || ''
 
+  // Passa discriminação salva na emissão (tem prioridade sobre xInfComp do XML)
+  if (em.discriminacao_servico) cobData.discriminacao = em.discriminacao_servico
+
   const fields  = extrairCamposPdf(em.xml_nfse || '', cobData, profile)
   // sobrescreve com dados diretos da emissão (mais confiáveis que o XML)
   // Prioridade: número oficial do SEFIN > número sequencial interno (numero_dps)
