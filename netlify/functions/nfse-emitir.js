@@ -135,8 +135,12 @@ async function handle(event) {
 
   // ── 5. Monta XML da DPS ────────────────────────────────────────
   // Série: deve ser numérica (5 dígitos) para o Id do DPS ser válido (padrão DPS[0-9]{42})
-  // Se o usuário configurou série alfanumérica (ex: "IMOB"), usa "00001" como fallback numérico
-  const serieRaw = (p.nfse_serie || '').replace(/\D/g, '').slice(0, 5).padStart(5, '0') || '00001'
+  // Se o usuário configurou série alfanumérica (ex: "NFSE"), replace(/\D/g,'') resulta em ''
+  // que padStart(5,'0') transforma em '00000' (truthy!) — por isso trocamos all-zeros por '00001'
+  const serieRaw = (() => {
+    const s = (p.nfse_serie || '').replace(/\D/g, '').slice(0, 5).padStart(5, '0')
+    return /^0+$/.test(s) ? '00001' : s
+  })()
 
   const config = {
     cnpj:          digits(p.cnpj),

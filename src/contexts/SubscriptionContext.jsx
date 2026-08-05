@@ -22,7 +22,7 @@ export function SubscriptionProvider({ children }) {
       .maybeSingle()
     setSub(data)
     setLoading(false)
-  }, [user])
+  }, [user?.id])  // depende só do ID — novo objeto com mesmo ID não re-busca
 
   useEffect(() => { load() }, [load])
 

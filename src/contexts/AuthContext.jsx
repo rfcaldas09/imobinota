@@ -27,8 +27,15 @@ export function AuthProvider({ children }) {
       setLoading(false)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        // Só limpa o usuário em logout explícito
+        setUser(null)
+      } else if (session?.user) {
+        // TOKEN_REFRESHED, SIGNED_IN, etc: só atualiza se o ID mudou
+        // Evita re-renders desnecessários quando o token é renovado ao voltar para a aba
+        setUser(prev => prev?.id === session.user.id ? prev : session.user)
+      }
     })
 
     return () => subscription.unsubscribe()

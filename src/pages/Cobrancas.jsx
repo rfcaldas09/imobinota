@@ -559,16 +559,16 @@ function NfseModal({ cob, user, onClose }) {
 
 // ── Opções de ação no BatchModal ──────────────────────────────────
 const BATCH_ACTIONS = [
-  { id: 'boleto', label: 'Somente Cobranças', icon: '💳', desc: 'Gera e registra cobranças para cada cliente' },
-  { id: 'nfse',   label: 'Somente NFS-e',    icon: '📄', desc: 'Emite notas fiscais de serviço (em breve)' },
-  { id: 'ambos',  label: 'Cobrança + NFS-e', icon: '⚡', desc: 'Gera cobrança e emite NFS-e juntos (em breve)' },
+  { id: 'boleto', label: 'Somente Cobranças', icon: '💳', desc: 'Em breve', disabled: true },
+  { id: 'nfse',   label: 'Somente NFS-e',    icon: '📄', desc: 'Emite notas fiscais de serviço' },
+  { id: 'ambos',  label: 'Cobrança + NFS-e', icon: '⚡', desc: 'Em breve', disabled: true },
 ]
 
 // ── Modal Gerar e Enviar em Massa ─────────────────────────────────
 function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDone }) {
   const { isActive } = useSubscription()
   const [step, setStep]         = useState('pick')
-  const [action, setAction]     = useState('boleto')
+  const [action, setAction]     = useState('nfse')
   const [mesRef, setMesRef]     = useState(initialMes)
   const [preview, setPreview]   = useState(null)
   const [progress, setProgress] = useState(0)
@@ -691,18 +691,22 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
             {/* Seleção de ação */}
             <div className="mt-4 space-y-2">
               {BATCH_ACTIONS.map(a => (
-                <button key={a.id} onClick={() => setAction(a.id)}
+                <button key={a.id}
+                  onClick={() => !a.disabled && setAction(a.id)}
+                  disabled={a.disabled}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all ${
-                    action === a.id
-                      ? 'border-indigo-500 bg-indigo-50'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                    a.disabled
+                      ? 'border-slate-100 bg-slate-50 cursor-not-allowed opacity-50'
+                      : action === a.id
+                        ? 'border-indigo-500 bg-indigo-50'
+                        : 'border-slate-200 hover:border-slate-300 bg-white'
                   }`}>
                   <span className="text-xl">{a.icon}</span>
                   <div className="flex-1">
-                    <p className={`text-sm font-semibold ${action === a.id ? 'text-indigo-800' : 'text-slate-700'}`}>{a.label}</p>
-                    <p className={`text-xs mt-0.5 ${action === a.id ? 'text-indigo-500' : 'text-slate-400'}`}>{a.desc}</p>
+                    <p className={`text-sm font-semibold ${a.disabled ? 'text-slate-400' : action === a.id ? 'text-indigo-800' : 'text-slate-700'}`}>{a.label}</p>
+                    <p className={`text-xs mt-0.5 ${a.disabled ? 'text-slate-300' : action === a.id ? 'text-indigo-500' : 'text-slate-400'}`}>{a.desc}</p>
                   </div>
-                  {action === a.id && (
+                  {!a.disabled && action === a.id && (
                     <div className="w-4 h-4 rounded-full bg-indigo-500 flex items-center justify-center flex-shrink-0">
                       <IcCheck c="w-3 h-3 text-white stroke-[3]"/>
                     </div>
@@ -1209,18 +1213,13 @@ export default function Cobrancas() {
                       <div className="w-4 h-4 border-2 border-slate-200 border-t-indigo-500 rounded-full animate-spin inline-block"/>
                     ) : (
                       <div className="flex flex-col items-end gap-1.5">
-                        {/* Linha 1 — Gerar Cobrança */}
+                        {/* Linha 1 — Gerar Cobrança (desabilitado temporariamente) */}
                         <button
-                          onClick={() => isActive ? setBoletoCob(c) : null}
-                          disabled={!isActive}
-                          title={!isActive ? 'Assine um plano para gerar cobranças' : ''}
-                          className={`flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors w-full justify-center ${
-                            isActive
-                              ? 'text-indigo-600 border-indigo-200 bg-indigo-50 hover:bg-indigo-100'
-                              : 'text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed'
-                          }`}>
+                          disabled
+                          title="Em breve"
+                          className="flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap w-full justify-center text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed opacity-50">
                           <IcQR c="w-3 h-3"/>
-                          {isActive ? 'Gerar Cobrança' : '🔒 Gerar Cobrança'}
+                          Gerar Cobrança
                         </button>
 
                         {/* Linha 2 — Emitir NFS-e */}

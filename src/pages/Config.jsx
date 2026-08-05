@@ -79,24 +79,30 @@ const TABS = [
 ]
 
 // Lista de municípios comuns do Sul para facilitar a busca
+// nac: true  = município usa o Emissor Público Nacional (SEFIN) — aceita DPS via API nacional
+// nac: false = município usa sistema municipal próprio — NÃO compatível com o endpoint nacional
+// nacEm: data prevista de migração para o Emissor Nacional (ISO 8601), se anunciada oficialmente
 const MUNICIPIOS_SUL = [
-  { ibge:'4202404', nome:'Blumenau — SC' },
-  { ibge:'4205407', nome:'Florianópolis — SC' },
-  { ibge:'4209102', nome:'Joinville — SC' },
-  { ibge:'4216602', nome:'São José — SC' },
-  { ibge:'4204202', nome:'Chapecó — SC' },
-  { ibge:'4215802', nome:'São Bento do Sul — SC' },
-  { ibge:'4211900', nome:'Palhoça — SC' },
-  { ibge:'4314902', nome:'Porto Alegre — RS' },
-  { ibge:'4305108', nome:'Caxias do Sul — RS' },
-  { ibge:'4316907', nome:'Santa Maria — RS' },
-  { ibge:'4314407', nome:'Pelotas — RS' },
-  { ibge:'4309100', nome:'Gramado — RS' },
-  { ibge:'4106902', nome:'Curitiba — PR' },
-  { ibge:'4113700', nome:'Londrina — PR' },
-  { ibge:'4115200', nome:'Maringá — PR' },
-  { ibge:'4119905', nome:'Ponta Grossa — PR' },
-  { ibge:'4104808', nome:'Cascavel — PR' },
+  // ── SANTA CATARINA ──────────────────────────────────────────────────────────
+  { ibge:'4205407', nome:'Florianópolis — SC', nac:true  },                                    // Emissor Nacional desde 27/08/2025
+  { ibge:'4204202', nome:'Chapecó — SC',        nac:true  },                                    // Emissor Nacional desde 15/08/2024
+  { ibge:'4202404', nome:'Blumenau — SC',        nac:false, nacEm:'2026-08-01' },               // migra em 01/08/2026 (Prefeitura anunciou)
+  { ibge:'4209102', nome:'Joinville — SC',       nac:false, nacEm:'2026-07-20' },               // migra em 20/07/2026 — em 4 dias! (fonte: prefeitura)
+  { ibge:'4216602', nome:'São José — SC',        nac:false },                                   // usa AtendeNet (emissor próprio) — sem data anunciada
+  { ibge:'4215802', nome:'São Bento do Sul — SC',nac:false },                                   // mantém emissor próprio — sem data anunciada
+  { ibge:'4211900', nome:'Palhoça — SC',         nac:false },                                   // sem anúncio de migração
+  // ── RIO GRANDE DO SUL ───────────────────────────────────────────────────────
+  { ibge:'4314902', nome:'Porto Alegre — RS',    nac:true  },                                    // Emissor Nacional desde 17/04/2023
+  { ibge:'4305108', nome:'Caxias do Sul — RS',   nac:false },                                   // decidiu manter emissor próprio (ADN apenas)
+  { ibge:'4316907', nome:'Santa Maria — RS',     nac:false },                                   // sem anúncio de migração
+  { ibge:'4314407', nome:'Pelotas — RS',         nac:false, nacEm:'2026-08-01' },               // migra em 01/08/2026 (Decreto 7.208/2026)
+  { ibge:'4309100', nome:'Gramado — RS',         nac:false },                                   // mantém emissor próprio — sem data anunciada
+  // ── PARANÁ ──────────────────────────────────────────────────────────────────
+  { ibge:'4106902', nome:'Curitiba — PR',        nac:true  },                                    // Emissor Nacional desde 30/08/2023
+  { ibge:'4113700', nome:'Londrina — PR',        nac:true  },                                    // Emissor Nacional desde 01/01/2026
+  { ibge:'4115200', nome:'Maringá — PR',         nac:true  },                                    // Emissor Nacional desde 15/06/2023
+  { ibge:'4119905', nome:'Ponta Grossa — PR',    nac:false },                                   // mantém Elotech — migração "gradual, sem data"
+  { ibge:'4104808', nome:'Cascavel — PR',        nac:false },                                   // mantém emissor próprio — ADN apenas
 ]
 
 const VARS = [
@@ -692,11 +698,34 @@ export default function Config() {
                     }}>
                     <option value="">— Selecione o município —</option>
                     {MUNICIPIOS_SUL.map(m => (
-                      <option key={m.ibge} value={m.ibge}>{m.nome}</option>
+                      <option key={m.ibge} value={m.ibge}>{m.nac ? '✅' : '⚠️'} {m.nome}</option>
                     ))}
                     <option value="outro">Outro (digitar IBGE abaixo)</option>
                   </select>
                 </div>
+                {/* Aviso quando município usa sistema próprio (não o emissor nacional) */}
+                {(() => {
+                  const sel = MUNICIPIOS_SUL.find(m => m.ibge === f.municipioIbge)
+                  if (!sel || sel.nac !== false) return null
+                  // Município com data de migração futura conhecida
+                  if (sel.nacEm) {
+                    const dt = new Date(sel.nacEm)
+                    const hoje = new Date()
+                    if (dt > hoje) {
+                      const dias = Math.ceil((dt - hoje) / 86400000)
+                      return (
+                        <p className="mt-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+                          🔄 <strong>{sel.nome.split(' —')[0]}</strong> ainda usa sistema municipal próprio, mas migrará para o Emissor Público Nacional em <strong>{dt.toLocaleDateString('pt-BR')}</strong> (em {dias} dias). Até lá, selecione outro município para testes ou aguarde a migração.
+                        </p>
+                      )
+                    }
+                  }
+                  return (
+                    <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                      ⚠️ <strong>{sel.nome.split(' —')[0]}</strong> usa sistema municipal próprio e <strong>não é compatível</strong> com o endpoint nacional da NFS-e (SEFIN). Para emitir notas nesse município, é necessária integração específica com a prefeitura. Municípios compatíveis: Florianópolis, Chapecó, Porto Alegre, Curitiba, Londrina, Maringá.
+                    </p>
+                  )
+                })()}
                 {(f.municipioIbge === 'outro' || (f.municipioIbge && !MUNICIPIOS_SUL.find(m => m.ibge === f.municipioIbge))) && (
                   <div className="mt-2">
                     <Inp value={f.municipioIbge === 'outro' ? '' : f.municipioIbge}
