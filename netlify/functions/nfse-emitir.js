@@ -570,8 +570,7 @@ ${cfg.cTribMun ? `<cTribMun>${cfg.cTribMun}</cTribMun>\n` : ''}<xDescServ>${escX
 <tribMun>
 <tribISSQN>1</tribISSQN>
 <tpRetISSQN>1</tpRetISSQN>
-<pAliq>${cfg.aliquota}</pAliq>
-</tribMun>
+${!isSimples ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</tribMun>
 ${totTribXml}
 </trib>
 </valores>
