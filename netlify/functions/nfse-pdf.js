@@ -46,23 +46,22 @@ async function handle(event) {
   const em = emissoes[0]
   if (!em) return { statusCode: 404, body: JSON.stringify({ error: 'Emissão não encontrada' }) }
 
-  // Busca perfil para dados do prestador (campos expandidos para o PDF)
+  // Busca perfil para dados do prestador (select=* evita erros de colunas inexistentes)
   const profRes = await supabaseFetch(SUPABASE_URL, SERVICE_KEY,
-    `profiles?id=eq.${userId}&select=company_name,nome_fantasia,cnpj,inscricao_municipal,` +
-    `nfse_municipio_nome,nfse_municipio_ibge,nfse_codigo_servico,nfse_serie,` +
-    `nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,nfse_complemento,` +
-    `aliquota_iss,regime_tributario,telefone,from_email,smtp_user`
+    `profiles?id=eq.${userId}&select=*`
   )
-  const profile = (await profRes.json())[0] || {}
+  const profJson = await profRes.json()
+  const profile  = Array.isArray(profJson) ? (profJson[0] || {}) : {}
 
   // Busca cobrança para dados do tomador e endereço do imóvel
+  // Inicializa cobData — tenant vazio para não capturar nome errado do XML
   let cobData = {
-    tenant:     em.tomador_nome || extractXmlTag(em.xml_nfse || '', 'xNome') || '',
-    totalValue: em.valor_servico || '0',
-    mesRef:     em.competencia || '',
-    cpf:        '',
-    email:      '',
-    property:   '',
+    tenant:          '',
+    totalValue:      em.valor_servico || '0',
+    mesRef:          em.competencia   || '',
+    cpf:             '',
+    email:           '',
+    property:        '',
     codServicoLc116: null,
   }
   if (em.cobranca_id) {
@@ -71,10 +70,10 @@ async function handle(event) {
     )
     if (cobRes.ok) {
       const cobArr = await cobRes.json()
-      const inq = cobArr[0]?.inquilinos
-      const ctr = cobArr[0]?.contratos
+      const inq = Array.isArray(cobArr) ? cobArr[0]?.inquilinos : null
+      const ctr = Array.isArray(cobArr) ? cobArr[0]?.contratos  : null
       if (inq) {
-        cobData.tenant = cobData.tenant || inq.nome || ''
+        cobData.tenant = inq.nome  || ''
         cobData.cpf    = inq.cpf   || ''
         cobData.email  = inq.email || ''
       }
@@ -84,6 +83,8 @@ async function handle(event) {
       }
     }
   }
+  // Fallback: se não veio do join, usa tomador_nome salvo na emissão
+  if (!cobData.tenant) cobData.tenant = em.tomador_nome || ''
 
   const fields  = extrairCamposPdf(em.xml_nfse || '', cobData, profile)
   // sobrescreve com dados diretos da emissão (mais confiáveis que o XML)

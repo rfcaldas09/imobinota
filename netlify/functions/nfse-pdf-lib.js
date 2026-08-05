@@ -199,7 +199,7 @@ function renderPage(doc, f, qrBuf) {
   ry += 11
 
   lbl('Endereço:',            PL + 2,   ry, 42); val(f.prestadorEnd,     PL + 46,  ry, 240)
-  lbl('UF:',                  PL + 292, ry, 16); val(f.prestadorUF || 'SC', PL + 310, ry, 30)
+  lbl('UF:',                  PL + 292, ry, 16); val(f.prestadorUF,         PL + 310, ry, 30)
   lbl('CEP:',                 PL + 345, ry, 23); val(f.prestadorCEP,     PL + 370, ry,  75)
   lbl('Telefone:',            PL + 452, ry, 40); val(f.prestadorTel,     PL + 495, ry,  80)
   ry += 11
@@ -459,12 +459,16 @@ function extrairCamposPdf(xml, cobData, profile) {
   const totalIbsCbs  = tagFloat('vTotIBSCBS') || +(cbs + ibsEstadual + ibsMunicipal).toFixed(2)
   const codigoNbs    = tag('cNBS')
 
-  // ── Discriminação do serviço ──────────────────────────────────
-  const descServico = tag('xInfComp') || tag('xDiscServ') || cobData?.discriminacao || ''
-
-  // ── Enquadramento: LC 116 → descrição ────────────────────────
+  // ── LC 116: código e descrição ───────────────────────────────
   const codLc116   = cobData?.codServicoLc116 || profile?.nfse_codigo_servico || ''
   const lc116Desc  = LC116_MAP[codLc116] || ''
+
+  // Discriminação: apenas a descrição do serviço LC 116 (sem texto gerado pelo sistema)
+  const descServico = lc116Desc
+    ? `${codLc116} - ${lc116Desc}`
+    : (tag('xInfComp') || tag('xDiscServ') || '')
+
+  // ── Enquadramento ─────────────────────────────────────────────
   const atividade  = lc116Desc ? `Atividade: ${codLc116} - ${lc116Desc}` : ''
 
   // ── Tipo de retenção ISS ──────────────────────────────────────
