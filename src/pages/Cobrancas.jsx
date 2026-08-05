@@ -27,9 +27,9 @@ const fmt   = v => Number(v).toLocaleString('pt-BR', { style:'currency', currenc
 const fmtCi = v => Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
 
 const STATUS_CFG = {
-  'Pago':      { bg:'bg-emerald-100', text:'text-emerald-700', dot:'bg-emerald-500' },
-  'Pendente':  { bg:'bg-amber-100',   text:'text-amber-700',   dot:'bg-amber-400'   },
-  'Em Atraso': { bg:'bg-red-100',     text:'text-red-700',     dot:'bg-red-500'     },
+  'Pago':      { bg:'bg-emerald-100', text:'text-emerald-700', dot:'bg-emerald-500', label:'Pagto Pago'     },
+  'Pendente':  { bg:'bg-amber-100',   text:'text-amber-700',   dot:'bg-amber-400',   label:'Pagto Pendente' },
+  'Em Atraso': { bg:'bg-red-100',     text:'text-red-700',     dot:'bg-red-500',     label:'Pagto Atrasado' },
 }
 
 const FILTERS = ['Todos', 'Pago', 'Pendente', 'Em Atraso']
@@ -658,7 +658,7 @@ function NfseViewModal({ cob, user, onClose }) {
                       <span className="font-semibold text-slate-800 text-sm">
                         NFS-e nº {em.numero_nfse || '—'}
                       </span>
-                      <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${em.status === 'erro' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
                         {em.status || 'emitida'}
                       </span>
                     </div>
@@ -672,6 +672,7 @@ function NfseViewModal({ cob, user, onClose }) {
                       </p>
                     )}
                   </div>
+                  {em.status !== 'erro' && (
                   <button
                     onClick={() => verPdf(em)}
                     disabled={pdfLoading === em.id}
@@ -683,6 +684,7 @@ function NfseViewModal({ cob, user, onClose }) {
                     )}
                     Ver PDF
                   </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -1016,7 +1018,7 @@ function StatusBadge({ status }) {
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${cfg.bg} ${cfg.text}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`}/>
-      {status}
+      {cfg.label || status}
     </span>
   )
 }

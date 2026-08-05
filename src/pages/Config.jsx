@@ -263,6 +263,7 @@ export default function Config() {
     numeroEnd:     '',
     bairro:        '',
     cep:           '',
+    numeroInicial: '1',
     // E-mail
     emailProvider: 'resend',
     resendKey:     '',
@@ -314,6 +315,7 @@ export default function Config() {
           numeroEnd:     data?.nfse_numero_end      || '',
           bairro:        data?.nfse_bairro          || '',
           cep:           data?.nfse_cep             || '',
+          numeroInicial: String((data?.nfse_ultimo_numero || 0) + 1),
           // E-mail
           emailProvider:  data?.email_provider   || 'resend',
           resendKey:      data?.resend_api_key    || '',
@@ -380,6 +382,7 @@ export default function Config() {
         nfse_numero_end:     f.numeroEnd,
         nfse_bairro:         f.bairro,
         nfse_cep:            f.cep,
+        nfse_ultimo_numero:  Math.max(0, parseInt(f.numeroInicial || '1', 10) - 1),
       })
     } else if (tab === 'email') {
       Object.assign(payload, {
@@ -770,6 +773,23 @@ export default function Config() {
                   </div>
                 </div>
               </div>
+
+              {/* Numeração sequencial */}
+              <div>
+                <label className="text-xs font-medium text-slate-500 block mb-1">Número inicial da NFS-e</label>
+                <Inp
+                  type="number"
+                  min="1"
+                  value={f.numeroInicial}
+                  onChange={e => set('numeroInicial', e.target.value.replace(/\D/g, '') || '1')}
+                  placeholder="1"
+                  mono
+                />
+                <p className="text-xs text-slate-400 mt-1">
+                  A próxima NFS-e emitida receberá este número. Altere apenas se precisar continuar a sequência de outro sistema.
+                </p>
+              </div>
+
             </div>
           </Section>
 
