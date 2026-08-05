@@ -20,6 +20,8 @@ const IcCopy    = ({ c='' }) => ic('<rect x="9" y="9" width="13" height="13" rx=
 const IcClose   = ({ c='' }) => ic('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>', c)
 const IcReceipt = ({ c='' }) => ic('<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="16" y2="14"/><line x1="8" y1="18" x2="11" y2="18"/>', c)
 const IcPlus    = ({ c='' }) => ic('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>', c)
+const IcEye     = ({ c='' }) => ic('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', c)
+const IcDownload= ({ c='' }) => ic('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>', c)
 
 const fmt   = v => Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
 const fmtCi = v => Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
@@ -66,23 +68,30 @@ function fmtDate(iso) {
 }
 
 // ── Mapeia linha do banco ─────────────────────────────────────────
-const mapCob = row => ({
-  id:              row.id,
-  tenant:          row.inquilinos?.nome    || '—',
-  cpf:             row.inquilinos?.cpf     || '',
-  email:           row.inquilinos?.email   || '',
-  property:        row.contratos?.imovel   || '—',
-  totalValue:      Number(row.valor_total) || 0,
-  value:           Number(row.valor_aluguel) || 0,
-  seguroFinanceiro:Number(row.contratos?.seguro_financeiro) || 0,
-  seguroIncendio:  Number(row.contratos?.seguro_incendio)   || 0,
-  iptu:            Number(row.contratos?.iptu)              || 0,
-  codServicoLc116: row.contratos?.cod_servico_lc116         || null,
-  dueDay:          row.dia_vencimento,
-  status:          row.status || 'Pendente',
-  mesRef:          row.mes_referencia,
-  emissao:         row.data_emissao,
-})
+const mapCob = row => {
+  // nfse_emissoes vem como array; pega a mais recente
+  const emissoes  = Array.isArray(row.nfse_emissoes) ? row.nfse_emissoes : []
+  const lastNfse  = emissoes.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))[0]
+  return {
+    id:              row.id,
+    tenant:          row.inquilinos?.nome    || '—',
+    cpf:             row.inquilinos?.cpf     || '',
+    email:           row.inquilinos?.email   || '',
+    property:        row.contratos?.imovel   || '—',
+    totalValue:      Number(row.valor_total) || 0,
+    value:           Number(row.valor_aluguel) || 0,
+    seguroFinanceiro:Number(row.contratos?.seguro_financeiro) || 0,
+    seguroIncendio:  Number(row.contratos?.seguro_incendio)   || 0,
+    iptu:            Number(row.contratos?.iptu)              || 0,
+    codServicoLc116: row.contratos?.cod_servico_lc116         || null,
+    dueDay:          row.dia_vencimento,
+    status:          row.status || 'Pendente',
+    mesRef:          row.mes_referencia,
+    emissao:         row.data_emissao,
+    nfseStatus:      lastNfse?.status   || null,
+    nfseNumero:      lastNfse?.numero_nfse || null,
+  }
+}
 
 // ── Modal de Cobrança (QR Code de Pagamento) ─────────────────────
 // Retorna a próxima data futura com o mesmo dia de vencimento (YYYY-MM-DD)
@@ -559,6 +568,141 @@ function NfseModal({ cob, user, onClose }) {
   )
 }
 
+// ── Modal: Ver NFS-e emitidas para uma cobrança ───────────────────
+function NfseViewModal({ cob, user, onClose }) {
+  const [emissoes, setEmissoes] = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [pdfLoading, setPdfLoading] = useState(null) // emissaoId em progresso
+
+  useEffect(() => {
+    const handle = e => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handle)
+    return () => document.removeEventListener('keydown', handle)
+  }, [onClose])
+
+  useEffect(() => {
+    supabase
+      .from('nfse_emissoes')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('cobranca_id', cob.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => { setEmissoes(data || []); setLoading(false) })
+  }, [cob.id, user.id])
+
+  const verPdf = async (em) => {
+    setPdfLoading(em.id)
+    try {
+      const res = await fetch('/.netlify/functions/nfse-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, emissaoId: em.id }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) { alert(`Erro ao gerar PDF: ${data.error}`); return }
+
+      const bytes = Uint8Array.from(atob(data.pdfBase64), c => c.charCodeAt(0))
+      const blob  = new Blob([bytes], { type: 'application/pdf' })
+      const url   = URL.createObjectURL(blob)
+      const a     = document.createElement('a')
+      a.href      = url
+      a.download  = data.filename || `NFS-e.pdf`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+    } catch (err) {
+      alert(`Erro: ${err.message}`)
+    } finally {
+      setPdfLoading(null)
+    }
+  }
+
+  const fmtComp = c => {
+    if (!c) return ''
+    const [y, m] = String(c).split('-')
+    return m ? `${m}/${y}` : c
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center text-lg">📋</div>
+            <div>
+              <p className="font-bold text-slate-900 text-sm">NFS-e emitidas</p>
+              <p className="text-xs text-slate-400">{cob.tenant} · {cob.property}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">
+            <IcClose c="w-4 h-4"/>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-5">
+          {loading ? (
+            <div className="flex justify-center py-10">
+              <div className="w-7 h-7 border-2 border-slate-200 border-t-indigo-500 rounded-full animate-spin"/>
+            </div>
+          ) : emissoes.length === 0 ? (
+            <div className="text-center py-10 text-slate-400">
+              <p className="text-3xl mb-2">📄</p>
+              <p className="text-sm">Nenhuma NFS-e emitida para esta cobrança.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {emissoes.map(em => (
+                <div key={em.id}
+                  className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3 gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-slate-800 text-sm">
+                        NFS-e nº {em.numero_nfse || '—'}
+                      </span>
+                      <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">
+                        {em.status || 'emitida'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Competência: {fmtComp(em.competencia)} ·{' '}
+                      {Number(em.valor_servico).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </p>
+                    {em.chave_acesso && (
+                      <p className="text-xs font-mono text-slate-400 truncate mt-0.5 max-w-xs">
+                        {em.chave_acesso.slice(0, 30)}…
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => verPdf(em)}
+                    disabled={pdfLoading === em.id}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-indigo-700 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors disabled:opacity-50">
+                    {pdfLoading === em.id ? (
+                      <div className="w-3.5 h-3.5 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin"/>
+                    ) : (
+                      <IcDownload c="w-3.5 h-3.5"/>
+                    )}
+                    Ver PDF
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 pb-5">
+          <button onClick={onClose}
+            className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50">
+            Fechar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Opções de ação no BatchModal ──────────────────────────────────
 const BATCH_ACTIONS = [
   { id: 'boleto', label: 'Somente Cobranças', icon: '💳', desc: 'Em breve', disabled: true },
@@ -605,68 +749,115 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
     setStep('running')
     setProgress(0)
     setLogs([])
+    setResult(null)
 
+    // ── Passo 1: cria cobrancas (pula as que já existem) ──────────
     const res = await emitirCobrancas(user.id, contracts, mesRef)
-
-    if (res.error || res.created === 0) {
-      setResult({ ...res, fails: 0 })
+    if (res.error) {
+      setResult({ created: 0, skipped: res.skipped, fails: 0, error: res.error })
       setStep('done')
       return
     }
 
-    const total  = res.created
-    const names  = contracts.map(c => c.tenant?.split(' ')[0]).filter(Boolean)
-    let sent     = 0
-    let boletosFails = 0
-
-    // Gera boletos PIX para cada cobrança criada (se ação inclui boleto)
-    if (needsPix && pixKey && res.createdIds?.length) {
-      for (const cob of res.createdIds) {
-        try {
-          const linhas = []
-          if ((cob.value || 0) > 0)            linhas.push(`Aluguel ${fmtCi(cob.value)}`)
-          if ((cob.seguroFinanceiro || 0) > 0)  linhas.push(`Seg.Fin ${fmtCi(cob.seguroFinanceiro)}`)
-          if ((cob.seguroIncendio || 0) > 0)    linhas.push(`Seg.Inc ${fmtCi(cob.seguroIncendio)}`)
-          if ((cob.iptu || 0) > 0)              linhas.push(`IPTU ${fmtCi(cob.iptu)}`)
-          linhas.push(`Total ${fmtCi(cob.totalValue)}`)
-          linhas.push(`Ref: ${refLabel(cob.mesRef)}`)
-
-          await fetch('/.netlify/functions/openpix-create-charge', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              value:         Math.round((cob.totalValue || 0) * 100),
-              correlationID: cob.id,
-              comment:       linhas.join(' | '),
-              clientPixKey:  pixKey,
-              expiresIn:     2592000,
-            }),
-          })
-        } catch { boletosFails++ }
-        await new Promise(r => setTimeout(r, 120))
-      }
+    if (action !== 'nfse') {
+      // Ação futura (boleto, ambos) — progresso simulado simples
+      setResult({ created: res.created, skipped: res.skipped, fails: 0, error: null })
+      setStep('done')
+      onDone()
+      return
     }
 
-    const iv = setInterval(() => {
-      const batch = Math.min(3, total - sent)
-      for (let i = 0; i < batch; i++) {
-        const name = names[(sent + i) % (names.length || 1)] || 'Cliente'
-        setLogs(l => [...l.slice(-50), { name }])
+    // ── Passo 2: busca todas as cobrancas do mês destes contratos ─
+    const ref = mesStr(mesRef)
+    const { data: cobsDoMes } = await supabase
+      .from('cobrancas')
+      .select('id, valor_total, mes_referencia, contrato_id, contratos(imovel, cod_servico_lc116, seguro_financeiro, seguro_incendio, iptu), inquilinos(nome, cpf, email)')
+      .eq('user_id', user.id)
+      .eq('mes_referencia', ref)
+      .in('contrato_id', contracts.map(c => c.id))
+
+    const fila = (cobsDoMes || []).map(cob => ({
+      id:              cob.id,
+      tenant:          cob.inquilinos?.nome || '—',
+      cpf:             cob.inquilinos?.cpf  || '',
+      email:           cob.inquilinos?.email || '',
+      property:        cob.contratos?.imovel || '',
+      totalValue:      Number(cob.valor_total) || 0,
+      value:           Number(cob.valor_total) || 0,
+      seguroFinanceiro:Number(cob.contratos?.seguro_financeiro) || 0,
+      seguroIncendio:  Number(cob.contratos?.seguro_incendio)   || 0,
+      iptu:            Number(cob.contratos?.iptu)              || 0,
+      codServicoLc116: cob.contratos?.cod_servico_lc116 || null,
+      mesRef:          cob.mes_referencia,
+    }))
+
+    const total = fila.length
+    let ok = 0, fails = 0
+
+    // ── Passo 3: emite NFS-e para cada cobrança, uma a uma ────────
+    for (let i = 0; i < fila.length; i++) {
+      const cob = fila[i]
+      const firstName = cob.tenant.split(' ')[0]
+
+      // Marca como "em andamento"
+      setLogs(l => [...l.slice(-80), { name: firstName, status: 'pending' }])
+
+      try {
+        const resp = await fetch('/.netlify/functions/nfse-emitir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId:      user.id,
+            cobId:       cob.id,
+            homologacao: false,
+            cobData: {
+              mesRef:           cob.mesRef,
+              tenant:           cob.tenant,
+              cpf:              cob.cpf,
+              email:            cob.email,
+              property:         cob.property,
+              totalValue:       cob.totalValue,
+              value:            cob.value,
+              seguroFinanceiro: cob.seguroFinanceiro,
+              seguroIncendio:   cob.seguroIncendio,
+              iptu:             cob.iptu,
+              codServicoLc116:  cob.codServicoLc116 || null,
+            },
+          }),
+        })
+        const data = await resp.json()
+        if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`)
+
+        ok++
+        setLogs(l => {
+          const next = [...l]; const idx = next.findLastIndex(e => e.name === firstName && e.status === 'pending')
+          if (idx >= 0) next[idx] = { name: firstName, status: 'ok', numero: data.numeroNfse || '' }
+          return next
+        })
+      } catch (err) {
+        fails++
+        setLogs(l => {
+          const next = [...l]; const idx = next.findLastIndex(e => e.name === firstName && e.status === 'pending')
+          if (idx >= 0) next[idx] = { name: firstName, status: 'error', msg: err.message.slice(0, 80) }
+          return next
+        })
       }
-      sent = Math.min(sent + batch, total)
-      setProgress(sent)
-      if (sent >= total) {
-        clearInterval(iv)
-        setTimeout(() => {
-          setResult({ created: total, skipped: res.skipped, fails: boletosFails, error: null })
-          setStep('done')
-          onDone()
-        }, 400)
-      }
-    }, 160)
+
+      setProgress(i + 1)
+      // Pequena pausa para não sobrecarregar
+      if (i < fila.length - 1) await new Promise(r => setTimeout(r, 300))
+    }
+
+    setResult({ created: ok, skipped: res.skipped + (total - fila.length), fails, error: null })
+    setStep('done')
+    onDone()
   }
 
-  const pct = result?.created > 0 ? Math.round((progress / result.created) * 100) : 0
+  const total = (() => {
+    // estimativa para barra de progresso — número de cobrancas que vão ser emitidas
+    return preview?.toCreate ?? 0
+  })()
+  const pct = total > 0 ? Math.round((progress / total) * 100) : (progress > 0 ? 100 : 0)
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -760,22 +951,34 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
                 <div className="w-5 h-5 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin"/>
               </div>
               <div>
-                <p className="font-bold text-slate-900">Processando {mesLabel(mesRef)}…</p>
-                <p className="text-sm text-slate-400">Não feche esta janela</p>
+                <p className="font-bold text-slate-900">Emitindo NFS-e — {mesLabel(mesRef)}…</p>
+                <p className="text-sm text-slate-400">Não feche esta janela · {progress} de {preview?.toCreate ?? '…'}</p>
               </div>
             </div>
             <div className="mb-4">
               <div className="flex justify-between text-sm mb-1.5">
-                <span className="text-slate-600">{progress} <span className="text-slate-400">de {result?.created ?? '…'}</span></span>
+                <span className="text-slate-600">{progress} <span className="text-slate-400">de {preview?.toCreate ?? '…'}</span></span>
                 <span className="font-bold text-indigo-600">{pct}%</span>
               </div>
               <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all" style={{ width:`${pct}%` }}/>
+                <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-300" style={{ width:`${pct}%` }}/>
               </div>
             </div>
-            <div className="bg-slate-950 rounded-xl p-3 h-44 overflow-y-auto font-mono text-xs space-y-1">
-              {logs.slice(-30).map((l, i) => (
-                <div key={i} className="text-emerald-400">✓ Cobrança registrada para {l.name}</div>
+            <div className="bg-slate-950 rounded-xl p-3 h-52 overflow-y-auto font-mono text-xs space-y-0.5">
+              {logs.slice(-40).map((l, i) => (
+                l.status === 'ok' ? (
+                  <div key={i} className="text-emerald-400">
+                    ✓ NFS-e{l.numero ? ` nº ${l.numero}` : ''} emitida — {l.name}
+                  </div>
+                ) : l.status === 'error' ? (
+                  <div key={i} className="text-red-400">
+                    ✗ Erro — {l.name}: {l.msg}
+                  </div>
+                ) : (
+                  <div key={i} className="text-slate-400">
+                    ⏳ Emitindo NFS-e para {l.name}…
+                  </div>
+                )
               ))}
             </div>
           </div>
@@ -791,7 +994,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
             ) : (
               <div className="grid grid-cols-3 gap-3 mb-5">
                 {[
-                  { v: result?.created ?? 0, l:'Geradas',   bg:'bg-emerald-50', c:'text-emerald-700' },
+                  { v: result?.created ?? 0, l: action === 'nfse' ? 'NFS-e emitidas' : 'Geradas', bg:'bg-emerald-50', c:'text-emerald-700' },
                   { v: result?.skipped ?? 0, l:'Ignoradas', bg:'bg-slate-50',   c:'text-slate-600'   },
                   { v: result?.fails   ?? 0, l:'Falhas',    bg:'bg-red-50',     c:'text-red-600'     },
                 ].map(({ v, l, bg, c }) => (
@@ -1005,7 +1208,8 @@ export default function Cobrancas() {
   const [updatingId, setUpdatingId] = useState(null)
   const [pixKey, setPixKey]       = useState(null)
   const [boletoCob, setBoletoCob] = useState(null)
-  const [nfseCob, setNfseCob]     = useState(null) // cobrança selecionada para NFS-e
+  const [nfseCob, setNfseCob]       = useState(null) // cobrança selecionada para NFS-e
+  const [nfseViewCob, setNfseViewCob] = useState(null) // cobrança para "Ver NFS-e"
   const [addCob, setAddCob]       = useState(false) // abrir modal de adicionar cobrança
 
   // Carrega chave PIX do perfil
@@ -1023,7 +1227,7 @@ export default function Cobrancas() {
 
     const { data, error } = await supabase
       .from('cobrancas')
-      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116), inquilinos(nome, cpf, email)')
+      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116), inquilinos(nome, cpf, email), nfse_emissoes(id, status, numero_nfse, created_at)')
       .eq('user_id', user.id)
       .eq('mes_referencia', ref)
       .order('created_at', { ascending: false })
@@ -1032,8 +1236,9 @@ export default function Cobrancas() {
 
     const { data: ctrs } = await supabase
       .from('contratos')
-      .select('id, inquilino_id, imovel, valor_aluguel, seguro_financeiro, seguro_incendio, iptu, dia_vencimento, inquilinos(nome)')
+      .select('id, inquilino_id, imovel, valor_aluguel, seguro_financeiro, seguro_incendio, iptu, dia_vencimento, status, inquilinos(nome)')
       .eq('user_id', user.id)
+      .neq('status', 'Inativo')
 
     setContracts((ctrs || []).map(r => ({
       id:               r.id,
@@ -1208,7 +1413,18 @@ export default function Cobrancas() {
                   </td>
                   <td className="px-5 py-3.5 text-right font-semibold text-slate-700">{fmt(c.totalValue)}</td>
                   <td className="px-5 py-3.5 text-center">
-                    <StatusBadge status={c.status}/>
+                    <div className="flex flex-col items-center gap-1">
+                      <StatusBadge status={c.status}/>
+                      {c.nfseStatus === 'emitida' ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                          📋 NFS-e{c.nfseNumero ? ` nº ${c.nfseNumero}` : ' ✓'}
+                        </span>
+                      ) : c.nfseStatus ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                          📋 NFS-e: {c.nfseStatus}
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-5 py-3.5 text-right">
                     {updatingId === c.id ? (
@@ -1238,7 +1454,17 @@ export default function Cobrancas() {
                           {isActive ? 'Emitir NFS-e' : '🔒 Emitir NFS-e'}
                         </button>
 
-                        {/* Linha 3 — Marcar Pago + status */}
+                        {/* Linha 3 — Ver NFS-e (histórico / PDF) */}
+                        {isActive && (
+                          <button
+                            onClick={() => setNfseViewCob(c)}
+                            className="flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors w-full justify-center text-indigo-700 border-indigo-200 bg-indigo-50 hover:bg-indigo-100">
+                            <IcEye c="w-3 h-3"/>
+                            Ver NFS-e
+                          </button>
+                        )}
+
+                        {/* Linha 4 — Marcar Pago + status */}
                         {c.status === 'Pago' ? (
                           <span className="text-xs text-slate-300 w-full text-center">—</span>
                         ) : (
@@ -1296,6 +1522,13 @@ export default function Cobrancas() {
           cob={nfseCob}
           user={user}
           onClose={() => { setNfseCob(null); load() }}
+        />
+      )}
+      {nfseViewCob && (
+        <NfseViewModal
+          cob={nfseViewCob}
+          user={user}
+          onClose={() => setNfseViewCob(null)}
         />
       )}
       {addCob && (

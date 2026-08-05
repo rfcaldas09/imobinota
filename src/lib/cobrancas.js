@@ -39,7 +39,7 @@ export async function emitirCobrancas(userId, contracts, mesRef) {
   const toCreate    = contracts.filter(c => !existingIds.has(c.id))
   const skipped     = contracts.length - toCreate.length
 
-  if (!toCreate.length) return { created: 0, skipped, error: null }
+  if (!toCreate.length) return { created: 0, skipped, error: null, records: [] }
 
   const { error } = await supabase.from('cobrancas').insert(
     toCreate.map(c => ({
@@ -58,7 +58,15 @@ export async function emitirCobrancas(userId, contracts, mesRef) {
     }))
   )
 
-  return { created: toCreate.length, skipped, error: error?.message ?? null }
+  // Busca registros recém-criados (com IDs) para uso na emissão de NFS-e
+  const { data: records } = await supabase
+    .from('cobrancas')
+    .select('id, contrato_id, valor_total, mes_referencia')
+    .eq('user_id', userId)
+    .eq('mes_referencia', ref)
+    .in('contrato_id', toCreate.map(c => c.id))
+
+  return { created: toCreate.length, skipped, error: error?.message ?? null, records: records || [] }
 }
 
 /**

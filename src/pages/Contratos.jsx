@@ -65,7 +65,7 @@ const isPhoneValid = v => {
   return d.length === 0 || d.length === 10 || d.length === 11
 }
 
-const FILTERS  = ['Todos', 'Pago', 'Pendente', 'Em Atraso', 'Por Vencer']
+const FILTERS  = ['Todos', 'Ativo', 'Inativo', 'Por Vencer']
 const PER_PAGE = 10
 
 const isExpiringSoon = (c) => {
@@ -168,7 +168,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
     tenant: '', cpf: '', property: '', value: '', seguroFinanceiro: '0',
     seguroIncendio: '0', iptu: '0', dueDay: '10',
     email: '', phone: '', start: new Date().toISOString().slice(0,10),
-    end: '', status: 'Pendente', codServicoLc116: '',
+    end: '', status: 'Ativo', codServicoLc116: '',
   }
   const [f, setF] = useState({ ...blank, ...initial })
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
@@ -286,10 +286,10 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
             <Row label="Dia de Vencimento">
               <FormInp value={f.dueDay} onChange={e => set('dueDay', e.target.value)} type="number" min="1" max="28"/>
             </Row>
-            <Row label="Status">
+            <Row label="Status do contrato">
               <select value={f.status} onChange={e => set('status', e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                {['Pendente','Pago','Em Atraso'].map(s => <option key={s}>{s}</option>)}
+                {['Ativo','Inativo'].map(s => <option key={s}>{s}</option>)}
               </select>
             </Row>
           </div>
@@ -723,7 +723,7 @@ const mapRow = row => ({
   dueDay:           row.dia_vencimento,
   start:            row.data_inicio,
   end:              row.data_fim,
-  status:           row.status,
+  status:           (['Ativo','Inativo'].includes(row.status) ? row.status : 'Ativo'),
   codServicoLc116:  row.cod_servico_lc116 || '',
   totalValue:       (Number(row.valor_aluguel)||0) + (Number(row.seguro_financeiro)||0) +
                     (Number(row.seguro_incendio)||0) + (Number(row.iptu)||0),

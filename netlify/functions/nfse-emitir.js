@@ -74,7 +74,9 @@ async function handle(event) {
     `nfse_municipio_ibge,nfse_municipio_nome,nfse_codigo_servico,nfse_serie,` +
     `nfse_ultimo_numero,nfse_cert_path,nfse_cert_password_enc,` +
     `nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,` +
-    `regime_tributario,aliquota_iss`
+    `regime_tributario,aliquota_iss,` +
+    `email_provider,from_name,reply_to,email_subject,email_body,` +
+    `smtp_host,smtp_port,smtp_user,smtp_pass,smtp_encryption,from_email`
   )
   if (!profRes.ok) throw new Error(`Erro ao buscar perfil: ${profRes.status}`)
   const profiles = await profRes.json()
@@ -269,6 +271,21 @@ async function handle(event) {
     valor_servico: cobData.totalValue,
     status: 'emitida', xml_nfse: nfseXml || responseBody,
   })
+
+  // ── 10. Envia e-mail com PDF da NFS-e ─────────────────────────
+  try {
+    await enviarEmailNfse({
+      profile: p,
+      cobData,
+      numeroNfse,
+      nfseXml: nfseXml || responseBody,
+      homologacao,
+    })
+    console.log('[nfse-emitir] e-mail NFS-e enviado com sucesso')
+  } catch (emailErr) {
+    // Não quebra a emissão por falha de e-mail — apenas loga
+    console.error('[nfse-emitir] falha ao enviar e-mail NFS-e:', emailErr.message)
+  }
 
   return {
     statusCode: 200,
@@ -674,4 +691,272 @@ async function gravarEmissao(supabaseUrl, serviceKey, row) {
 function extractXmlTag(xml, tag) {
   const m = xml.match(new RegExp(`<${tag}[^>]*>([^<]+)<\/${tag}>`))
   return m ? m[1].trim() : null
+}
+
+// ── Geração de PDF NFS-e (raw PDF 1.4, sem dependências externas) ─
+// Usa fontes padrão Type1 (Helvetica / Helvetica-Bold) — não precisam ser embutidas.
+// Caracteres Latin-1 (ã, ç, etc.) são codificados como escape octal no conteúdo.
+function toPdfStr(s) {
+  let r = ''
+  for (const c of String(s || '')) {
+    const code = c.charCodeAt(0)
+    if (code === 40) r += '\\('
+    else if (code === 41) r += '\\)'
+    else if (code === 92) r += '\\\\'
+    else if (code > 126) r += '\\' + code.toString(8).padStart(3, '0')
+    else r += c
+  }
+  return r
+}
+
+function buildNfsePdf(fields) {
+  const {
+    numero = '', chave = '', dhEmi = '', prestador = '',
+    tomador = '', valorServico = '', competencia = '',
+    cnpj = '', inscMun = '', descServico = '',
+  } = fields
+
+  const fmtVal = v => {
+    const n = parseFloat(v) || 0
+    return 'R$ ' + n.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  }
+
+  const fmtDate = iso => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (isNaN(d)) return iso
+    return d.toLocaleDateString('pt-BR')
+  }
+
+  // Formata competencia YYYY-MM → MM/YYYY
+  const fmtComp = c => {
+    if (!c) return ''
+    const [y, m] = String(c).split('-')
+    return m ? `${m}/${y}` : c
+  }
+
+  // ── Constrói content stream ────────────────────────────────────
+  const W = 595, H = 842, M = 50
+  const lines = []
+
+  // Helper: escreve texto em posição absoluta
+  const put = (txt, x, y, sz, bold) => {
+    const fnt = bold ? 'F2' : 'F1'
+    lines.push(`/${fnt} ${sz} Tf 1 0 0 1 ${x} ${y} Tm (${toPdfStr(txt)}) Tj`)
+  }
+
+  // Helper: linha horizontal
+  const hrule = (y, w = W - 2 * M) =>
+    lines.push(`${M} ${y} m ${M + w} ${y} l S`)
+
+  // Cabeçalho
+  put('NOTA FISCAL DE SERVICOS ELETRONICOS - NFS-e', M, H - M, 14, true)
+  put('Sistema Nacional NFS-e (SEFIN) / Prefeitura Municipal', M, H - M - 18, 9, false)
+  hrule(H - M - 26)
+
+  // Bloco: Identificacao
+  let y = H - M - 50
+  put('IDENTIFICACAO', M, y, 10, true)
+  y -= 16
+  put('Numero NFS-e:', M, y, 9, true)
+  put(numero, 160, y, 9, false)
+  put('Competencia:', 310, y, 9, true)
+  put(fmtComp(competencia), 395, y, 9, false)
+  y -= 14
+  put('Data de Emissao:', M, y, 9, true)
+  put(fmtDate(dhEmi), 160, y, 9, false)
+  y -= 14
+  put('Chave de Acesso:', M, y, 9, true)
+  put(chave, 160, y, 7, false)
+  y -= 20
+  hrule(y)
+
+  // Bloco: Prestador
+  y -= 16
+  put('PRESTADOR DE SERVICOS', M, y, 10, true)
+  y -= 14
+  put('Razao Social / Nome:', M, y, 9, true)
+  put(prestador, 160, y, 9, false)
+  y -= 14
+  put('CNPJ / CPF:', M, y, 9, true)
+  put(cnpj, 160, y, 9, false)
+  put('Inscricao Municipal:', 310, y, 9, true)
+  put(inscMun, 420, y, 9, false)
+  y -= 20
+  hrule(y)
+
+  // Bloco: Tomador
+  y -= 16
+  put('TOMADOR DE SERVICOS', M, y, 10, true)
+  y -= 14
+  put('Razao Social / Nome:', M, y, 9, true)
+  put(tomador, 160, y, 9, false)
+  y -= 20
+  hrule(y)
+
+  // Bloco: Servico / Valor
+  y -= 16
+  put('DISCRIMINACAO DO SERVICO', M, y, 10, true)
+  y -= 14
+  if (descServico) {
+    put(descServico.slice(0, 100), M, y, 9, false)
+    y -= 14
+  }
+  put('Valor do Servico:', M, y, 9, true)
+  put(fmtVal(valorServico), 160, y, 11, true)
+  y -= 24
+  hrule(y)
+
+  // Rodape
+  y -= 14
+  put('Documento emitido pelo sistema NotaFacil — www.notafacil.com.br', M, y, 8, false)
+
+  const cs = 'BT\n' + lines.join('\n') + '\nET'
+
+  // ── Monta objetos PDF ───────────────────────────────────────────
+  const objs = []
+
+  // obj 1: Catalog
+  objs[0] = '<</Type /Catalog /Pages 2 0 R>>'
+  // obj 2: Pages
+  objs[1] = '<</Type /Pages /Kids [3 0 R] /Count 1>>'
+  // obj 3: Page
+  objs[2] = `<</Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Contents 4 0 R /Resources <</Font <</F1 5 0 R /F2 6 0 R>>>>>>`
+  // obj 4: Content stream
+  const csBytes = Buffer.from(cs, 'latin1')
+  objs[3] = `<</Length ${csBytes.length}>>\nstream\n${cs}\nendstream`
+  // obj 5: Font Helvetica (regular)
+  objs[4] = '<</Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding>>'
+  // obj 6: Font Helvetica-Bold
+  objs[5] = '<</Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding>>'
+
+  const header = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n'
+  const parts = [header]
+  const offsets = []
+
+  for (let i = 0; i < objs.length; i++) {
+    offsets.push(parts.join('').length)
+    parts.push(`${i + 1} 0 obj\n${objs[i]}\nendobj\n`)
+  }
+
+  const xrefOffset = parts.join('').length
+  const xrefLines = ['xref', `0 ${objs.length + 1}`, '0000000000 65535 f ']
+  for (const off of offsets) {
+    xrefLines.push(String(off).padStart(10, '0') + ' 00000 n ')
+  }
+  parts.push(xrefLines.join('\n'))
+  parts.push(`\ntrailer\n<</Size ${objs.length + 1} /Root 1 0 R>>\nstartxref\n${xrefOffset}\n%%EOF\n`)
+
+  return Buffer.from(parts.join(''), 'latin1')
+}
+
+// ── Extrai campos do XML NFS-e para montar o PDF ──────────────────
+function extrairCamposPdf(xml, cobData, profile) {
+  return {
+    numero:       extractXmlTag(xml, 'nNFSe') || extractXmlTag(xml, 'nNfse') || '',
+    chave:        extractXmlTag(xml, 'chNFSe') || extractXmlTag(xml, 'chaveAcesso') || '',
+    dhEmi:        extractXmlTag(xml, 'dhEmi') || extractXmlTag(xml, 'dhEmiNFSe') || '',
+    prestador:    profile?.company_name || profile?.razaoSocial || '',
+    tomador:      cobData?.tenant || '',
+    valorServico: cobData?.totalValue || extractXmlTag(xml, 'vServ') || '0',
+    competencia:  cobData?.mesRef || '',
+    cnpj:         profile?.cnpj || '',
+    inscMun:      profile?.inscricao_municipal || '',
+    descServico:  extractXmlTag(xml, 'xDiscServ') || extractXmlTag(xml, 'discriminacao') || '',
+  }
+}
+
+// ── Envia e-mail com PDF da NFS-e anexado ────────────────────────
+async function enviarEmailNfse({ profile: p, cobData, numeroNfse, nfseXml, homologacao }) {
+  if (!p) return
+
+  // Gera PDF
+  const pdfFields = extrairCamposPdf(nfseXml, cobData, p)
+  const pdfBuffer = buildNfsePdf(pdfFields)
+  const pdfBase64 = pdfBuffer.toString('base64')
+  const pdfFilename = `NFS-e_${numeroNfse || 'rascunho'}_${cobData.mesRef || ''}.pdf`
+
+  // Template do e-mail
+  const subject  = p.email_subject || 'NFS-e {{mes}}/{{ano}} — {{imovel}}'
+  const bodyTpl  = p.email_body    || 'Prezado(a) {{inquilino}},\n\nSegue em anexo a NFS-e referente a {{mes}}/{{ano}}.\n\nAtenciosamente,\n{{empresa}}'
+  const fromName = p.from_name || 'NotaFacil'
+  const replyTo  = p.reply_to  || ''
+
+  const [ano, mesNum] = String(cobData.mesRef || '').split('-')
+  const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+  const mesNome = meses[parseInt(mesNum || '1', 10) - 1] || mesNum || ''
+
+  const vars = {
+    '{{inquilino}}': cobData.tenant    || '',
+    '{{mes}}':       mesNome,
+    '{{ano}}':       ano               || '',
+    '{{imovel}}':    cobData.property  || '',
+    '{{valor}}':     'R$ ' + (parseFloat(cobData.totalValue || 0).toFixed(2)).replace('.', ','),
+    '{{empresa}}':   p.company_name    || fromName,
+    '{{vencimento}}': '',
+    '{{link_boleto}}': '',
+    '{{nfse_numero}}': numeroNfse      || '',
+  }
+
+  const applyVars = tpl => Object.entries(vars).reduce((s, [k, v]) => s.replaceAll(k, v), tpl)
+
+  const subjectFinal = applyVars(subject)
+  const bodyFinal    = applyVars(bodyTpl)
+  const bodyHtml     = bodyFinal.replace(/\n/g, '<br>')
+  const bodyText     = bodyFinal
+
+  // Destinatários: homologacao → só reply_to; produção → cliente + cc reply_to
+  const toAddr = homologacao ? (replyTo || cobData.email || '') : (cobData.email || '')
+  if (!toAddr) {
+    console.warn('[nfse-email] sem destinatário, pulando envio de e-mail')
+    return
+  }
+
+  const provider = p.email_provider || 'resend'
+
+  if (provider === 'resend') {
+    const apiKey   = process.env.RESEND_API_KEY
+    const fromAddr = process.env.RESEND_FROM_EMAIL
+    if (!apiKey || !fromAddr) throw new Error('RESEND_API_KEY ou RESEND_FROM_EMAIL não configurados')
+
+    const payload = {
+      from:    `${fromName} <${fromAddr}>`,
+      to:      [toAddr],
+      subject: subjectFinal,
+      html:    `<div style="font-family:sans-serif;max-width:600px">${bodyHtml}</div>`,
+      text:    bodyText,
+      attachments: [{ filename: pdfFilename, content: pdfBase64 }],
+      ...(replyTo && !homologacao ? { reply_to: replyTo } : {}),
+      ...(replyTo && !homologacao ? { cc: [replyTo] } : {}),
+    }
+
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(`Resend error: ${data.message || res.status}`)
+
+  } else {
+    // SMTP via nodemailer
+    const nodemailer = require('nodemailer')
+    const transporter = nodemailer.createTransport({
+      host:   p.smtp_host,
+      port:   Number(p.smtp_port) || 587,
+      secure: p.smtp_encryption === 'ssl',
+      auth:   { user: p.smtp_user, pass: p.smtp_pass },
+      ...(p.smtp_encryption === 'none' ? { tls: { rejectUnauthorized: false } } : {}),
+    })
+
+    await transporter.sendMail({
+      from:        `${fromName} <${p.from_email || p.smtp_user}>`,
+      to:          toAddr,
+      ...(replyTo && !homologacao ? { replyTo, cc: replyTo } : {}),
+      subject:     subjectFinal,
+      html:        `<div style="font-family:sans-serif;max-width:600px">${bodyHtml}</div>`,
+      text:        bodyText,
+      attachments: [{ filename: pdfFilename, content: pdfBuffer }],
+    })
+  }
 }
