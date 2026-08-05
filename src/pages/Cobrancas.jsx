@@ -68,10 +68,7 @@ function fmtDate(iso) {
 }
 
 // ── Mapeia linha do banco ─────────────────────────────────────────
-const mapCob = row => {
-  // nfse_emissoes vem como array; pega a mais recente
-  const emissoes  = Array.isArray(row.nfse_emissoes) ? row.nfse_emissoes : []
-  const lastNfse  = emissoes.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))[0]
+const mapCob = (row, lastNfse = null) => {
   return {
     id:              row.id,
     tenant:          row.inquilinos?.nome    || '—',
@@ -1225,14 +1222,31 @@ export default function Cobrancas() {
     setLoading(true)
     const ref = mesStr(mesRef)
 
+    // Query principal — sem join nfse_emissoes (exige FK formal no banco)
     const { data, error } = await supabase
       .from('cobrancas')
-      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116), inquilinos(nome, cpf, email), nfse_emissoes(id, status, numero_nfse, created_at)')
+      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116), inquilinos(nome, cpf, email)')
       .eq('user_id', user.id)
       .eq('mes_referencia', ref)
       .order('created_at', { ascending: false })
 
-    if (!error) setCobrancas((data || []).map(mapCob))
+    // Query separada para NFS-e emitidas no mês
+    const cobIds = (data || []).map(c => c.id)
+    let nfseMap = {}
+    if (cobIds.length) {
+      const { data: emissoes } = await supabase
+        .from('nfse_emissoes')
+        .select('id, cobranca_id, status, numero_nfse, created_at')
+        .eq('user_id', user.id)
+        .in('cobranca_id', cobIds)
+        .order('created_at', { ascending: false })
+      // Mantém apenas a mais recente por cobrança
+      for (const em of (emissoes || [])) {
+        if (!nfseMap[em.cobranca_id]) nfseMap[em.cobranca_id] = em
+      }
+    }
+
+    if (!error) setCobrancas((data || []).map(row => mapCob(row, nfseMap[row.id] || null)))
 
     const { data: ctrs } = await supabase
       .from('contratos')
