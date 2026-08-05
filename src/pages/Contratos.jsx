@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { LC116 } from '../lib/lc116'
 import { useAuth } from '../contexts/AuthContext'
 import { emitirUmaCobranca, mesLabel, MESES } from '../lib/cobrancas'
 import MonthPicker from '../components/MonthPicker'
@@ -73,6 +74,73 @@ const isExpiringSoon = (c) => {
   return diff >= 0 && diff <= 60
 }
 
+// ── Lc116Picker — dropdown pesquisável de código de serviço LC 116 ──
+function Lc116Picker({ value, onChange }) {
+  const [search, setSearch] = useState('')
+  const [open, setOpen]     = useState(false)
+  const ref                 = useRef(null)
+
+  const selected = LC116.find(s => s.cod === value)
+  const filtered = search.trim()
+    ? LC116.filter(s =>
+        s.cod.includes(search.trim()) ||
+        s.desc.toLowerCase().includes(search.trim().toLowerCase())
+      )
+    : LC116
+
+  useEffect(() => {
+    const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  return (
+    <div ref={ref}>
+      <label className="text-xs font-medium text-slate-500 block mb-1">
+        Código serviço LC 116 <span className="text-slate-300 font-normal">(opcional — sobrepõe o padrão do cadastro fiscal)</span>
+      </label>
+      <div className="relative">
+        <button type="button" onClick={() => setOpen(o => !o)}
+          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white text-left flex items-center justify-between focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <span className={selected ? 'text-slate-800' : 'text-slate-400'}>
+            {selected ? `${selected.cod} — ${selected.desc}` : '— Usar padrão do cadastro fiscal —'}
+          </span>
+          <span className="text-slate-400 ml-2">▾</span>
+        </button>
+        {open && (
+          <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
+            <div className="p-2 border-b border-slate-100 flex gap-2">
+              <input autoFocus type="text" value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Código (ex: 4.01) ou descrição…"
+                className="flex-1 px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
+              {value && (
+                <button type="button" onClick={() => { onChange(''); setSearch(''); setOpen(false) }}
+                  className="text-xs text-slate-400 hover:text-slate-600 px-2">
+                  limpar
+                </button>
+              )}
+            </div>
+            <div className="max-h-48 overflow-y-auto">
+              {filtered.length === 0 && (
+                <p className="text-xs text-slate-400 text-center py-4">Nenhum resultado</p>
+              )}
+              {filtered.map(s => (
+                <button key={s.cod} type="button"
+                  onClick={() => { onChange(s.cod); setSearch(''); setOpen(false) }}
+                  className={'w-full text-left px-3 py-2 text-sm hover:bg-indigo-50 transition-colors ' +
+                    (s.cod === value ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-slate-700')}>
+                  <span className="font-mono text-xs text-slate-500 mr-2">{s.cod}</span>
+                  {s.desc}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Componentes do formulário (fora do ContractForm para não perder foco) ──
 function FormInp({ value, onChange, invalid, ...rest }) {
   const border = invalid
@@ -100,7 +168,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
     tenant: '', cpf: '', property: '', value: '', seguroFinanceiro: '0',
     seguroIncendio: '0', iptu: '0', dueDay: '10',
     email: '', phone: '', start: new Date().toISOString().slice(0,10),
-    end: '', status: 'Pendente',
+    end: '', status: 'Pendente', codServicoLc116: '',
   }
   const [f, setF] = useState({ ...blank, ...initial })
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
@@ -124,6 +192,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
       iptu:             parseFloat(f.iptu)||0,
       totalValue,
       dueDay:           parseInt(f.dueDay)||10,
+      codServicoLc116:  f.codServicoLc116 || null,
     })
   }
 
@@ -213,7 +282,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
           </div>
 
           {/* Vencimento e status */}
-          <div className="grid grid-cols-2 gap-3 pb-2">
+          <div className="grid grid-cols-2 gap-3">
             <Row label="Dia de Vencimento">
               <FormInp value={f.dueDay} onChange={e => set('dueDay', e.target.value)} type="number" min="1" max="28"/>
             </Row>
@@ -223,6 +292,12 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
                 {['Pendente','Pago','Em Atraso'].map(s => <option key={s}>{s}</option>)}
               </select>
             </Row>
+          </div>
+
+          {/* Fiscal */}
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Fiscal (NFS-e)</p>
+          <div className="pb-2">
+            <Lc116Picker value={f.codServicoLc116} onChange={v => set('codServicoLc116', v)} />
           </div>
         </div>
 
@@ -649,6 +724,7 @@ const mapRow = row => ({
   start:            row.data_inicio,
   end:              row.data_fim,
   status:           row.status,
+  codServicoLc116:  row.cod_servico_lc116 || '',
   totalValue:       (Number(row.valor_aluguel)||0) + (Number(row.seguro_financeiro)||0) +
                     (Number(row.seguro_incendio)||0) + (Number(row.iptu)||0),
 })
@@ -712,15 +788,16 @@ export default function Contratos() {
       // 2. Criar contrato
       const { data: newContract, error } = await supabase.from('contratos').insert({
         user_id: user.id, inquilino_id,
-        imovel:            data.property,
-        valor_aluguel:     data.value,
-        seguro_financeiro: data.seguroFinanceiro,
-        seguro_incendio:   data.seguroIncendio,
-        iptu:              data.iptu,
-        dia_vencimento:    data.dueDay,
-        data_inicio:       data.start || null,
-        data_fim:          data.end   || null,
-        status:            data.status,
+        imovel:              data.property,
+        valor_aluguel:       data.value,
+        seguro_financeiro:   data.seguroFinanceiro,
+        seguro_incendio:     data.seguroIncendio,
+        iptu:                data.iptu,
+        dia_vencimento:      data.dueDay,
+        data_inicio:         data.start || null,
+        data_fim:            data.end   || null,
+        status:              data.status,
+        cod_servico_lc116:   data.codServicoLc116 || null,
       }).select().single()
       if (error) throw error
 
@@ -764,14 +841,15 @@ export default function Contratos() {
         }).eq('id', data.inquilino_id)
       }
       const { error } = await supabase.from('contratos').update({
-        imovel:            data.property,
-        valor_aluguel:     data.value,
-        seguro_financeiro: data.seguroFinanceiro,
-        seguro_incendio:   data.seguroIncendio,
-        iptu:              data.iptu,
-        dia_vencimento:    data.dueDay,
-        data_inicio:       data.start || null,
-        data_fim:          data.end   || null,
+        imovel:              data.property,
+        valor_aluguel:       data.value,
+        seguro_financeiro:   data.seguroFinanceiro,
+        seguro_incendio:     data.seguroIncendio,
+        iptu:                data.iptu,
+        dia_vencimento:      data.dueDay,
+        data_inicio:         data.start || null,
+        data_fim:            data.end   || null,
+        cod_servico_lc116:   data.codServicoLc116 || null,
         status:            data.status,
       }).eq('id', data.id)
       if (error) throw error

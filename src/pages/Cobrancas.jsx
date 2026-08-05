@@ -77,6 +77,7 @@ const mapCob = row => ({
   seguroFinanceiro:Number(row.contratos?.seguro_financeiro) || 0,
   seguroIncendio:  Number(row.contratos?.seguro_incendio)   || 0,
   iptu:            Number(row.contratos?.iptu)              || 0,
+  codServicoLc116: row.contratos?.cod_servico_lc116         || null,
   dueDay:          row.dia_vencimento,
   status:          row.status || 'Pendente',
   mesRef:          row.mes_referencia,
@@ -400,6 +401,7 @@ function NfseModal({ cob, user, onClose }) {
             seguroFinanceiro: cob.seguroFinanceiro,
             seguroIncendio:   cob.seguroIncendio,
             iptu:             cob.iptu,
+            codServicoLc116:  cob.codServicoLc116 || null,
           },
         }),
       })
@@ -1021,7 +1023,7 @@ export default function Cobrancas() {
 
     const { data, error } = await supabase
       .from('cobrancas')
-      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu), inquilinos(nome, cpf, email)')
+      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116), inquilinos(nome, cpf, email)')
       .eq('user_id', user.id)
       .eq('mes_referencia', ref)
       .order('created_at', { ascending: false })

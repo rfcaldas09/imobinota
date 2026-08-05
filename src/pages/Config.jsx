@@ -86,8 +86,8 @@ const MUNICIPIOS_SUL = [
   // ── SANTA CATARINA ──────────────────────────────────────────────────────────
   { ibge:'4205407', nome:'Florianópolis — SC', nac:true  },                                    // Emissor Nacional desde 27/08/2025
   { ibge:'4204202', nome:'Chapecó — SC',        nac:true  },                                    // Emissor Nacional desde 15/08/2024
-  { ibge:'4202404', nome:'Blumenau — SC',        nac:false, nacEm:'2026-08-01' },               // migra em 01/08/2026 (Prefeitura anunciou)
-  { ibge:'4209102', nome:'Joinville — SC',       nac:false, nacEm:'2026-07-20' },               // migra em 20/07/2026 — em 4 dias! (fonte: prefeitura)
+  { ibge:'4202404', nome:'Blumenau — SC',        nac:true,  nacEm:'2026-08-01' },               // Emissor Nacional desde 01/08/2026 (migração confirmada)
+  { ibge:'4209102', nome:'Joinville — SC',       nac:true,  nacEm:'2026-07-20' },               // Emissor Nacional desde 20/07/2026 (migração confirmada)
   { ibge:'4216602', nome:'São José — SC',        nac:false },                                   // usa AtendeNet (emissor próprio) — sem data anunciada
   { ibge:'4215802', nome:'São Bento do Sul — SC',nac:false },                                   // mantém emissor próprio — sem data anunciada
   { ibge:'4211900', nome:'Palhoça — SC',         nac:false },                                   // sem anúncio de migração
@@ -95,7 +95,7 @@ const MUNICIPIOS_SUL = [
   { ibge:'4314902', nome:'Porto Alegre — RS',    nac:true  },                                    // Emissor Nacional desde 17/04/2023
   { ibge:'4305108', nome:'Caxias do Sul — RS',   nac:false },                                   // decidiu manter emissor próprio (ADN apenas)
   { ibge:'4316907', nome:'Santa Maria — RS',     nac:false },                                   // sem anúncio de migração
-  { ibge:'4314407', nome:'Pelotas — RS',         nac:false, nacEm:'2026-08-01' },               // migra em 01/08/2026 (Decreto 7.208/2026)
+  { ibge:'4314407', nome:'Pelotas — RS',         nac:true,  nacEm:'2026-08-01' },               // Emissor Nacional desde 01/08/2026 (Decreto 7.208/2026)
   { ibge:'4309100', nome:'Gramado — RS',         nac:false },                                   // mantém emissor próprio — sem data anunciada
   // ── PARANÁ ──────────────────────────────────────────────────────────────────
   { ibge:'4106902', nome:'Curitiba — PR',        nac:true  },                                    // Emissor Nacional desde 30/08/2023
@@ -720,9 +720,13 @@ export default function Config() {
                       )
                     }
                   }
+                  const compatíveis = MUNICIPIOS_SUL
+                    .filter(m => m.nac)
+                    .map(m => m.nome.split(' —')[0])
+                    .join(', ')
                   return (
                     <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                      ⚠️ <strong>{sel.nome.split(' —')[0]}</strong> usa sistema municipal próprio e <strong>não é compatível</strong> com o endpoint nacional da NFS-e (SEFIN). Para emitir notas nesse município, é necessária integração específica com a prefeitura. Municípios compatíveis: Florianópolis, Chapecó, Porto Alegre, Curitiba, Londrina, Maringá.
+                      ⚠️ <strong>{sel.nome.split(' —')[0]}</strong> usa sistema municipal próprio e <strong>não é compatível</strong> com o endpoint nacional da NFS-e (SEFIN). Para emitir notas nesse município, é necessária integração específica com a prefeitura. Municípios compatíveis: {compatíveis}.
                     </p>
                   )
                 })()}

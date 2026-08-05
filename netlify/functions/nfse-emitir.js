@@ -55,7 +55,7 @@ async function handle(event) {
 
   const { userId, cobId, cobData, homologacao = false } = body
   // cobData = { mesRef, tenant, cpf, email, property, totalValue, value,
-  //             seguroFinanceiro, seguroIncendio, iptu }
+  //             seguroFinanceiro, seguroIncendio, iptu, codServicoLc116 }
 
   if (!userId || !cobId || !cobData) {
     return { statusCode: 400, body: JSON.stringify({ error: 'userId, cobId e cobData são obrigatórios' }) }
@@ -142,6 +142,27 @@ async function handle(event) {
     return /^0+$/.test(s) ? '00001' : s
   })()
 
+  // ── Converte código LC 116 (ex: '10.09') para cTribNac de 6 dígitos (ex: '100901') ──
+  // Formato SEFIN: 2 dígitos (item) + 2 dígitos (subitem) + 2 dígitos (variação = '01')
+  function lc116ToCTribNac(cod) {
+    if (!cod) return null
+    const [major, minor] = cod.split('.')
+    if (!major) return null
+    return major.padStart(2, '0') + (minor || '01').padStart(2, '0') + '01'
+  }
+
+  // Prioridade do cTribNac:
+  // 1. Código do contrato (cobData.codServicoLc116) — para serviços que variam por contrato
+  // 2. Código padrão do perfil (nfse_codigo_servico, se for formato LC116 com ponto)
+  // 3. Fallback: 100901 (Administração de bens e negócios — LC 116 item 10.09)
+  const cTribNacFromContract = cobData.codServicoLc116 ? lc116ToCTribNac(cobData.codServicoLc116) : null
+  const cTribNacFromProfile  = (p.nfse_codigo_servico || '').includes('.')
+    ? lc116ToCTribNac(p.nfse_codigo_servico.trim())
+    : null
+  const cTribNacResolved = cTribNacFromContract || cTribNacFromProfile || '100901'
+  console.log('[nfse-emitir] cTribNac:', cTribNacResolved,
+    '| fonte:', cTribNacFromContract ? 'contrato' : cTribNacFromProfile ? 'perfil' : 'default')
+
   const config = {
     cnpj:          digits(p.cnpj),
     inscMun:       p.inscricao_municipal,
@@ -149,12 +170,10 @@ async function handle(event) {
     municipioIbge: p.nfse_municipio_ibge,
     serie:         serieRaw,
     numero:        novNumero,
-    // cTribNac: código de tributação nacional (6 dígitos)
-    // "100901" = Administração de bens e negócios (LC 116 item 10.09)
-    cTribNac:      '100901',
+    // cTribNac: código de tributação nacional (6 dígitos) — resolvido por prioridade acima
+    cTribNac:      cTribNacResolved,
     // cTribMun: código de serviço municipal (conforme tabela da prefeitura, opcional no XSD)
     // Só inclui se o usuário configurou um código puramente numérico em Configurações → Fiscal
-    // (o código LC116 "6.05" não serve aqui — precisa ser o código numérico da prefeitura)
     cTribMun:      /^\d+$/.test((p.nfse_codigo_servico || '').trim()) ? p.nfse_codigo_servico.trim() : null,
     aliquota:      parseFloat((p.aliquota_iss || '2').toString().replace(',', '.')).toFixed(2),
     logradouro:    p.nfse_logradouro || 'Endereço não informado',
@@ -496,8 +515,8 @@ function buildDpsXml(cfg, cob, homologacao) {
   if (isSimples) {
     totTribXml = `<totTrib><pTotTribSN>${cfg.aliquota}</pTotTribSN></totTrib>`
   } else {
-    // indTotTrib: 0=estimativa terceiros, 1=ibpt, 2=não informado
-    totTribXml = `<totTrib><indTotTrib>2</indTotTrib></totTrib>`
+    // indTotTrib: 0=não informar carga tributária estimada (único valor válido para este caso)
+    totTribXml = `<totTrib><indTotTrib>0</indTotTrib></totTrib>`
   }
 
   // Endereço do prestador é opcional no XSD — omitido para evitar erros de sequência.
