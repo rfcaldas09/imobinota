@@ -112,7 +112,7 @@ function AccessCard() {
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 block mb-1">Nome da empresa *</label>
-              <Inp value={form.company} onChange={set('company')} placeholder="Silva Imóveis Ltda"/>
+              <Inp value={form.company} onChange={set('company')} placeholder="Minha Empresa Ltda"/>
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 block mb-1">E-mail</label>
@@ -191,13 +191,13 @@ function DashboardMockup() {
           {/* Tabela contratos */}
           <div className="bg-white rounded-xl overflow-hidden">
             <div className="grid grid-cols-4 px-3 py-1.5 bg-slate-50 text-[9px] font-bold text-slate-400 uppercase tracking-wide">
-              <span>Cliente</span><span>Imóvel</span><span className="text-right">Valor</span><span className="text-center">Status</span>
+              <span>Cliente</span><span>Referência</span><span className="text-right">Valor</span><span className="text-center">Status</span>
             </div>
             {[
-              ['Maria S.','Ap. 302 – Beira-Mar','R$ 1.850','Pago','emerald'],
-              ['João P.','Casa – Itoupava','R$ 2.100','Pendente','amber'],
-              ['Ana R.','Kitnet – Centro','R$ 1.600','Em Atraso','red'],
-              ['Carlos M.','Sala 14 – Centro Emp.','R$ 3.400','Pago','emerald'],
+              ['Maria S.','Serv. Julho/26','R$ 1.850','Pago','emerald'],
+              ['João P.','Contrato #204','R$ 2.100','Pendente','amber'],
+              ['Ana R.','NF #1038','R$ 1.600','Em Atraso','red'],
+              ['Carlos M.','Contrato #89','R$ 3.400','Pago','emerald'],
             ].map(([n,p,v,s,c]) => (
               <div key={n} className="grid grid-cols-4 px-3 py-1.5 items-center border-t border-slate-50">
                 <div className="flex items-center gap-1.5">
@@ -236,9 +236,9 @@ function ContratoMockup() {
       </div>
       <div className="p-3 space-y-1.5">
         {[
-          ['R.F.','Ap 204 – Centro','R$2.200','Pago'],
-          ['S.M.','Casa Vila Nova','R$1.750','Pendente'],
-          ['A.L.','Sala 08 – Empresarial','R$3.100','Em Atraso'],
+          ['R.F.','Serv. Julho/26','R$2.200','Pago'],
+          ['S.M.','Contrato #112','R$1.750','Pendente'],
+          ['A.L.','NF #0892','R$3.100','Em Atraso'],
         ].map(([n,p,v,s]) => {
           const c = s==='Pago'?'emerald':s==='Pendente'?'amber':'red'
           return (
@@ -301,7 +301,7 @@ export default function Landing() {
 
       {/* ── ALERT BAR ── */}
       <div className="bg-amber-500 text-white text-sm py-2.5 text-center font-medium px-4">
-        ⚠️&nbsp; A NFS-e Nacional obrigatória entra em vigor em <strong>1º de agosto de 2026</strong>. Sua gestora está preparada?&nbsp;
+        ⚠️&nbsp; A NFS-e Nacional obrigatória entra em vigor em <strong>1º de agosto de 2026</strong>. O seu negócio está preparado?&nbsp;
         <a href="#regulacao" className="underline font-bold ml-2 hover:text-amber-100">Saiba mais →</a>
       </div>
 
@@ -339,14 +339,14 @@ export default function Landing() {
               🚨 Regulação NFS-e Nacional — 1º de agosto de 2026
             </div>
             <h1 className="text-4xl lg:text-5xl font-black text-white leading-tight mb-6">
-              Gerencie seus{' '}
+              Automatize cobranças,{' '}
               <span style={{background:'linear-gradient(90deg,#38bdf8,#1a8fb5)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',backgroundClip:'text'}}>
-                aluguéis com
+                contratos e NFS-e
               </span>
-              <br/>boleto e NFS-e automático
+              <br/>do seu negócio
             </h1>
             <p className="text-slate-300 text-lg leading-relaxed mb-8">
-              Boletos, NFS-e e cobranças automáticas para gestoras de imóveis. Já com a nova NFS-e Nacional integrada —{' '}
+              Boletos, NFS-e e contratos automáticos para clínicas, gestoras, empresas e profissionais. Já com a nova NFS-e Nacional integrada —{' '}
               <strong className="text-white">sem multas e sem correria de última hora.</strong>
             </p>
             <div className="flex flex-wrap gap-2 mb-8">
@@ -362,8 +362,8 @@ export default function Landing() {
                 ))}
               </div>
               <div>
-                <p className="text-white text-sm font-bold">+120 gestoras ativas</p>
-                <p className="text-slate-400 text-xs">Santa Catarina · Paraná · Rio Grande do Sul</p>
+                <p className="text-white text-sm font-bold">+120 empresas ativas</p>
+                <p className="text-slate-400 text-xs">Clínicas · Gestoras · Empresas de Serviços</p>
               </div>
             </div>
           </div>
@@ -379,7 +379,7 @@ export default function Landing() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
             {[
               {value:'+3.200',label:'Contratos gerenciados'},
-              {value:'R$ 4,2M',label:'Em aluguéis processados/mês'},
+              {value:'R$ 4,2M',label:'Em cobranças processadas/mês'},
               {value:'98%',label:'Adimplência média dos clientes'},
               {value:'2h → 5min',label:'Tempo de fechamento mensal'},
             ].map(s => (
@@ -403,7 +403,7 @@ export default function Landing() {
               A NFS-e Nacional é obrigatória a partir de <span className="text-amber-600">1º de agosto de 2026</span>
             </h2>
             <p className="text-slate-600 max-w-2xl mx-auto">
-              Gestoras que não se adaptarem estarão sujeitas a multas e impossibilidade de emitir cobranças. O NotaFacil já está pronto.
+              Empresas que não se adaptarem estarão sujeitas a multas e impossibilidade de emitir cobranças. O NotaFacil já está pronto.
             </p>
           </div>
           <div className="grid md:grid-cols-3 gap-6 mb-10">
@@ -459,7 +459,7 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto px-6">
           <div className="text-center mb-14">
             <span className="text-xs font-bold uppercase tracking-widest text-red-500 mb-3 block">O Problema</span>
-            <h2 className="text-3xl font-black text-slate-900 mb-4">Sua gestão de aluguéis ainda é assim?</h2>
+            <h2 className="text-3xl font-black text-slate-900 mb-4">Sua gestão financeira ainda é assim?</h2>
             <p className="text-slate-500 text-lg max-w-xl mx-auto">Planilhas, ligações e processos manuais que consomem horas e geram erros.</p>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
@@ -491,7 +491,7 @@ export default function Landing() {
           </div>
           <div className="grid md:grid-cols-3 gap-6">
             {[
-              {icon:'📋',color:'indigo',title:'Gestão completa de contratos',desc:'Cadastre clientes, imóveis e contratos em minutos. Tudo centralizado, organizado e acessível de qualquer lugar.'},
+              {icon:'📋',color:'indigo',title:'Gestão completa de contratos',desc:'Cadastre clientes, serviços e contratos em minutos. Tudo centralizado, organizado e acessível de qualquer lugar.'},
               {icon:'⚡',color:'purple',title:'Disparo em massa com 1 clique',desc:'Gere boletos + NFS-e para todos os contratos do mês e envie por e-mail automaticamente. De horas para minutos.'},
               {icon:'📈',color:'emerald',title:'Dashboard financeiro completo',desc:'Acompanhe adimplência, valores em aberto e histórico de pagamentos com gráficos claros e em tempo real.'},
               {icon:'🔔',color:'amber',title:'Alertas de contratos vencendo',desc:'Receba avisos automáticos de contratos próximos do vencimento. Negocie e renove com antecedência, sem surpresas.'},
@@ -518,7 +518,7 @@ export default function Landing() {
           </div>
           <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
             {[
-              {num:'1',title:'Cadastre seus contratos uma vez',desc:'Importe ou cadastre manualmente clientes, imóveis e valores. Feito isso, nunca mais precisará repetir.'},
+              {num:'1',title:'Cadastre seus clientes e contratos',desc:'Importe ou cadastre manualmente clientes, serviços e valores. Feito isso, nunca mais precisará repetir.'},
               {num:'2',title:'Clique em "Gerar e Enviar Tudo"',desc:'Um clique gera boleto + NFS-e e dispara por e-mail para todos os clientes automaticamente.'},
               {num:'3',title:'Acompanhe pagamentos em tempo real',desc:'O dashboard atualiza à medida que os pagamentos chegam. Veja quem pagou, quem está pendente e quem está em atraso.'},
             ].map(s => (
@@ -539,14 +539,14 @@ export default function Landing() {
         <div className="max-w-6xl mx-auto px-6">
           <div className="text-center mb-12">
             <span className="text-xs font-bold uppercase tracking-widest text-emerald-500 mb-3 block">Depoimentos</span>
-            <h2 className="text-3xl font-black text-slate-900 mb-2">Gestoras que já transformaram sua rotina</h2>
+            <h2 className="text-3xl font-black text-slate-900 mb-2">Quem já transformou sua rotina financeira</h2>
             <p className="text-slate-500 text-sm">Avaliação média <strong className="text-slate-700">4,9 de 5</strong> ★★★★★</p>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
             {[
-              {name:'Marcos A.',role:'Gestora de Imóveis — Blumenau',quote:'"Antes levava 3 dias para emitir boleto e nota de todos os clientes. Hoje faço em 5 minutos. Não tem como voltar atrás."',initial:'M',destaque:false},
-              {name:'Carla S.',role:'Proprietária — Joinville',quote:'"A NFS-e integrada foi o que me convenceu. Já estava preocupada com a nova regulação de agosto — o NotaFacil resolveu isso e muito mais."',initial:'C',destaque:true},
-              {name:'Ricardo P.',role:'Gestor Independente — Curitiba',quote:'"O dashboard de inadimplência me deu visibilidade que eu nunca tive. Reduzi meu atraso em 40% no primeiro mês."',initial:'R',destaque:false},
+              {name:'Marcos A.',role:'Clínica Médica — Blumenau',quote:'"Antes levava 3 dias para emitir boleto e nota de todos os pacientes. Hoje faço em 5 minutos. Não tem como voltar atrás."',initial:'M',destaque:false},
+              {name:'Carla S.',role:'Gestora de Patrimônio — Joinville',quote:'"A NFS-e integrada foi o que me convenceu. Já estava preocupada com a nova regulação de agosto — o NotaFacil resolveu isso e muito mais."',initial:'C',destaque:true},
+              {name:'Ricardo P.',role:'Empresa de Serviços — Curitiba',quote:'"O dashboard de inadimplência me deu visibilidade que eu nunca tive. Reduzi meu atraso em 40% no primeiro mês."',initial:'R',destaque:false},
             ].map(t => (
               <div key={t.name} className={`rounded-2xl p-6 relative ${t.destaque ? 'border-2 border-indigo-400 bg-white shadow-lg shadow-indigo-100' : 'border border-slate-100 bg-white'}`}>
                 {t.destaque && (
@@ -580,12 +580,12 @@ export default function Landing() {
             <div className="bg-white border border-slate-200 rounded-2xl p-8">
               <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Essencial</p>
               <div className="flex items-end gap-1 mb-1">
-                <span className="text-4xl font-black text-slate-900">R$ 297</span>
+                <span className="text-4xl font-black text-slate-900">R$ 197</span>
                 <span className="text-slate-400 text-sm mb-1">/mês</span>
               </div>
-              <p className="text-xs text-slate-400 mb-5">+ R$1,20 por boleto pago</p>
+              <p className="text-xs text-slate-400 mb-5">+ R$2,99 por cobrança paga</p>
               <ul className="space-y-3 mb-8 text-sm text-slate-600">
-                {['Até 100 contratos','Boleto automático','NFS-e Nacional','Disparo em massa por e-mail','Dashboard financeiro','Relatórios + Inadimplência','Suporte por e-mail'].map(f => (
+                {['Até 50 contratos ativos','Emissão de cobrança via PIX','NFS-e integrado (API Nacional)','Envio de e-mails automático','Dashboard e relatórios','Suporte por e-mail'].map(f => (
                   <li key={f} className="flex items-center gap-2"><span className="text-emerald-500 font-bold">✓</span> {f}</li>
                 ))}
               </ul>
@@ -594,17 +594,17 @@ export default function Landing() {
                 Começar grátis
               </button>
             </div>
-            {/* Profissional */}
+            {/* Pro */}
             <div className="bg-indigo-600 rounded-2xl p-8 relative overflow-hidden">
               <div className="absolute top-4 right-4 bg-amber-400 text-slate-900 text-xs font-bold px-3 py-1 rounded-full">Mais popular</div>
-              <p className="text-xs font-bold uppercase tracking-widest text-indigo-200 mb-2">Profissional</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-indigo-200 mb-2">Pro</p>
               <div className="flex items-end gap-1 mb-1">
-                <span className="text-4xl font-black text-white">R$ 497</span>
+                <span className="text-4xl font-black text-white">R$ 297</span>
                 <span className="text-indigo-300 text-sm mb-1">/mês</span>
               </div>
-              <p className="text-xs text-indigo-300 mb-5">+ R$1,20 por boleto pago</p>
+              <p className="text-xs text-indigo-300 mb-5">+ R$2,99 por cobrança paga</p>
               <ul className="space-y-3 mb-8 text-sm text-indigo-100">
-                {['Contratos ilimitados','Tudo do Essencial','Multi-usuário (até 5)','Relatórios avançados','API para integrações','Suporte prioritário','Gestor de conta dedicado'].map(f => (
+                {['Tudo do Essencial','Contratos ilimitados','Suporte prioritário via WhatsApp'].map(f => (
                   <li key={f} className="flex items-center gap-2"><span className="text-amber-400 font-bold">✓</span> {f}</li>
                 ))}
               </ul>
@@ -647,7 +647,7 @@ export default function Landing() {
                 </div>
               </div>
               <p className="text-slate-400 text-sm leading-relaxed">
-                Plataforma de gestão de imóveis com boleto, NFS-e e PIX automático para todo o Brasil.
+                Plataforma de automação de cobranças, NFS-e e contratos para empresas e profissionais de todo o Brasil.
               </p>
             </div>
             <div>
