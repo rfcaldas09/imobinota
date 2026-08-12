@@ -564,12 +564,13 @@ function buildDpsXml(cfg, cob, homologacao) {
   const hasPisCofins = vRetCOFINS || vRetPIS
   const hasRetFed    = vRetIRRF || vRetCSLL || vRetCOFINS || vRetPIS || vRetCP
 
-  // <piscofins>: filhos em sequência: pAliqPis, pAliqCofins, vPis, vCofins, tpRetPisCofins
-  // tpRetPisCofins: 1 = retido na fonte
+  // <piscofins>: sequência obrigatória: CST → pAliqPis → pAliqCofins → vPis → vCofins → tpRetPisCofins
+  // CST 01 = Operação tributável (alíquota básica); tpRetPisCofins 1 = retido na fonte
   const pAliqPis    = (Number(ret.pPIS)    || 0).toFixed(2)
   const pAliqCofins = (Number(ret.pCOFINS) || 0).toFixed(2)
   const pisCofinsXml = hasPisCofins
     ? `<piscofins>\n` +
+      `<CST>01</CST>\n` +
       `<pAliqPis>${pAliqPis}</pAliqPis>\n` +
       `<pAliqCofins>${pAliqCofins}</pAliqCofins>\n` +
       `<vPis>${vRetPIS || '0.00'}</vPis>\n` +
