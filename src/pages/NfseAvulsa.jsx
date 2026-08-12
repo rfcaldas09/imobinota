@@ -15,6 +15,7 @@ const IcX       = ({ c='' }) => ic('<line x1="18" y1="6" x2="6" y2="18"/><line x
 const IcSend    = ({ c='' }) => ic('<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>', c)
 const IcEdit    = ({ c='' }) => ic('<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>', c)
 const IcDoc     = ({ c='' }) => ic('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>', c)
+const IcDownload= ({ c='' }) => ic('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>', c)
 
 // ── Helpers ────────────────────────────────────────────────────────
 const digits  = v => v.replace(/\D/g, '')
@@ -286,6 +287,8 @@ export default function NfseAvulsa() {
 
     const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
 
+    const delay = ms => new Promise(r => setTimeout(r, ms))
+
     for (let i = 0; i < snapshot.length; i++) {
       setEmitCurrent(i)
       const item = snapshot[i]
@@ -320,6 +323,9 @@ export default function NfseAvulsa() {
       } catch (e) {
         setEmitResults(p => [...p, { index: i, ok: false, erro: e.message }])
       }
+
+      // Aguarda 2s entre notas para evitar rate limiting do SEFIN
+      if (i < snapshot.length - 1) await delay(2000)
     }
 
     setEmitCurrent(null)
@@ -333,7 +339,38 @@ export default function NfseAvulsa() {
       return prev
     })
 
+    // Aguarda 1.5s para o Supabase propagar as linhas antes de recarregar o histórico
+    await delay(1500)
     loadHistory()
+  }
+
+  // ── Download PDF ─────────────────────────────────────────────
+  const [downloadingId, setDownloadingId] = useState(null)
+
+  const handleDownloadPdf = async (emissaoId, tomadorNome) => {
+    setDownloadingId(emissaoId)
+    try {
+      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
+      const res = await fetch('/.netlify/functions/nfse-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
+        },
+        body: JSON.stringify({ userId: user.id, emissaoId }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.pdfBase64) throw new Error(data.error || 'Erro ao gerar PDF')
+      // Dispara download no browser
+      const link = document.createElement('a')
+      link.href = `data:application/pdf;base64,${data.pdfBase64}`
+      link.download = data.filename || `nfse-${tomadorNome || emissaoId}.pdf`
+      link.click()
+    } catch (e) {
+      alert(`Erro ao baixar PDF: ${e.message}`)
+    } finally {
+      setDownloadingId(null)
+    }
   }
 
   // ── KPIs do histórico por período ────────────────────────────
@@ -527,6 +564,7 @@ export default function NfseAvulsa() {
                 <th className="px-4 py-2.5 text-center">Status</th>
                 <th className="px-4 py-2.5 text-left">NFS-e</th>
                 <th className="px-4 py-2.5 text-left">Data</th>
+                <th className="px-4 py-2.5"/>
               </tr>
             </thead>
             <tbody>
@@ -545,6 +583,19 @@ export default function NfseAvulsa() {
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-slate-400">{fmtDate(em.created_at)}</td>
+                  <td className="px-4 py-2.5">
+                    {em.status === 'emitida' && (
+                      <button
+                        onClick={() => handleDownloadPdf(em.id, em.tomador_nome)}
+                        disabled={downloadingId === em.id}
+                        title="Baixar PDF da NFS-e"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 transition-colors">
+                        {downloadingId === em.id
+                          ? <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"/>
+                          : <IcDownload/>}
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

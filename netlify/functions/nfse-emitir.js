@@ -697,9 +697,15 @@ async function postWithMtls(url, xmlBody, certPem, keyPem) {
 
 async function gravarEmissao(supabaseUrl, serviceKey, row) {
   try {
-    await supabaseFetch(supabaseUrl, serviceKey, 'nfse_emissoes', 'POST', row)
+    const res = await supabaseFetch(supabaseUrl, serviceKey, 'nfse_emissoes', 'POST', row)
+    if (!res.ok) {
+      const body = await res.text()
+      console.error(`[nfse-emitir] erro ao gravar emissão HTTP ${res.status}:`, body)
+      throw new Error(`Falha ao gravar emissão no banco (HTTP ${res.status}): ${body}`)
+    }
   } catch (e) {
     console.error('[nfse-emitir] erro ao gravar emissão:', e?.message)
+    throw e   // propaga para o caller ver no log e no erro retornado ao frontend
   }
 }
 
