@@ -46,9 +46,8 @@ const BLANK_FORM = {
   pIRRF: '', pCSLL: '', pCOFINS: '', pPIS: '', pINSS: '',
 }
 
-// Presets de retenção por perfil
-const PRESET_MEDICO = { pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '' }
-const PRESET_SERVICOS = { pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '' }
+// Valores padrão de retenções federais (IRRF+CSLL+COFINS+PIS)
+const PRESET_RET_DEFAULT = { pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '' }
 
 const maskPct = v => {
   const cleaned = v.replace(/[^\d,]/g, '').replace(/,+/g, ',')
@@ -101,7 +100,14 @@ function TomadorModal({ initial, onSave, onClose }) {
   const totalRet  = retIRRF + retCSLL + retCOFINS + retPIS + retINSS
   const liquido   = valorNum - totalRet
 
-  const applyPreset = preset => setF(p => ({ ...p, ...preset }))
+  const hasFedRet = f.pIRRF || f.pCSLL || f.pCOFINS || f.pPIS || f.pINSS
+  const toggleRet = () => {
+    if (!showRet && !hasFedRet) {
+      // Auto-preenche padrões ao abrir pela primeira vez
+      setF(p => ({ ...p, ...PRESET_RET_DEFAULT }))
+    }
+    setShowRet(s => !s)
+  }
 
   const handleSave = () => {
     if (!f.nome.trim())        { setErr('Informe o nome do tomador.'); return }
@@ -181,7 +187,7 @@ function TomadorModal({ initial, onSave, onClose }) {
           <div className="border border-slate-200 rounded-xl overflow-hidden">
             <button
               type="button"
-              onClick={() => setShowRet(s => !s)}
+              onClick={toggleRet}
               className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
             >
               <div className="flex items-center gap-2">
@@ -214,13 +220,8 @@ function TomadorModal({ initial, onSave, onClose }) {
 
                 {/* Federais */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="mb-2">
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Retenções Federais</p>
-                    <button type="button"
-                      onClick={() => applyPreset(PRESET_MEDICO)}
-                      className="text-xs text-indigo-600 hover:underline font-medium">
-                      Preencher padrão (IRRF+CSLL+PIS+COFINS)
-                    </button>
                   </div>
 
                   <div className="space-y-2">

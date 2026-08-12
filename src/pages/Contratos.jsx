@@ -130,6 +130,11 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
   const totalRet  = retIRRF + retCSLL + retCOFINS + retPIS + retINSS
 
   const PRESET_RET = { pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '' }
+  const hasFedRet = f.pIRRF || f.pCSLL || f.pCOFINS || f.pPIS || f.pINSS
+  const toggleRet = () => {
+    if (!showRet && !hasFedRet) setF(p => ({ ...p, ...PRESET_RET }))
+    setShowRet(s => !s)
+  }
 
   const TAX_FIELDS_C = [
     { key: 'pIRRF',   label: 'IRRF',   ret: retIRRF   },
@@ -301,7 +306,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
 
           {/* Retenções */}
           <div className="border border-slate-200 rounded-xl overflow-hidden">
-            <button type="button" onClick={() => setShowRet(s => !s)}
+            <button type="button" onClick={toggleRet}
               className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Retenções de Impostos</span>
@@ -331,12 +336,8 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
                 </label>
                 {/* Federais */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="mb-2">
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Retenções Federais</p>
-                    <button type="button" onClick={() => setF(p => ({ ...p, ...PRESET_RET }))}
-                      className="text-xs text-indigo-600 hover:underline font-medium">
-                      Preencher padrão (IRRF+CSLL+PIS+COFINS)
-                    </button>
                   </div>
                   <div className="space-y-2">
                     {TAX_FIELDS_C.map(({ key, label, ret }) => (

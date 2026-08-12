@@ -630,7 +630,7 @@ ${infoComplXml}
 <tribISSQN>1</tribISSQN>
 <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
 ${!isSimples ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</tribMun>
-${retTribXml}${totTribXml}
+${hasRetFed ? `<tribFed>\n${retTribXml}</tribFed>\n` : ''}${totTribXml}
 </trib>
 </valores>
 </infDPS>
