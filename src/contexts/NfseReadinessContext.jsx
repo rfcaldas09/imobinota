@@ -15,7 +15,8 @@ export const NFSE_CHECKS = [
   { field: 'nfse_logradouro',     label: 'Logradouro do prestador',  tab: 'fiscal'  },
   { field: 'nfse_cep',            label: 'CEP do prestador',         tab: 'fiscal'  },
   { field: 'from_name',           label: 'Nome remetente (e-mail)',  tab: 'email'   },
-  { field: 'from_email',          label: 'E-mail remetente',         tab: 'email'   },
+  // from_email não é verificado: quando o provedor é Resend (NotaFacil),
+  // o remetente é gerenciado pela infraestrutura e não é configurável pelo usuário.
 ]
 
 const NfseReadinessContext = createContext({ missing: [], ready: false, refresh: () => {} })
@@ -30,7 +31,7 @@ export function NfseReadinessProvider({ children }) {
 
     const { data } = await supabase
       .from('profiles')
-      .select('company_name, cnpj, inscricao_municipal, nfse_cert_path, nfse_cert_password_enc, nfse_municipio_ibge, nfse_codigo_servico, aliquota_iss, nfse_logradouro, nfse_cep, from_name, from_email')
+      .select('company_name, cnpj, inscricao_municipal, nfse_cert_path, nfse_cert_password_enc, nfse_municipio_ibge, nfse_codigo_servico, aliquota_iss, nfse_logradouro, nfse_cep, from_name')
       .eq('id', user.id)
       .maybeSingle()
 
