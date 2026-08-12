@@ -564,16 +564,17 @@ function buildDpsXml(cfg, cob, homologacao) {
   const hasPisCofins = vRetCOFINS || vRetPIS
   const hasRetFed    = vRetIRRF || vRetCSLL || vRetCOFINS || vRetPIS || vRetCP
 
-  // <piscofins>: requer CST, base de cálculo e alíquotas mesmo para retenção na fonte.
-  // CST 70 = Operação tributável; vBCPisCofins = base = vServ.
+  // <piscofins>: filhos em sequência: pAliqPis, pAliqCofins, vPis, vCofins, tpRetPisCofins
+  // tpRetPisCofins: 1 = retido na fonte
+  const pAliqPis    = (Number(ret.pPIS)    || 0).toFixed(2)
+  const pAliqCofins = (Number(ret.pCOFINS) || 0).toFixed(2)
   const pisCofinsXml = hasPisCofins
     ? `<piscofins>\n` +
-      `<CST>70</CST>\n` +
-      `<vBCPisCofins>${vServ}</vBCPisCofins>\n` +
-      (vRetPIS    ? `<pPis>${(Number(ret.pPIS)||0).toFixed(2)}</pPis>\n<vPis>${vRetPIS}</vPis>\n`       : `<pPis>0.00</pPis>\n<vPis>0.00</vPis>\n`) +
-      (vRetCOFINS ? `<pCofins>${(Number(ret.pCOFINS)||0).toFixed(2)}</pCofins>\n<vCofins>${vRetCOFINS}</vCofins>\n` : `<pCofins>0.00</pCofins>\n<vCofins>0.00</vCofins>\n`) +
-      (vRetPIS    ? `<vRetPis>${vRetPIS}</vRetPis>\n`       : '') +
-      (vRetCOFINS ? `<vRetCofins>${vRetCOFINS}</vRetCofins>\n` : '') +
+      `<pAliqPis>${pAliqPis}</pAliqPis>\n` +
+      `<pAliqCofins>${pAliqCofins}</pAliqCofins>\n` +
+      `<vPis>${vRetPIS || '0.00'}</vPis>\n` +
+      `<vCofins>${vRetCOFINS || '0.00'}</vCofins>\n` +
+      `<tpRetPisCofins>1</tpRetPisCofins>\n` +
       `</piscofins>\n`
     : ''
 
