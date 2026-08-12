@@ -144,9 +144,11 @@ ${tipoInsc === '2' ? `<CNPJ>${cnpjDigits}</CNPJ>` : `<CPF>${cnpjDigits.slice(-11
     return { statusCode: 500, body: JSON.stringify({ error: `Erro ao assinar XML: ${err.message}` }) }
   }
 
-  // ── 5. Envia DELETE mTLS ao SEFIN ─────────────────────────────
+  // ── 5. Envia POST mTLS ao SEFIN ───────────────────────────────
+  // Endpoint de cancelamento: POST /SefinNacional/nfse/cancelamento
+  // A chave de acesso vai dentro do XML (chNFSe), não na URL
   const sefinBase = homologacao ? SEFIN_URL_TEST : SEFIN_URL_PROD
-  const sefinUrl  = `${sefinBase}/${encodeURIComponent(em.chave_acesso)}`
+  const sefinUrl  = `${sefinBase}/cancelamento`
 
   let sefinStatus, sefinBody
   try {
