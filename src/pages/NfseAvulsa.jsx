@@ -101,6 +101,10 @@ function TomadorModal({ initial, onSave, onClose }) {
     const v = parseFloat((f.valor || '').replace(',', '.'))
     if (!v || v <= 0)          { setErr('Informe o valor do serviço.'); return }
     if (!f.mesRef)             { setErr('Informe a competência.'); return }
+    if (f.issRetido && !f.cpfCnpj.trim()) {
+      setErr('CPF/CNPJ do tomador é obrigatório quando o ISS é retido pelo tomador.')
+      return
+    }
     setErr('')
     onSave({ ...f, valor: String(v.toFixed(2)) })
   }
@@ -131,11 +135,13 @@ function TomadorModal({ initial, onSave, onClose }) {
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-500 block mb-1">CPF / CNPJ <span className="font-normal text-slate-400">(opcional)</span></label>
+              <label className="text-xs font-medium text-slate-500 block mb-1">
+                CPF / CNPJ {f.issRetido ? <span className="text-red-500">*</span> : <span className="font-normal text-slate-400">(opcional)</span>}
+              </label>
               <input value={f.cpfCnpj}
                 onChange={e => setF(p => ({ ...p, cpfCnpj: maskCpfCnpj(e.target.value) }))}
-                placeholder="Deixe em branco para não identificar"
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono"/>
+                placeholder={f.issRetido ? 'Obrigatório quando ISS é retido' : 'Deixe em branco para não identificar'}
+                className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono ${f.issRetido && !f.cpfCnpj ? 'border-orange-300' : 'border-slate-200'}`}/>
             </div>
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">Competência *</label>
