@@ -38,16 +38,16 @@ const maskCpfCnpj = raw => {
   return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`
 }
 
+// Defaults de retenções federais aplicados a novas notas
+const PRESET_RET_DEFAULT = { pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '' }
+
 const BLANK_FORM = {
   nome: '', cpfCnpj: '', email: '',
   valor: '', discriminacao: '', mesRef: nowMonth(), codLc116: '',
-  // Retenções
+  // Retenções — federais já pré-preenchidas com valores padrão
   issRetido: false,
-  pIRRF: '', pCSLL: '', pCOFINS: '', pPIS: '', pINSS: '',
+  ...PRESET_RET_DEFAULT,
 }
-
-// Valores padrão de retenções federais (IRRF+CSLL+COFINS+PIS)
-const PRESET_RET_DEFAULT = { pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '' }
 
 const maskPct = v => {
   const cleaned = v.replace(/[^\d,]/g, '').replace(/,+/g, ',')
@@ -84,30 +84,17 @@ function TomadorModal({ initial, onSave, onClose }) {
   const set = k => e   => setF(p => ({ ...p, [k]: e.target.value }))
   const setPct = k => e => setF(p => ({ ...p, [k]: maskPct(e.target.value) }))
   const [err, setErr]   = useState('')
-  const [showRet, setShowRet] = useState(
-    !!(initial?.issRetido || initial?.pIRRF || initial?.pCSLL || initial?.pCOFINS || initial?.pPIS || initial?.pINSS)
-  )
 
   const valorNum = parseFloat((f.valor || '').replace(',', '.')) || 0
 
-  // Calcula retenções
+  // Calcula retenções em tempo real conforme valor digitado
   const retIRRF   = calcRet(f.valor, parsePct(f.pIRRF))
   const retCSLL   = calcRet(f.valor, parsePct(f.pCSLL))
   const retCOFINS = calcRet(f.valor, parsePct(f.pCOFINS))
   const retPIS    = calcRet(f.valor, parsePct(f.pPIS))
   const retINSS   = calcRet(f.valor, parsePct(f.pINSS))
-  const retISSVal = f.issRetido ? calcRet(f.valor, 0) : 0  // ISS: só indica retenção, valor é da alíquota
   const totalRet  = retIRRF + retCSLL + retCOFINS + retPIS + retINSS
   const liquido   = valorNum - totalRet
-
-  const hasFedRet = f.pIRRF || f.pCSLL || f.pCOFINS || f.pPIS || f.pINSS
-  const toggleRet = () => {
-    if (!showRet && !hasFedRet) {
-      // Auto-preenche padrões ao abrir pela primeira vez
-      setF(p => ({ ...p, ...PRESET_RET_DEFAULT }))
-    }
-    setShowRet(s => !s)
-  }
 
   const handleSave = () => {
     if (!f.nome.trim())        { setErr('Informe o nome do tomador.'); return }
@@ -183,96 +170,71 @@ function TomadorModal({ initial, onSave, onClose }) {
             </div>
           </div>
 
-          {/* ── Retenções ── */}
-          <div className="border border-slate-200 rounded-xl overflow-hidden">
-            <button
-              type="button"
-              onClick={toggleRet}
-              className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-slate-700">Retenções de Impostos</span>
-                {(f.issRetido || totalRet > 0) && (
-                  <span className="text-xs font-bold bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
-                    {f.issRetido ? 'ISS ' : ''}{totalRet > 0 ? `+ ${fmtBRL(totalRet)}` : ''}
-                  </span>
-                )}
+          {/* ── Retenções ── sempre visível ── */}
+          <div className="border border-slate-200 rounded-xl px-4 py-4 space-y-4">
+            <p className="text-sm font-semibold text-slate-700">Retenções de Impostos</p>
+
+            {/* ISS */}
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input type="checkbox" checked={f.issRetido}
+                onChange={e => setF(p => ({ ...p, issRetido: e.target.checked }))}
+                className="mt-0.5 accent-indigo-600"/>
+              <div>
+                <p className="text-sm font-medium text-slate-700">ISS retido pelo tomador</p>
+                <p className="text-xs text-slate-400 mt-0.5">O tomador desconta e recolhe o ISS diretamente à prefeitura</p>
               </div>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-                strokeLinecap="round" strokeLinejoin="round"
-                className={`w-4 h-4 text-slate-400 transition-transform ${showRet ? 'rotate-180' : ''}`}>
-                <polyline points="6 9 12 15 18 9"/>
-              </svg>
-            </button>
+            </label>
 
-            {showRet && (
-              <div className="px-4 py-4 space-y-4">
-                {/* ISS */}
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input type="checkbox" checked={f.issRetido}
-                    onChange={e => setF(p => ({ ...p, issRetido: e.target.checked }))}
-                    className="mt-0.5 accent-indigo-600"/>
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">ISS retido pelo tomador</p>
-                    <p className="text-xs text-slate-400 mt-0.5">O tomador desconta e recolhe o ISS diretamente à prefeitura</p>
+            {/* Federais */}
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Retenções Federais</p>
+              <div className="space-y-2">
+                {TAX_FIELDS.map(({ key, label, ret, hint }) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <span className="w-16 text-xs font-semibold text-slate-600 shrink-0">{label}</span>
+                    <div className="relative flex-shrink-0">
+                      <input
+                        value={f[key]}
+                        onChange={setPct(key)}
+                        placeholder="0,00"
+                        className="w-20 px-2 py-1.5 text-sm text-right border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono pr-6"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                    </div>
+                    <span className="text-xs text-slate-400 flex-1 truncate" title={hint}>{hint}</span>
+                    {ret > 0 && (
+                      <span className="text-xs font-semibold text-red-600 shrink-0 min-w-[72px] text-right">
+                        − {fmtBRL(ret)}
+                      </span>
+                    )}
                   </div>
-                </label>
+                ))}
+              </div>
+            </div>
 
-                {/* Federais */}
-                <div>
-                  <div className="mb-2">
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Retenções Federais</p>
-                  </div>
-
-                  <div className="space-y-2">
-                    {TAX_FIELDS.map(({ key, label, ret, hint }) => (
-                      <div key={key} className="flex items-center gap-2">
-                        <span className="w-16 text-xs font-semibold text-slate-600 shrink-0">{label}</span>
-                        <div className="relative flex-shrink-0">
-                          <input
-                            value={f[key]}
-                            onChange={setPct(key)}
-                            placeholder="0,00"
-                            className="w-20 px-2 py-1.5 text-sm text-right border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono pr-6"
-                          />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
-                        </div>
-                        <span className="text-xs text-slate-400 flex-1 truncate" title={hint}>{hint}</span>
-                        {ret > 0 && (
-                          <span className="text-xs font-semibold text-red-600 shrink-0 min-w-[72px] text-right">
-                            − {fmtBRL(ret)}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+            {/* Resumo */}
+            {valorNum > 0 && (
+              <div className="bg-slate-50 rounded-lg px-3 py-2.5 space-y-1 text-xs">
+                <div className="flex justify-between text-slate-600">
+                  <span>Valor bruto</span>
+                  <span className="font-semibold">{fmtBRL(valorNum)}</span>
                 </div>
-
-                {/* Resumo */}
-                {(totalRet > 0 || f.issRetido) && valorNum > 0 && (
-                  <div className="bg-slate-50 rounded-lg px-3 py-2.5 space-y-1 text-xs">
-                    <div className="flex justify-between text-slate-600">
-                      <span>Valor bruto</span>
-                      <span className="font-semibold">{fmtBRL(valorNum)}</span>
-                    </div>
-                    {totalRet > 0 && (
-                      <div className="flex justify-between text-red-600">
-                        <span>Total de retenções federais</span>
-                        <span className="font-semibold">− {fmtBRL(totalRet)}</span>
-                      </div>
-                    )}
-                    {f.issRetido && (
-                      <div className="flex justify-between text-orange-600">
-                        <span>ISS retido pelo tomador</span>
-                        <span className="font-semibold">retido na fonte</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-slate-900 font-bold border-t border-slate-200 pt-1 mt-1">
-                      <span>Valor líquido estimado</span>
-                      <span>{fmtBRL(liquido)}</span>
-                    </div>
+                {totalRet > 0 && (
+                  <div className="flex justify-between text-red-600">
+                    <span>Total de retenções federais</span>
+                    <span className="font-semibold">− {fmtBRL(totalRet)}</span>
                   </div>
                 )}
+                {f.issRetido && (
+                  <div className="flex justify-between text-orange-600">
+                    <span>ISS retido pelo tomador</span>
+                    <span className="font-semibold">retido na fonte</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-slate-900 font-bold border-t border-slate-200 pt-1 mt-1">
+                  <span>Valor líquido estimado</span>
+                  <span>{fmtBRL(liquido)}</span>
+                </div>
               </div>
             )}
           </div>

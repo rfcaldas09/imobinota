@@ -103,8 +103,8 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
     email: '', phone: '', start: new Date().toISOString().slice(0,10),
     end: '', status: 'Ativo', codServicoLc116: '',
     discriminacaoServico: '', solicitarDiscriminacaoMensal: false,
-    // Retenções
-    issRetido: false, pIRRF: '', pCSLL: '', pCOFINS: '', pPIS: '', pINSS: '',
+    // Retenções — federais pré-preenchidas com padrão para novos contratos
+    issRetido: false, pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '',
   }
   const [f, setF] = useState({ ...blank, ...initial })
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
@@ -116,10 +116,6 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
   }
   const parsePctLocal = v => parseFloat((v||'').replace(',','.')) || 0
 
-  const [showRet, setShowRet] = useState(
-    !!(initial?.issRetido || initial?.pIRRF || initial?.pCSLL || initial?.pCOFINS || initial?.pPIS || initial?.pINSS)
-  )
-
   const vServNum = parseFloat(f.value||0) || 0
   const calcRetV = pct => pct > 0 ? (vServNum * pct / 100) : 0
   const retIRRF   = calcRetV(parsePctLocal(f.pIRRF))
@@ -128,13 +124,6 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
   const retPIS    = calcRetV(parsePctLocal(f.pPIS))
   const retINSS   = calcRetV(parsePctLocal(f.pINSS))
   const totalRet  = retIRRF + retCSLL + retCOFINS + retPIS + retINSS
-
-  const PRESET_RET = { pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '' }
-  const hasFedRet = f.pIRRF || f.pCSLL || f.pCOFINS || f.pPIS || f.pINSS
-  const toggleRet = () => {
-    if (!showRet && !hasFedRet) setF(p => ({ ...p, ...PRESET_RET }))
-    setShowRet(s => !s)
-  }
 
   const TAX_FIELDS_C = [
     { key: 'pIRRF',   label: 'IRRF',   ret: retIRRF   },
@@ -304,73 +293,68 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
             </div>
           </label>
 
-          {/* Retenções */}
-          <div className="border border-slate-200 rounded-xl overflow-hidden">
-            <button type="button" onClick={toggleRet}
-              className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Retenções de Impostos</span>
-                {(f.issRetido || totalRet > 0) && (
-                  <span className="text-xs font-bold bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
-                    {f.issRetido ? 'ISS ' : ''}{totalRet > 0 ? `+ ret. federais` : ''}
-                  </span>
-                )}
+          {/* Retenções — sempre visível */}
+          <div className="border border-slate-200 rounded-xl px-4 py-4 space-y-4">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Retenções de Impostos</p>
+
+            {/* ISS */}
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input type="checkbox" checked={!!f.issRetido}
+                onChange={e => set('issRetido', e.target.checked)}
+                className="mt-0.5 accent-indigo-600"/>
+              <div>
+                <p className="text-sm font-medium text-slate-700">ISS retido pelo tomador</p>
+                <p className="text-xs text-slate-400 mt-0.5">O tomador desconta e recolhe o ISS diretamente à prefeitura</p>
               </div>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-                strokeLinecap="round" strokeLinejoin="round"
-                className={`w-4 h-4 text-slate-400 transition-transform ${showRet ? 'rotate-180' : ''}`}>
-                <polyline points="6 9 12 15 18 9"/>
-              </svg>
-            </button>
-            {showRet && (
-              <div className="px-4 py-4 space-y-4">
-                {/* ISS */}
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input type="checkbox" checked={!!f.issRetido}
-                    onChange={e => set('issRetido', e.target.checked)}
-                    className="mt-0.5 accent-indigo-600"/>
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">ISS retido pelo tomador</p>
-                    <p className="text-xs text-slate-400 mt-0.5">O tomador desconta e recolhe o ISS diretamente à prefeitura</p>
+            </label>
+
+            {/* Federais */}
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Retenções Federais</p>
+              <div className="space-y-2">
+                {TAX_FIELDS_C.map(({ key, label, ret }) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <span className="w-16 text-xs font-semibold text-slate-600 shrink-0">{label}</span>
+                    <div className="relative shrink-0">
+                      <input value={f[key]}
+                        onChange={e => set(key, maskPct(e.target.value))}
+                        placeholder="0,00"
+                        className="w-20 px-2 py-1.5 text-sm text-right border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono pr-6"/>
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                    </div>
+                    {ret > 0 && (
+                      <span className="text-xs font-semibold text-red-500">
+                        − {ret.toLocaleString('pt-BR', { style:'currency', currency:'BRL' })}
+                      </span>
+                    )}
                   </div>
-                </label>
-                {/* Federais */}
-                <div>
-                  <div className="mb-2">
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Retenções Federais</p>
-                  </div>
-                  <div className="space-y-2">
-                    {TAX_FIELDS_C.map(({ key, label, ret }) => (
-                      <div key={key} className="flex items-center gap-2">
-                        <span className="w-16 text-xs font-semibold text-slate-600 shrink-0">{label}</span>
-                        <div className="relative shrink-0">
-                          <input value={f[key]}
-                            onChange={e => set(key, maskPct(e.target.value))}
-                            placeholder="0,00"
-                            className="w-20 px-2 py-1.5 text-sm text-right border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono pr-6"/>
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
-                        </div>
-                        {ret > 0 && (
-                          <span className="text-xs font-semibold text-red-500">
-                            − {ret.toLocaleString('pt-BR', { style:'currency', currency:'BRL' })}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Resumo */}
+            {vServNum > 0 && (
+              <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs space-y-1">
+                <div className="flex justify-between text-slate-600">
+                  <span>Valor bruto</span>
+                  <span className="font-semibold">{vServNum.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>
                 </div>
-                {totalRet > 0 && vServNum > 0 && (
-                  <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs space-y-1">
-                    <div className="flex justify-between text-slate-500">
-                      <span>Retenções federais</span>
-                      <span className="font-semibold text-red-500">− {totalRet.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>
-                    </div>
-                    <div className="flex justify-between font-bold text-slate-800 border-t border-slate-200 pt-1">
-                      <span>Valor líquido estimado</span>
-                      <span>{(vServNum - totalRet).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>
-                    </div>
+                {totalRet > 0 && (
+                  <div className="flex justify-between text-red-500">
+                    <span>Retenções federais</span>
+                    <span className="font-semibold">− {totalRet.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>
                   </div>
                 )}
+                {f.issRetido && (
+                  <div className="flex justify-between text-orange-600">
+                    <span>ISS retido pelo tomador</span>
+                    <span className="font-semibold">retido na fonte</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-slate-800 border-t border-slate-200 pt-1">
+                  <span>Valor líquido estimado</span>
+                  <span>{(vServNum - totalRet).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>
+                </div>
               </div>
             )}
           </div>
