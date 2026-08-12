@@ -44,6 +44,8 @@ const PRESET_RET_DEFAULT = { pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS
 const BLANK_FORM = {
   nome: '', cpfCnpj: '', email: '',
   valor: '', discriminacao: '', mesRef: nowMonth(), codLc116: '',
+  // Endereço do tomador (obrigatório quando ISS é retido)
+  tomaLogradouro: '', tomaNumero: '', tamaBairro: '', tamaCep: '', tamaCodMun: '', tamaMunNome: '',
   // Retenções — federais já pré-preenchidas com valores padrão
   issRetido: false,
   ...PRESET_RET_DEFAULT,
@@ -96,6 +98,26 @@ function TomadorModal({ initial, onSave, onClose }) {
   const totalRet  = retIRRF + retCSLL + retCOFINS + retPIS + retINSS
   const liquido   = valorNum - totalRet
 
+  const [cepLoading, setCepLoading] = useState(false)
+  const buscarCep = async cep => {
+    const c = digits(cep)
+    if (c.length !== 8) return
+    setCepLoading(true)
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${c}/json/`)
+      const d = await r.json()
+      if (!d.erro) {
+        setF(p => ({
+          ...p,
+          tomaLogradouro: d.logradouro || p.tomaLogradouro,
+          tamaBairro:     d.bairro     || p.tamaBairro,
+          tamaCodMun:     d.ibge       || p.tamaCodMun,
+          tamaMunNome:    d.localidade || p.tamaMunNome,
+        }))
+      }
+    } catch { /* silencia */ } finally { setCepLoading(false) }
+  }
+
   const handleSave = () => {
     if (!f.nome.trim())        { setErr('Informe o nome do tomador.'); return }
     const v = parseFloat((f.valor || '').replace(',', '.'))
@@ -103,6 +125,10 @@ function TomadorModal({ initial, onSave, onClose }) {
     if (!f.mesRef)             { setErr('Informe a competência.'); return }
     if (f.issRetido && !f.cpfCnpj.trim()) {
       setErr('CPF/CNPJ do tomador é obrigatório quando o ISS é retido pelo tomador.')
+      return
+    }
+    if (f.issRetido && (!f.tamaCep.trim() || !f.tamaCodMun.trim() || !f.tomaLogradouro.trim() || !f.tamaBairro.trim())) {
+      setErr('Endereço do tomador (CEP, logradouro, bairro) é obrigatório quando o ISS é retido.')
       return
     }
     setErr('')
@@ -148,6 +174,50 @@ function TomadorModal({ initial, onSave, onClose }) {
               <input type="month" value={f.mesRef} onChange={set('mesRef')}
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
             </div>
+
+            {/* Endereço do tomador — obrigatório quando ISS é retido */}
+            {f.issRetido && (
+              <div className="col-span-2 border border-orange-200 bg-orange-50 rounded-xl p-3 space-y-2">
+                <p className="text-xs font-semibold text-orange-700">Endereço do tomador <span className="text-red-500">*</span> — exigido quando ISS é retido</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">CEP *</label>
+                    <div className="relative">
+                      <input value={f.tamaCep}
+                        onChange={e => {
+                          const v = e.target.value.replace(/\D/g,'').slice(0,8)
+                          setF(p => ({ ...p, tamaCep: v }))
+                          if (v.length === 8) buscarCep(v)
+                        }}
+                        placeholder="00000000" maxLength={8}
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono pr-8"/>
+                      {cepLoading && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">…</span>}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Município (código IBGE)</label>
+                    <input value={f.tamaMunNome ? `${f.tamaMunNome} (${f.tamaCodMun})` : f.tamaCodMun}
+                      readOnly placeholder="Preenchido pelo CEP"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 text-slate-500 font-mono text-xs"/>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Logradouro *</label>
+                    <input value={f.tomaLogradouro} onChange={set('tomaLogradouro')} placeholder="Rua, Avenida..."
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Número</label>
+                    <input value={f.tomaNumero} onChange={set('tomaNumero')} placeholder="S/N"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Bairro *</label>
+                    <input value={f.tamaBairro} onChange={set('tamaBairro')} placeholder="Bairro"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
+                  </div>
+                </div>
+              </div>
+            )}
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">E-mail (para envio do PDF)</label>
               <input type="email" value={f.email} onChange={set('email')} placeholder="cliente@email.com"
@@ -435,6 +505,13 @@ export default function NfseAvulsa() {
                 pPIS:    parsePct(item.pPIS)    || null,
                 pINSS:   parsePct(item.pINSS)   || null,
               },
+              tomadorEnd: item.issRetido ? {
+                logradouro: item.tomaLogradouro || '',
+                numero:     item.tomaNumero     || 'S/N',
+                bairro:     item.tamaBairro     || '',
+                cep:        item.tamaCep        || '',
+                codMun:     item.tamaCodMun     || '',
+              } : null,
             },
             homologacao: false,
           }),

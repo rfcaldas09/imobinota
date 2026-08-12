@@ -603,6 +603,20 @@ function buildDpsXml(cfg, cob, homologacao) {
   // Nome do tomador (obrigatório no elemento <toma>)
   const xNomeToma = escXml((cob.tenant || 'Tomador').slice(0, 150))
 
+  // Endereço do tomador — obrigatório quando tpRetISSQN = 2
+  const te = cob.tomadorEnd
+  const endTomaXml = te && te.cep && te.codMun
+    ? `<end>\n` +
+      `<endNac>\n` +
+      `<cMun>${digits(te.codMun).slice(0, 7)}</cMun>\n` +
+      `<CEP>${digits(te.cep).slice(0, 8)}</CEP>\n` +
+      `</endNac>\n` +
+      `<xLgr>${escXml((te.logradouro || '').slice(0, 125))}</xLgr>\n` +
+      `<nro>${escXml((te.numero || 'S/N').slice(0, 10))}</nro>\n` +
+      `<xBairro>${escXml((te.bairro || '').slice(0, 72))}</xBairro>\n` +
+      `</end>\n`
+    : ''
+
   const ns = 'http://www.sped.fazenda.gov.br/nfse'
 
   // ATENÇÃO: ordem dos elementos é xs:sequence — NÃO alterar a ordem!
@@ -625,7 +639,7 @@ ${endPrestXml}${regTribXml}
 <toma>
 ${tomadorTag}
 <xNome>${xNomeToma}</xNome>
-</toma>
+${endTomaXml}</toma>
 <serv>
 <locPrest>
 <cLocPrestacao>${ibge7}</cLocPrestacao>
