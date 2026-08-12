@@ -218,9 +218,9 @@ async function handle(event) {
     // Extrai mensagem legível dos erros do SEFIN (formato JSON { erros: [{Codigo, Descricao, Complemento}] })
     let userMessage = `Erro na comunicação com o SEFIN (HTTP ${httpStatus})`
 
-    // 503 = SEFIN fora do ar (responde com HTML do IIS, não JSON)
+    // 503 = SEFIN aplicou rate limiting (rejeita requisições em sequência rápida)
     if (httpStatus === 503 || responseBody.includes('Service Unavailable')) {
-      userMessage = 'O servidor da SEFIN está fora do ar (503). Aguarde alguns minutos e tente novamente.'
+      userMessage = 'A SEFIN rejeitou a requisição por excesso de envios em sequência (503). Tente emitir esta nota novamente individualmente.'
     } else {
       try {
         const errJson = JSON.parse(responseBody)
@@ -657,13 +657,14 @@ function signDps(xmlStr, privateKey, certForge) {
 // ── POST com mTLS: GZip + Base64 + JSON ──────────────────────────
 // Formato correto: { dpsXmlGZipB64: "<base64>" } com Content-Type: application/json
 // Sucesso: HTTP 201 com JSON { chaveAcesso, idDps, nfseXmlGZipB64, alertas }
+// Retry automático em caso de 503 (rate limiting do SEFIN): até 3 tentativas com backoff de 5s
 async function postWithMtls(url, xmlBody, certPem, keyPem) {
   const gz = await gzipBuffer(Buffer.from(xmlBody, 'utf8'))
   const dpsXmlGZipB64 = gz.toString('base64')
   const jsonBody = JSON.stringify({ dpsXmlGZipB64 })
   console.log('[nfse-emitir] XML GZip+Base64 pronto, jsonBody.length:', jsonBody.length)
 
-  return new Promise((resolve, reject) => {
+  const doRequest = () => new Promise((resolve, reject) => {
     const parsed = new URL(url)
     const bodyBuf = Buffer.from(jsonBody, 'utf8')
     const options = {
@@ -693,6 +694,24 @@ async function postWithMtls(url, xmlBody, certPem, keyPem) {
     req.write(bodyBuf)
     req.end()
   })
+
+  const MAX_TENTATIVAS = 3
+  const BACKOFF_MS     = 5000   // 5s entre tentativas em caso de 503
+
+  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
+    const result = await doRequest()
+    if (result.status !== 503 && !result.body.includes('Service Unavailable')) {
+      return result   // sucesso ou erro definitivo (não 503)
+    }
+    if (tentativa < MAX_TENTATIVAS) {
+      console.warn(`[nfse-emitir] SEFIN retornou 503 (tentativa ${tentativa}/${MAX_TENTATIVAS}) — aguardando ${BACKOFF_MS}ms antes de tentar novamente`)
+      await new Promise(r => setTimeout(r, BACKOFF_MS))
+    }
+  }
+
+  // Esgotou as tentativas — retorna o último 503
+  console.error(`[nfse-emitir] SEFIN retornou 503 em todas as ${MAX_TENTATIVAS} tentativas`)
+  return { status: 503, body: 'Service Unavailable' }
 }
 
 async function gravarEmissao(supabaseUrl, serviceKey, row) {
