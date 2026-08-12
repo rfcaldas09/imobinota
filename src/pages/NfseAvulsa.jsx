@@ -41,7 +41,28 @@ const maskCpfCnpj = raw => {
 const BLANK_FORM = {
   nome: '', cpfCnpj: '', email: '',
   valor: '', discriminacao: '', mesRef: nowMonth(), codLc116: '',
+  // Retenções
+  issRetido: false,
+  pIRRF: '', pCSLL: '', pCOFINS: '', pPIS: '', pINSS: '',
 }
+
+// Presets de retenção por perfil
+const PRESET_MEDICO = { pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '' }
+const PRESET_SERVICOS = { pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '' }
+
+const maskPct = v => {
+  const cleaned = v.replace(/[^\d,]/g, '').replace(/,+/g, ',')
+  const [int, dec] = cleaned.split(',')
+  if (dec !== undefined) return `${(int || '').slice(0, 3)},${dec.slice(0, 2)}`
+  return (int || '').slice(0, 3)
+}
+
+const parsePct = v => parseFloat((v || '').replace(',', '.')) || 0
+const calcRet  = (valor, pct) => {
+  const v = parseFloat((valor || '').replace(',', '.')) || 0
+  return v > 0 && pct > 0 ? (v * pct / 100) : 0
+}
+const fmtPct   = v => v > 0 ? v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '—'
 
 // ── Status badge ───────────────────────────────────────────────────
 function StatusBadge({ status }) {
@@ -60,28 +81,56 @@ function StatusBadge({ status }) {
 
 // ── Modal: adicionar/editar tomador ────────────────────────────────
 function TomadorModal({ initial, onSave, onClose }) {
-  const [f, setF] = useState(initial || BLANK_FORM)
-  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }))
-  const [err, setErr] = useState('')
+  const [f, setF]       = useState(initial || BLANK_FORM)
+  const set = k => e   => setF(p => ({ ...p, [k]: e.target.value }))
+  const setPct = k => e => setF(p => ({ ...p, [k]: maskPct(e.target.value) }))
+  const [err, setErr]   = useState('')
+  const [showRet, setShowRet] = useState(
+    !!(initial?.issRetido || initial?.pIRRF || initial?.pCSLL || initial?.pCOFINS || initial?.pPIS || initial?.pINSS)
+  )
+
+  const valorNum = parseFloat((f.valor || '').replace(',', '.')) || 0
+
+  // Calcula retenções
+  const retIRRF   = calcRet(f.valor, parsePct(f.pIRRF))
+  const retCSLL   = calcRet(f.valor, parsePct(f.pCSLL))
+  const retCOFINS = calcRet(f.valor, parsePct(f.pCOFINS))
+  const retPIS    = calcRet(f.valor, parsePct(f.pPIS))
+  const retINSS   = calcRet(f.valor, parsePct(f.pINSS))
+  const retISSVal = f.issRetido ? calcRet(f.valor, 0) : 0  // ISS: só indica retenção, valor é da alíquota
+  const totalRet  = retIRRF + retCSLL + retCOFINS + retPIS + retINSS
+  const liquido   = valorNum - totalRet
+
+  const applyPreset = preset => setF(p => ({ ...p, ...preset }))
 
   const handleSave = () => {
-    if (!f.nome.trim())     { setErr('Informe o nome do tomador.'); return }
-    const v = parseFloat(f.valor.replace(',', '.'))
-    if (!v || v <= 0)      { setErr('Informe o valor do serviço.'); return }
-    if (!f.mesRef)         { setErr('Informe a competência.'); return }
+    if (!f.nome.trim())        { setErr('Informe o nome do tomador.'); return }
+    const v = parseFloat((f.valor || '').replace(',', '.'))
+    if (!v || v <= 0)          { setErr('Informe o valor do serviço.'); return }
+    if (!f.mesRef)             { setErr('Informe a competência.'); return }
     setErr('')
     onSave({ ...f, valor: String(v.toFixed(2)) })
   }
 
+  const TAX_FIELDS = [
+    { key: 'pIRRF',   label: 'IRRF',   ret: retIRRF,   hint: 'Imposto de Renda Retido na Fonte' },
+    { key: 'pCSLL',   label: 'CSLL',   ret: retCSLL,   hint: 'Contribuição Social sobre o Lucro Líquido' },
+    { key: 'pCOFINS', label: 'COFINS', ret: retCOFINS, hint: 'Contribuição para o Financiamento da Seguridade Social' },
+    { key: 'pPIS',    label: 'PIS',    ret: retPIS,    hint: 'Programa de Integração Social' },
+    { key: 'pINSS',   label: 'INSS',   ret: retINSS,   hint: 'Previdência Social' },
+  ]
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
-        <div className="flex items-center justify-between mb-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg my-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
           <h2 className="text-base font-bold text-slate-800">Tomador da NFS-e</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><IcX c="w-5 h-5"/></button>
         </div>
 
-        <div className="space-y-3">
+        <div className="px-6 py-5 space-y-4">
+          {/* ── Dados do tomador ── */}
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <label className="text-xs font-medium text-slate-500 block mb-1">Nome / Razão Social *</label>
@@ -115,8 +164,8 @@ function TomadorModal({ initial, onSave, onClose }) {
             <div className="col-span-2">
               <label className="text-xs font-medium text-slate-500 block mb-1">Discriminação do serviço</label>
               <textarea value={f.discriminacao} onChange={set('discriminacao')}
-                placeholder="Descreva o serviço prestado (aparece na nota fiscal). Deixe em branco para não incluir."
-                rows={3}
+                placeholder="Descreva o serviço prestado (aparece na nota fiscal)."
+                rows={2}
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"/>
             </div>
             <div className="col-span-2">
@@ -128,10 +177,109 @@ function TomadorModal({ initial, onSave, onClose }) {
             </div>
           </div>
 
+          {/* ── Retenções ── */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowRet(s => !s)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-700">Retenções de Impostos</span>
+                {(f.issRetido || totalRet > 0) && (
+                  <span className="text-xs font-bold bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
+                    {f.issRetido ? 'ISS ' : ''}{totalRet > 0 ? `+ ${fmtBRL(totalRet)}` : ''}
+                  </span>
+                )}
+              </div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                strokeLinecap="round" strokeLinejoin="round"
+                className={`w-4 h-4 text-slate-400 transition-transform ${showRet ? 'rotate-180' : ''}`}>
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
+
+            {showRet && (
+              <div className="px-4 py-4 space-y-4">
+                {/* ISS */}
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input type="checkbox" checked={f.issRetido}
+                    onChange={e => setF(p => ({ ...p, issRetido: e.target.checked }))}
+                    className="mt-0.5 accent-indigo-600"/>
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">ISS retido pelo tomador</p>
+                    <p className="text-xs text-slate-400 mt-0.5">O tomador desconta e recolhe o ISS diretamente à prefeitura</p>
+                  </div>
+                </label>
+
+                {/* Federais */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Retenções Federais</p>
+                    <button type="button"
+                      onClick={() => applyPreset(PRESET_MEDICO)}
+                      className="text-xs text-indigo-600 hover:underline font-medium">
+                      Preencher padrão (IRRF+CSLL+PIS+COFINS)
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {TAX_FIELDS.map(({ key, label, ret, hint }) => (
+                      <div key={key} className="flex items-center gap-2">
+                        <span className="w-16 text-xs font-semibold text-slate-600 shrink-0">{label}</span>
+                        <div className="relative flex-shrink-0">
+                          <input
+                            value={f[key]}
+                            onChange={setPct(key)}
+                            placeholder="0,00"
+                            className="w-20 px-2 py-1.5 text-sm text-right border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono pr-6"
+                          />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                        </div>
+                        <span className="text-xs text-slate-400 flex-1 truncate" title={hint}>{hint}</span>
+                        {ret > 0 && (
+                          <span className="text-xs font-semibold text-red-600 shrink-0 min-w-[72px] text-right">
+                            − {fmtBRL(ret)}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Resumo */}
+                {(totalRet > 0 || f.issRetido) && valorNum > 0 && (
+                  <div className="bg-slate-50 rounded-lg px-3 py-2.5 space-y-1 text-xs">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Valor bruto</span>
+                      <span className="font-semibold">{fmtBRL(valorNum)}</span>
+                    </div>
+                    {totalRet > 0 && (
+                      <div className="flex justify-between text-red-600">
+                        <span>Total de retenções federais</span>
+                        <span className="font-semibold">− {fmtBRL(totalRet)}</span>
+                      </div>
+                    )}
+                    {f.issRetido && (
+                      <div className="flex justify-between text-orange-600">
+                        <span>ISS retido pelo tomador</span>
+                        <span className="font-semibold">retido na fonte</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-slate-900 font-bold border-t border-slate-200 pt-1 mt-1">
+                      <span>Valor líquido estimado</span>
+                      <span>{fmtBRL(liquido)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {err && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{err}</p>}
         </div>
 
-        <div className="flex gap-2 mt-5">
+        <div className="flex gap-2 px-6 pb-6">
           <button onClick={onClose}
             className="flex-1 py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50">
             Cancelar
@@ -310,6 +458,14 @@ export default function NfseAvulsa() {
               mesRef:          item.mesRef,
               discriminacao:   item.discriminacao || null,
               codServicoLc116: item.codLc116 || null,
+              retencoes: {
+                tpRetISSQN: item.issRetido ? 2 : 1,
+                pIRRF:   parsePct(item.pIRRF)   || null,
+                pCSLL:   parsePct(item.pCSLL)   || null,
+                pCOFINS: parsePct(item.pCOFINS) || null,
+                pPIS:    parsePct(item.pPIS)    || null,
+                pINSS:   parsePct(item.pINSS)   || null,
+              },
             },
             homologacao: false,
           }),
@@ -520,6 +676,11 @@ export default function NfseAvulsa() {
                     <td className="px-5 py-3">
                       <p className="font-medium text-slate-800">{item.nome}</p>
                       {item.email && <p className="text-xs text-slate-400">{item.email}</p>}
+                      {(item.issRetido || item.pIRRF || item.pCSLL || item.pCOFINS) && (
+                        <p className="text-xs text-orange-600 font-medium mt-0.5">
+                          {item.issRetido ? '📌 ISS retido ' : ''}{item.pIRRF || item.pCSLL || item.pCOFINS ? '· ret. federais' : ''}
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-slate-500">{item.cpfCnpj}</td>
                     <td className="px-4 py-3 text-slate-600">{item.mesRef}</td>

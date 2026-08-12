@@ -544,6 +544,34 @@ function buildDpsXml(cfg, cob, homologacao) {
     totTribXml = `<totTrib><indTotTrib>0</indTotTrib></totTrib>`
   }
 
+  // Retenções: tpRetISSQN e tributos federais retidos na fonte
+  const ret = cob.retencoes || {}
+  const tpRetISSQN = ret.tpRetISSQN || 1   // 1=não retido, 2=retido pelo tomador
+
+  // Calcula valores retidos (valor = vServ * percentual / 100)
+  const vServNum = Number(cob.totalValue) || 0
+  const calcV = pct => pct > 0 ? (vServNum * pct / 100).toFixed(2) : null
+
+  const vRetIR     = calcV(ret.pIRRF   || 0)
+  const vRetCSLL   = calcV(ret.pCSLL   || 0)
+  const vRetCOFINS = calcV(ret.pCOFINS || 0)
+  const vRetPIS    = calcV(ret.pPIS    || 0)
+  const vRetCP     = calcV(ret.pINSS   || 0)   // CP = Contribuição Previdenciária (INSS)
+
+  const hasRetFed = vRetIR || vRetCSLL || vRetCOFINS || vRetPIS || vRetCP
+
+  const retTribXml = hasRetFed
+    ? `<retTrib>\n` +
+      (vRetCP     ? `<vRetCP>${vRetCP}</vRetCP>\n`         : '') +
+      (vRetIR     ? `<vRetIR>${vRetIR}</vRetIR>\n`         : '') +
+      (vRetCSLL   ? `<vRetCSLL>${vRetCSLL}</vRetCSLL>\n`   : '') +
+      (vRetCOFINS ? `<vRetCOFINS>${vRetCOFINS}</vRetCOFINS>\n` : '') +
+      (vRetPIS    ? `<vRetPIS>${vRetPIS}</vRetPIS>\n`       : '') +
+      `</retTrib>\n`
+    : ''
+
+  console.log('[nfse-emitir] tpRetISSQN:', tpRetISSQN, '| retFed:', hasRetFed ? JSON.stringify({ vRetIR, vRetCSLL, vRetCOFINS, vRetPIS, vRetCP }) : 'nenhuma')
+
   // Endereço do prestador é opcional no XSD — omitido para evitar erros de sequência.
   // A localização já está coberta por <cLocEmi> e <cLocPrestacao>.
   const endPrestXml = ''
@@ -600,9 +628,9 @@ ${infoComplXml}
 <trib>
 <tribMun>
 <tribISSQN>1</tribISSQN>
-<tpRetISSQN>1</tpRetISSQN>
+<tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
 ${!isSimples ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</tribMun>
-${totTribXml}
+${retTribXml}${totTribXml}
 </trib>
 </valores>
 </infDPS>
