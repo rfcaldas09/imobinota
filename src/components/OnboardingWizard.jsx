@@ -250,27 +250,99 @@ const maskAliquota = raw => {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Texto integral dos Termos de Uso (versão 1.0)
+// ─────────────────────────────────────────────────────────────────────────────
+export const TERMOS_VERSAO = '1.0'
+export const TERMOS_TEXTO = `TERMO DE ACEITE DE USO E RESPONSABILIDADE
+
+Ao realizar seu cadastro e utilizar o sistema de emissão de documentos fiscais eletrônicos disponibilizado pela Techlinker, o USUÁRIO declara que leu, compreendeu e concorda integralmente com os termos abaixo.
+
+1. OBJETO
+O presente Termo estabelece as condições de utilização da plataforma de emissão de documentos fiscais eletrônicos disponibilizada pela Techlinker.
+A plataforma constitui ferramenta tecnológica destinada à geração, transmissão e gerenciamento de documentos fiscais eletrônicos, não se caracterizando como serviço de consultoria contábil, fiscal, tributária ou jurídica.
+
+2. RESPONSABILIDADE PELAS INFORMAÇÕES
+O USUÁRIO declara ser o único responsável pelo cadastramento, atualização e manutenção de todas as informações utilizadas para emissão dos documentos fiscais, incluindo, mas não se limitando a:
+• Dados cadastrais da empresa;
+• Regime tributário;
+• Certificado Digital;
+• Produtos e serviços;
+• NCM;
+• CFOP;
+• CST, CSOSN e demais códigos tributários;
+• Alíquotas de impostos;
+• Clientes e fornecedores;
+• Demais informações exigidas pela legislação vigente.
+O USUÁRIO declara que todas as informações fornecidas são verdadeiras, completas e atualizadas.
+
+3. RESPONSABILIDADE FISCAL
+O USUÁRIO reconhece que é o único responsável pela correta classificação fiscal, tributária e contábil das operações realizadas por meio da plataforma.
+A Techlinker não realiza validação da tributação aplicada, classificação fiscal, enquadramento tributário, benefícios fiscais, cálculo de impostos ou qualquer conferência das informações inseridas pelo USUÁRIO.
+A emissão dos documentos fiscais ocorrerá com base exclusivamente nas informações cadastradas pelo próprio USUÁRIO.
+
+4. RESPONSABILIDADE POR MULTAS E PENALIDADES
+O USUÁRIO assume integral responsabilidade por quaisquer multas, autuações, penalidades, encargos, perdas ou danos decorrentes de:
+• Informações incorretas ou incompletas;
+• Dados desatualizados;
+• Erros de cadastramento;
+• Utilização inadequada da plataforma;
+• Descumprimento da legislação fiscal, tributária ou contábil.
+A Techlinker não responderá por prejuízos ocasionados por informações fornecidas pelo próprio USUÁRIO.
+
+5. DISPONIBILIDADE DA PLATAFORMA
+A Techlinker compromete-se a disponibilizar a plataforma para emissão dos documentos fiscais, observadas eventuais indisponibilidades decorrentes de:
+• Manutenções programadas;
+• Atualizações do sistema;
+• Falhas de comunicação;
+• Indisponibilidade dos serviços da Secretaria da Fazenda (SEFAZ);
+• Problemas de internet ou infraestrutura de terceiros;
+• Eventos de caso fortuito ou força maior.
+
+6. ATUALIZAÇÕES LEGAIS
+A Techlinker poderá realizar atualizações na plataforma para atender alterações técnicas e legais relacionadas aos documentos fiscais eletrônicos.
+Todavia, permanece sendo responsabilidade do USUÁRIO manter corretamente configuradas as informações fiscais, tributárias e cadastrais de sua empresa.
+
+7. PROTEÇÃO DO CERTIFICADO DIGITAL
+Quando utilizado certificado digital para emissão dos documentos fiscais, o USUÁRIO declara ser responsável por sua guarda, validade, renovação e utilização, comprometendo-se a impedir o acesso de terceiros não autorizados.
+
+8. ACEITE ELETRÔNICO
+O USUÁRIO declara que a manifestação de concordância realizada eletronicamente, por meio da seleção da opção "Li e concordo com o Termo de Aceite de Uso e Responsabilidade", possui validade jurídica e produz os mesmos efeitos de uma assinatura manuscrita, nos termos da legislação brasileira aplicável.
+
+9. DISPOSIÇÕES GERAIS
+Ao aceitar este Termo, o USUÁRIO declara estar ciente de que:
+• a Techlinker fornece exclusivamente a plataforma tecnológica para emissão de documentos fiscais eletrônicos;
+• a responsabilidade pelas informações transmitidas à SEFAZ é exclusivamente do emitente;
+• recomenda-se que todas as configurações tributárias sejam definidas ou revisadas pelo contador responsável pela empresa antes da emissão dos documentos fiscais.
+
+O uso da plataforma implica a concordância integral com todas as disposições deste Termo.`
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Hook
 // ─────────────────────────────────────────────────────────────────────────────
 export function useOnboarding() {
   const { user } = useAuth()
-  const [state, setState] = useState({ loading: true, wizardOpen: false, pixSet: false })
+  const [state, setState] = useState({ loading: true, wizardOpen: false, pixSet: false, termsOnly: false })
 
   const check = useCallback(async () => {
-    if (!user) { setState({ loading: false, wizardOpen: false, pixSet: false }); return }
+    if (!user) { setState({ loading: false, wizardOpen: false, pixSet: false, termsOnly: false }); return }
     const { data } = await supabase
       .from('profiles')
-      .select('pix_key_recebimento, company_name, cnpj, onboarding_done')
+      .select('pix_key_recebimento, company_name, cnpj, onboarding_done, termos_aceite_at')
       .eq('id', user.id)
       .maybeSingle()
     const pixSet           = !!data?.pix_key_recebimento
     const profileComplete  = !!(data?.company_name && data?.cnpj)
     const dismissed        = !!data?.onboarding_done
+    const termsAccepted    = !!data?.termos_aceite_at
     // Se perfil já está preenchido, marca como concluído automaticamente
     if (profileComplete && !dismissed) {
       await supabase.from('profiles').update({ onboarding_done: true }).eq('id', user.id)
     }
-    setState({ loading: false, wizardOpen: !dismissed && !profileComplete, pixSet })
+    const needsOnboarding = !dismissed && !profileComplete
+    const wizardOpen      = needsOnboarding || !termsAccepted
+    // termsOnly: usuário já concluiu onboarding mas ainda não aceitou os termos
+    const termsOnly       = !needsOnboarding && !termsAccepted
+    setState({ loading: false, wizardOpen, pixSet, termsOnly })
   }, [user])
 
   useEffect(() => { check() }, [check])
@@ -301,6 +373,55 @@ export function OnboardingBanner({ onOpen }) {
         className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors whitespace-nowrap shadow-sm">
         Configurar agora →
       </button>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Passo — Termos de Uso
+// ─────────────────────────────────────────────────────────────────────────────
+function StepTermos({ checked, setChecked }) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-2xl font-black text-slate-900">Termos de Uso 📋</h2>
+        <p className="text-slate-500 mt-2 text-sm leading-relaxed">
+          Leia com atenção e aceite os termos para continuar usando a plataforma.
+        </p>
+      </div>
+
+      {/* Caixa de texto com scroll */}
+      <div className="border-2 border-slate-200 rounded-2xl bg-slate-50 overflow-hidden">
+        <div className="overflow-y-auto max-h-72 p-4 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap font-mono">
+          {TERMOS_TEXTO}
+        </div>
+      </div>
+
+      {/* Checkbox de aceite */}
+      <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border-2 transition-all ${
+        checked ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-white hover:border-slate-300'
+      }`}>
+        <div className="relative mt-0.5 shrink-0">
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={e => setChecked(e.target.checked)}
+            className="sr-only"
+          />
+          <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
+            checked ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 bg-white'
+          }`}>
+            {checked && (
+              <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none">
+                <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
+          </div>
+        </div>
+        <span className={`text-sm font-medium leading-snug ${checked ? 'text-indigo-800' : 'text-slate-600'}`}>
+          Li e aceito os <strong>Termos de Aceite de Uso e Responsabilidade</strong> da plataforma NotaFacil, declarando que compreendo e concordo integralmente com todas as suas disposições.
+        </span>
+      </label>
     </div>
   )
 }
@@ -665,20 +786,26 @@ function StepDone({ onNavigate }) {
 // Wizard principal
 // ─────────────────────────────────────────────────────────────────────────────
 const STEPS = [
-  { id: 'welcome'                                   },
+  { id: 'welcome'                                    },
+  { id: 'termos',  label: 'Termos',   skippable: false },
   { id: 'empresa', label: 'Empresa',  skippable: false },
   { id: 'fiscal',  label: 'Fiscal',   skippable: true  },
   { id: 'pix',     label: 'PIX',      skippable: true  },
-  { id: 'done'                                      },
+  { id: 'done'                                       },
 ]
 const CONTENT_STEPS = STEPS.filter(s => s.id !== 'welcome' && s.id !== 'done')
 
-export default function OnboardingWizard({ onComplete }) {
+// termsOnly = true quando o usuário já concluiu o onboarding mas ainda não aceitou os termos
+export default function OnboardingWizard({ onComplete, termsOnly = false }) {
   const { user }    = useAuth()
   const navigate    = useNavigate()
-  const [step,    setStep]    = useState(0)
+  // Se termsOnly, começa direto no step de termos (índice 1), pulando welcome
+  const [step,    setStep]    = useState(termsOnly ? 1 : 0)
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState('')
+
+  // Termos
+  const [termsChecked, setTermsChecked] = useState(false)
 
   // Dados empresa
   const [company,  setCompany]  = useState('')
@@ -700,10 +827,31 @@ export default function OnboardingWizard({ onComplete }) {
 
   const current = STEPS[step]
   const isDone  = current.id === 'done'
-  const stepIdx = step - 1
+  // stepIdx para a barra de progresso (desconsidera welcome e done)
+  const stepIdx = CONTENT_STEPS.findIndex(s => s.id === current.id)
+
+  // Botão fechar: bloqueado no step de termos (aceite obrigatório)
+  const canClose = current.id !== 'termos'
 
   const handleNext = async () => {
     setError('')
+
+    if (current.id === 'termos') {
+      if (!termsChecked) {
+        setError('Você precisa marcar a caixa de aceite para continuar.')
+        return
+      }
+      setSaving(true)
+      const { error: e } = await supabase.from('profiles').update({
+        termos_aceite_at:    new Date().toISOString(),
+        termos_aceite_texto: TERMOS_TEXTO,
+        termos_versao:       TERMOS_VERSAO,
+      }).eq('id', user.id)
+      setSaving(false)
+      if (e) { setError('Erro ao registrar aceite: ' + e.message); return }
+      // Se o usuário já tinha feito onboarding, apenas fecha
+      if (termsOnly) { onComplete?.(); return }
+    }
 
     if (current.id === 'empresa') {
       if (!company.trim()) { setError('Informe o nome da empresa para continuar.'); return }
@@ -758,6 +906,7 @@ export default function OnboardingWizard({ onComplete }) {
 
   // Fechar/dispensar wizard — grava onboarding_done no Supabase
   const handleClose = async () => {
+    if (!canClose) return
     if (user) await supabase.from('profiles').update({ onboarding_done: true }).eq('id', user.id)
     onComplete?.()
   }
@@ -768,19 +917,21 @@ export default function OnboardingWizard({ onComplete }) {
     <div className="fixed inset-0 z-[200] bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg my-auto overflow-hidden">
 
-        {/* Botão fechar */}
-        <div className="flex justify-end pt-4 pr-4 pb-0">
-          <button onClick={handleClose}
-            title="Fechar"
-            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors text-lg">
-            ✕
-          </button>
+        {/* Botão fechar — oculto no step de termos */}
+        <div className="flex justify-end pt-4 pr-4 pb-0 min-h-[2.5rem]">
+          {canClose && (
+            <button onClick={handleClose}
+              title="Fechar"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors text-lg">
+              ✕
+            </button>
+          )}
         </div>
 
         {step > 0 && !isDone && (
           <div className="h-1.5 bg-slate-100">
             <div className="h-full bg-indigo-500 rounded-r-full transition-all duration-500"
-              style={{ width: `${(stepIdx / CONTENT_STEPS.length) * 100}%` }}/>
+              style={{ width: `${((stepIdx + 1) / CONTENT_STEPS.length) * 100}%` }}/>
           </div>
         )}
 
@@ -802,6 +953,9 @@ export default function OnboardingWizard({ onComplete }) {
           )}
 
           {current.id === 'welcome' && <StepWelcome />}
+          {current.id === 'termos'  && (
+            <StepTermos checked={termsChecked} setChecked={setTermsChecked} />
+          )}
           {current.id === 'empresa' && (
             <StepEmpresa
               company={company} setCompany={setCompany}
@@ -841,17 +995,26 @@ export default function OnboardingWizard({ onComplete }) {
                 Pular por agora
               </button>
             )}
-            <button onClick={handleNext} disabled={saving}
-              className="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2 text-sm transition-colors shadow-md shadow-indigo-200">
+            <button
+              onClick={handleNext}
+              disabled={saving || (current.id === 'termos' && !termsChecked)}
+              className="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm transition-colors shadow-md shadow-indigo-200">
               {saving ? (
                 <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Salvando…</>
               ) : current.id === 'welcome' ? 'Vamos começar →'
+                : current.id === 'termos' ? 'Aceitar e continuar →'
                 : isDone ? 'Ir para Configurações →'
                 : 'Próximo →'}
             </button>
           </div>
 
-          {!isDone && (
+          {current.id === 'termos' && (
+            <p className="text-center text-xs text-slate-400 mt-4">
+              O aceite é obrigatório para utilizar a plataforma NotaFacil.
+            </p>
+          )}
+
+          {!isDone && current.id !== 'termos' && (
             <p className="text-center text-xs text-slate-400 mt-4">
               Todas as informações podem ser alteradas em <strong className="text-slate-500">Configurações</strong>.
             </p>

@@ -25,11 +25,16 @@ function PrivateRoute({ children }) {
 }
 
 function AppContent() {
-  const { wizardOpen, closeWizard } = useOnboarding()
+  const { wizardOpen, closeWizard, termsOnly } = useOnboarding()
   return (
     <>
       <AppRoutes />
-      {wizardOpen && <OnboardingWizard onComplete={() => closeWizard(true)} />}
+      {wizardOpen && (
+        <OnboardingWizard
+          onComplete={() => closeWizard(true)}
+          termsOnly={termsOnly}
+        />
+      )}
     </>
   )
 }
