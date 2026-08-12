@@ -58,9 +58,10 @@ async function handle(event) {
   // cobData = { mesRef, tenant, cpf, email, property, totalValue, value,
   //             seguroFinanceiro, seguroIncendio, iptu, codServicoLc116 }
 
-  if (!userId || !cobId || !cobData) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'userId, cobId e cobData são obrigatórios' }) }
+  if (!userId || !cobData) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'userId e cobData são obrigatórios' }) }
   }
+  // cobId pode ser null para emissões avulsas (sem cobrança vinculada)
 
   const SUPABASE_URL = process.env.SUPABASE_URL
   const SERVICE_KEY  = process.env.SUPABASE_SERVICE_KEY
@@ -72,7 +73,7 @@ async function handle(event) {
   console.log('[nfse-emitir] carregando perfil userId:', userId)
   const profRes = await supabaseFetch(SUPABASE_URL, SERVICE_KEY,
     `profiles?id=eq.${userId}&select=company_name,cnpj,inscricao_municipal,` +
-    `nfse_municipio_ibge,nfse_municipio_nome,nfse_codigo_servico,nfse_serie,` +
+    `nfse_municipio_ibge,nfse_municipio_nome,nfse_codigo_servico,nfse_desc_servico,nfse_serie,` +
     `nfse_ultimo_numero,nfse_cert_path,nfse_cert_password_enc,` +
     `nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,` +
     `regime_tributario,aliquota_iss,` +
@@ -185,6 +186,8 @@ async function handle(event) {
     cep:           digits(p.nfse_cep || '').slice(0, 8),
     // regime: 'simples' | 'lucro_presumido' | outros
     regime:        (p.regime_tributario || 'simples'),
+    // descServico: texto configurável pelo usuário em Configurações → Fiscal
+    descServico:   p.nfse_desc_servico || '',
   }
 
   let dpsXml
@@ -228,9 +231,10 @@ async function handle(event) {
     } catch { userMessage = responseBody.slice(0, 500) || userMessage }
 
     await gravarEmissao(SUPABASE_URL, SERVICE_KEY, {
-      user_id: userId, cobranca_id: cobId,
+      user_id: userId, cobranca_id: cobId || null,
       numero_dps: novNumero, competencia: cobData.mesRef,
       valor_servico: cobData.totalValue,
+      tomador_nome: cobData.tenant || null,
       status: 'erro', erro_msg: userMessage,
     })
     return {
@@ -266,10 +270,11 @@ async function handle(event) {
 
   // ── 9. Grava emissão bem-sucedida ─────────────────────────────
   await gravarEmissao(SUPABASE_URL, SERVICE_KEY, {
-    user_id: userId, cobranca_id: cobId,
+    user_id: userId, cobranca_id: cobId || null,
     numero_dps: novNumero, numero_nfse: numeroNfse,
     chave_acesso: chaveAcesso, competencia: cobData.mesRef,
     valor_servico: cobData.totalValue,
+    tomador_nome: cobData.tenant || null,
     status: 'emitida', xml_nfse: nfseXml || responseBody,
     discriminacao_servico: cobData.discriminacao || null,
   })
@@ -487,19 +492,9 @@ function buildDpsXml(cfg, cob, homologacao) {
   }
 
   // Discriminação do serviço:
-  // 1. Texto livre enviado pelo frontend (fixo do contrato ou capturado mensalmente)
-  // 2. Fallback: texto automático com referência, imóvel e valores
-  const discrim = cob.discriminacao
-    ? String(cob.discriminacao).trim()
-    : [
-        `Administracao imobiliaria ref. ${dCompet}`,
-        cob.property             ? `Imovel: ${cob.property}`                                          : '',
-        cob.value > 0            ? `Valor: R$ ${Number(cob.value).toFixed(2)}`                        : '',
-        cob.seguroFinanceiro > 0 ? `Seguro Financeiro: R$ ${Number(cob.seguroFinanceiro).toFixed(2)}` : '',
-        cob.seguroIncendio > 0   ? `Seguro Incendio: R$ ${Number(cob.seguroIncendio).toFixed(2)}`     : '',
-        cob.iptu > 0             ? `IPTU: R$ ${Number(cob.iptu).toFixed(2)}`                          : '',
-        `Total: R$ ${Number(cob.totalValue).toFixed(2)}`,
-      ].filter(Boolean).join(' | ')
+  // Usa o texto informado pelo usuário (fixo no contrato ou capturado mensalmente).
+  // Se não informado, não envia nada — o campo xInfComp fica omitido.
+  const discrim = cob.discriminacao ? String(cob.discriminacao).trim() : ''
 
   // vServ: DEVE ser string com 2 casas decimais (XSD TSDec15V2)
   const vServ = Number(cob.totalValue).toFixed(2)
@@ -546,6 +541,15 @@ function buildDpsXml(cfg, cob, homologacao) {
   // A localização já está coberta por <cLocEmi> e <cLocPrestacao>.
   const endPrestXml = ''
 
+  // xDescServ: descrição do serviço para o SEFIN (obrigatório, até 150 chars)
+  // Prioridade: campo configurável no perfil > fallback genérico
+  const xDescServ = (cfg.descServico || '').trim() || 'Prestação de serviços'
+
+  // infoCompl: só inclui o bloco se houver texto de discriminação
+  const infoComplXml = discrim
+    ? `<infoCompl>\n<xInfComp>${escXml(discrim.slice(0, 2000))}</xInfComp>\n</infoCompl>\n`
+    : ''
+
   // Nome do tomador (obrigatório no elemento <toma>)
   const xNomeToma = escXml((cob.tenant || 'Tomador').slice(0, 150))
 
@@ -578,11 +582,9 @@ ${tomadorTag}
 </locPrest>
 <cServ>
 <cTribNac>${cfg.cTribNac}</cTribNac>
-${cfg.cTribMun ? `<cTribMun>${cfg.cTribMun}</cTribMun>\n` : ''}<xDescServ>${escXml('Administracao e intermediacao de imoveis')}</xDescServ>
+${cfg.cTribMun ? `<cTribMun>${cfg.cTribMun}</cTribMun>\n` : ''}<xDescServ>${escXml(xDescServ.slice(0, 150))}</xDescServ>
 </cServ>
-<infoCompl>
-<xInfComp>${escXml(discrim.slice(0, 2000))}</xInfComp>
-</infoCompl>
+${infoComplXml}
 </serv>
 <valores>
 <vServPrest>

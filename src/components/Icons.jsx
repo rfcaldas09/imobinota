@@ -22,3 +22,4 @@ export const IcChevronL = ({ c = '' }) => ic('<polyline points="15 18 9 12 15 6"
 export const IcBell     = ({ c = '' }) => ic('<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>', c)
 export const IcMail     = ({ c = '' }) => ic('<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>', c)
 export const IcRefresh  = ({ c = '' }) => ic('<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>', c)
+export const IcReceipt  = ({ c = '' }) => ic('<path d="M4 2v20l3-2 2 2 3-2 3 2 2-2 3 2V2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="12" y2="16"/>', c)

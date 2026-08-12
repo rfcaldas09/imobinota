@@ -138,14 +138,14 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
     setErrMsg('')
 
     const additionalInfo = []
-    if (cob.value > 0)            additionalInfo.push({ key: 'Aluguel',           value: fmtCi(cob.value) })
+    if (cob.value > 0)            additionalInfo.push({ key: 'Valor',             value: fmtCi(cob.value) })
     if (cob.seguroFinanceiro > 0) additionalInfo.push({ key: 'Seguro Financeiro', value: fmtCi(cob.seguroFinanceiro) })
     if (cob.seguroIncendio   > 0) additionalInfo.push({ key: 'Seguro Incendio',   value: fmtCi(cob.seguroIncendio) })
     if (cob.iptu             > 0) additionalInfo.push({ key: 'IPTU',              value: fmtCi(cob.iptu) })
     additionalInfo.push({ key: 'Total', value: fmtCi(cob.totalValue) })
 
     const comment = [
-      `Aluguel ref. ${refLabel(cob.mesRef)}`,
+      `Cobrança ref. ${refLabel(cob.mesRef)}`,
       cob.property ? `- ${cob.property}` : '',
     ].filter(Boolean).join(' ').replace(/[^\x00-\x7F]/g, '')
 
@@ -338,7 +338,7 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
               <div className="bg-slate-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
                 {cob.value > 0 && (
                   <div className="flex justify-between text-slate-600">
-                    <span>Aluguel</span><span className="font-medium">{fmt(cob.value)}</span>
+                    <span>Valor</span><span className="font-medium">{fmt(cob.value)}</span>
                   </div>
                 )}
                 {cob.seguroFinanceiro > 0 && (
@@ -465,7 +465,7 @@ function NfseModal({ cob, user, onClose }) {
             <div className="bg-slate-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
               {cob.value > 0 && (
                 <div className="flex justify-between text-slate-600">
-                  <span>Aluguel</span><span className="font-medium">{fmt(cob.value)}</span>
+                  <span>Valor</span><span className="font-medium">{fmt(cob.value)}</span>
                 </div>
               )}
               {cob.seguroFinanceiro > 0 && (
@@ -1152,7 +1152,7 @@ function AdicionarCobrancaModal({ contracts, user, onClose, onDone }) {
   const handleSave = async () => {
     setErr('')
     if (!selectedId)       { setErr('Selecione um contrato'); return }
-    if (!f.value || Number(f.value) <= 0) { setErr('Informe o valor do aluguel'); return }
+    if (!f.value || Number(f.value) <= 0) { setErr('Informe o valor'); return }
     if (!f.dueDay)         { setErr('Informe o dia de vencimento'); return }
     setSaving(true)
     try {
@@ -1236,7 +1236,7 @@ function AdicionarCobrancaModal({ contracts, user, onClose, onDone }) {
           {/* Valores */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-slate-500 block mb-1">Aluguel (R$) *</label>
+              <label className="text-xs font-medium text-slate-500 block mb-1">Valor (R$) *</label>
               <input type="number" min="0" step="0.01" value={f.value} onChange={e => set('value', e.target.value)}
                 className={inp} placeholder="0,00"/>
             </div>
@@ -1500,7 +1500,7 @@ export default function Cobrancas() {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Cliente</th>
-                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden md:table-cell">Imóvel</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden md:table-cell">Referência</th>
                 <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden lg:table-cell">Venc.</th>
                 <th className="text-right px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Valor</th>
                 <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Status</th>

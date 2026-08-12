@@ -130,7 +130,7 @@ function AccessCard() {
           {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-3">{error}</p>}
           <button onClick={handleSignup} disabled={loading}
             className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors mb-3 disabled:opacity-60">
-            {loading ? 'Criando conta...' : 'Criar conta grátis — 14 dias grátis'}
+            {loading ? 'Criando conta...' : 'Criar conta grátis — 2 dias grátis'}
           </button>
           <p className="text-center text-xs text-slate-400">
             Já tem conta?{' '}
@@ -422,7 +422,7 @@ export default function Landing() {
           <div className="text-center">
             <button onClick={goSignup}
               className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-8 py-4 rounded-xl text-lg transition-colors shadow-lg shadow-amber-200">
-              Regularize agora — 14 dias grátis →
+              Regularize agora — 2 dias grátis →
             </button>
           </div>
         </div>
@@ -620,14 +620,14 @@ export default function Landing() {
       {/* ── CTA FINAL ── */}
       <section style={{background:'linear-gradient(135deg,#1a8fb5,#0d1b2a)'}} className="py-20">
         <div className="max-w-2xl mx-auto px-6 text-center">
-          <p className="text-amber-400 font-bold text-sm mb-3">🚨 Faltam poucos dias para 1º de agosto</p>
-          <h2 className="text-3xl font-black text-white mb-4">Não espere a multa chegar</h2>
+          <p className="text-amber-400 font-bold text-sm mb-3">🚀 Comece agora em menos de 5 minutos</p>
+          <h2 className="text-3xl font-black text-white mb-4">Automatize sua cobrança hoje</h2>
           <p className="text-slate-300 mb-8">
-            Configuração em menos de 5 minutos. Já esteja em conformidade com a NFS-e Nacional antes do prazo obrigatório.
+            Cadastre seus clientes, configure e dispare. Boleto + NFS-e integrados, sem instalação, sem complicação.
           </p>
           <button onClick={goSignup}
             className="bg-white hover:bg-slate-100 text-indigo-700 font-bold px-10 py-4 rounded-xl text-lg transition-colors shadow-lg">
-            Começar grátis por 14 dias →
+            Começar grátis por 2 dias →
           </button>
           <p className="text-slate-400 text-sm mt-4">Sem cartão de crédito. Cancele quando quiser.</p>
         </div>

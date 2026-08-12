@@ -11,6 +11,7 @@ import Relatorios from './pages/Relatorios'
 import Inquilinos from './pages/Inquilinos'
 import Config from './pages/Config'
 import Plano from './pages/Plano'
+import NfseAvulsa from './pages/NfseAvulsa'
 import OnboardingWizard, { useOnboarding } from './components/OnboardingWizard'
 
 function PrivateRoute({ children }) {
@@ -45,6 +46,7 @@ function AppRoutes() {
       <Route path="/inquilinos" element={<PrivateRoute><Layout><Inquilinos /></Layout></PrivateRoute>} />
       <Route path="/config"     element={<PrivateRoute><Layout><Config /></Layout></PrivateRoute>} />
       <Route path="/plano"      element={<PrivateRoute><Layout><Plano /></Layout></PrivateRoute>} />
+      <Route path="/nfse-avulsa" element={<PrivateRoute><Layout><NfseAvulsa /></Layout></PrivateRoute>} />
       <Route path="*"           element={<Navigate to="/" replace />} />
     </Routes>
   )

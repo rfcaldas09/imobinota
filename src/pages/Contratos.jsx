@@ -242,10 +242,10 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
             </Row>
           </div>
 
-          {/* Endereço */}
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Endereço</p>
-          <Row label="Endereço *">
-            <FormInp value={f.property} onChange={e => set('property', e.target.value)} placeholder="Ex: Ap. 201 — R. XV de Novembro, 450"/>
+          {/* Referência */}
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Referência</p>
+          <Row label="Referência *">
+            <FormInp value={f.property} onChange={e => set('property', e.target.value)} placeholder="Ex: Consulta, Contrato 001 ou Apto 201"/>
           </Row>
           <div className="grid grid-cols-2 gap-3">
             <Row label="Início do Contrato">
@@ -257,7 +257,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
           </div>
 
           {/* Composição financeira */}
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Composição do Boleto</p>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Composição da Cobrança</p>
           <div className="grid grid-cols-2 gap-3">
             <Row label="Valor (R$) *">
               <FormInp value={f.value} onChange={e => set('value', e.target.value)} type="number" placeholder="0,00"/>
@@ -278,7 +278,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
           {/* Total calculado */}
           <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 flex justify-between items-center">
             <div>
-              <p className="text-xs text-indigo-600 font-semibold">Valor Total do Boleto</p>
+              <p className="text-xs text-indigo-600 font-semibold">Valor Total da Cobrança</p>
               <p className="text-xs text-indigo-400">Calculado automaticamente</p>
             </div>
             <p className="text-xl font-bold text-indigo-800 tabular-nums">{fmt(totalValue)}</p>
@@ -395,7 +395,7 @@ function DocModal({ type, contract: c, onClose, onToast }) {
           <div className="bg-slate-50 border border-slate-200 rounded-xl divide-y divide-slate-100 text-sm mb-4">
             {[
               [isBoleto ? 'Pagador' : 'Tomador', c.tenant],
-              ['Endereço', c.property],
+              ['Referência', c.property],
               [isBoleto ? 'Vencimento' : 'Competência',
                isBoleto ? dueStr : now.toLocaleDateString('pt-BR',{month:'long',year:'numeric'})],
             ].map(([k, v]) => (
@@ -414,7 +414,7 @@ function DocModal({ type, contract: c, onClose, onToast }) {
               </div>
               <div className="divide-y divide-slate-50 text-sm">
                 {[
-                  ['Aluguel', c.value],
+                  ['Valor', c.value],
                   ...(c.seguroFinanceiro > 0 ? [['Seguro Financeiro', c.seguroFinanceiro]] : []),
                   ...(c.seguroIncendio   > 0 ? [['Seguro Incêndio',   c.seguroIncendio]]   : []),
                   ...(c.iptu             > 0 ? [['IPTU',               c.iptu]]             : []),
@@ -522,7 +522,7 @@ function ScanModal({ contract: c, onClose, onToast }) {
               <h3 className="font-bold text-slate-900 text-lg mb-1">Escanear Contrato</h3>
               <p className="text-sm text-slate-500 mb-4">
                 Cliente: <strong className="text-slate-800">{c.tenant}</strong><br/>
-                Endereço: {c.property}
+                Referência: {c.property}
               </p>
               <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center mb-4">
                 <IcScan c="w-8 h-8 text-slate-300 mx-auto mb-3"/>
@@ -558,7 +558,7 @@ function ScanModal({ contract: c, onClose, onToast }) {
               <h3 className="font-bold text-slate-900 text-lg mb-1">Escaneamento concluído!</h3>
               <p className="text-sm text-slate-500 mb-4">Dados extraídos e vinculados ao contrato.</p>
               <div className="bg-slate-50 rounded-xl p-4 space-y-2 text-sm mb-4">
-                {[['Cliente',c.tenant],['Endereço',c.property],
+                {[['Cliente',c.tenant],['Referência',c.property],
                   ['Vigência',`${fmtDate(c.start)} → ${fmtDate(c.end)}`],
                   ['Valor',fmt(c.value)]].map(([k,v]) => (
                   <div key={k} className="flex justify-between">
@@ -639,7 +639,7 @@ function ContractDrawer({ contract: c, onClose, onEdit, onScan, onDelete, onToas
 
             <div className="space-y-2">
               {[
-                ['Endereço', c.property],
+                ['Referência', c.property],
                 ['E-mail', c.email || '—'],
                 ['Telefone', c.phone || '—'],
                 ['Vencimento', `Dia ${c.dueDay} de cada mês`],
@@ -654,8 +654,8 @@ function ContractDrawer({ contract: c, onClose, onEdit, onScan, onDelete, onToas
             </div>
 
             <div className="bg-slate-50 rounded-xl p-4 space-y-2">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Composição do Boleto</p>
-              {[['Aluguel', c.value],
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Composição da Cobrança</p>
+              {[['Valor', c.value],
                 ['Seg. Financeiro', c.seguroFinanceiro],
                 ['Seg. Incêndio', c.seguroIncendio],
                 ['IPTU', c.iptu]].map(([l,v]) => v > 0 && (
@@ -982,7 +982,7 @@ export default function Contratos() {
         <div className="relative flex-1 min-w-48">
           <IcSearch c="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
           <input value={search} onChange={handleSearch}
-            placeholder="Buscar por cliente, endereço ou CPF…"
+            placeholder="Buscar por cliente, referência ou CPF…"
             className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"/>
         </div>
         <div className="flex bg-white border border-slate-200 rounded-xl p-1 gap-1">
@@ -1028,7 +1028,7 @@ export default function Contratos() {
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Cliente</th>
-                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Endereço</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Referência</th>
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">
                   {isPorVencer ? 'Término' : 'Venc.'}
                 </th>

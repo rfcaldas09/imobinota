@@ -107,7 +107,7 @@ const MUNICIPIOS_SUL = [
 
 const VARS = [
   { v:'{{inquilino}}', label:'Cliente' },
-  { v:'{{imovel}}',    label:'Imóvel' },
+  { v:'{{imovel}}',    label:'Referência' },
   { v:'{{valor}}',     label:'Valor total' },
   { v:'{{vencimento}}',label:'Vencimento' },
   { v:'{{mes}}',       label:'Mês' },
@@ -259,6 +259,7 @@ export default function Config() {
     municipioIbge: '',
     municipioNome: '',
     codigoServico: '6.04',
+    descServico:   '',
     logradouro:    '',
     numeroEnd:     '',
     bairro:        '',
@@ -311,6 +312,7 @@ export default function Config() {
           municipioIbge: data?.nfse_municipio_ibge  || '',
           municipioNome: data?.nfse_municipio_nome  || '',
           codigoServico: data?.nfse_codigo_servico  || '6.04',
+          descServico:   data?.nfse_desc_servico    || '',
           logradouro:    data?.nfse_logradouro      || '',
           numeroEnd:     data?.nfse_numero_end      || '',
           bairro:        data?.nfse_bairro          || '',
@@ -377,6 +379,7 @@ export default function Config() {
         nfse_municipio_ibge: f.municipioIbge,
         nfse_municipio_nome: f.municipioNome,
         nfse_codigo_servico: f.codigoServico,
+        nfse_desc_servico:   f.descServico || null,
         nfse_serie:          'NFSE',
         nfse_logradouro:     f.logradouro,
         nfse_numero_end:     f.numeroEnd,
@@ -745,6 +748,18 @@ export default function Config() {
 
               {/* Código serviço LC 116 — dropdown pesquisável */}
               <Lc116Picker value={f.codigoServico} onChange={v => set('codigoServico', v)} />
+
+              {/* Descrição do serviço (xDescServ na NFS-e) */}
+              <Row
+                label="Descrição do serviço na NFS-e"
+                hint='Texto que aparece no campo "xDescServ" do XML. Ex: "Serviços médicos", "Administração de imóveis", "Consultoria em TI". Máx. 150 caracteres. Se em branco, usa "Prestação de serviços".'
+              >
+                <Inp
+                  value={f.descServico}
+                  onChange={e => set('descServico', e.target.value.slice(0, 150))}
+                  placeholder='Ex: Serviços médicos de saúde'
+                />
+              </Row>
 
               {/* Endereço completo do prestador (para DPS) */}
               <div>

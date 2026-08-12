@@ -1,0 +1,472 @@
+import { useState, useEffect, useCallback } from 'react'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
+import { LC116 } from '../lib/lc116'
+
+// ── Ícones inline ──────────────────────────────────────────────────
+const ic = (d, cls = '') => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+    strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 ${cls}`}
+    dangerouslySetInnerHTML={{ __html: d }} />
+)
+const IcPlus    = ({ c='' }) => ic('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>', c)
+const IcX       = ({ c='' }) => ic('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>', c)
+const IcSend    = ({ c='' }) => ic('<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>', c)
+const IcEdit    = ({ c='' }) => ic('<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>', c)
+const IcDoc     = ({ c='' }) => ic('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>', c)
+
+// ── Helpers ────────────────────────────────────────────────────────
+const digits  = v => v.replace(/\D/g, '')
+const fmtBRL  = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const fmtDate = d => d ? new Date(d).toLocaleDateString('pt-BR') : '—'
+const nowMonth = () => new Date().toISOString().slice(0, 7)
+
+const maskCpfCnpj = raw => {
+  const d = digits(raw).slice(0, 14)
+  if (d.length <= 11) {
+    if (d.length <= 3) return d
+    if (d.length <= 6) return `${d.slice(0,3)}.${d.slice(3)}`
+    if (d.length <= 9) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`
+    return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`
+  }
+  if (d.length <= 2) return d
+  if (d.length <= 5) return `${d.slice(0,2)}.${d.slice(2)}`
+  if (d.length <= 8) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5)}`
+  if (d.length <= 12) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8)}`
+  return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`
+}
+
+const BLANK_FORM = {
+  nome: '', cpfCnpj: '', email: '',
+  valor: '', discriminacao: '', mesRef: nowMonth(), codLc116: '',
+}
+
+// ── Status badge ───────────────────────────────────────────────────
+function StatusBadge({ status }) {
+  const cfg = {
+    emitida: 'bg-emerald-50 text-emerald-700',
+    erro:    'bg-red-50 text-red-600',
+    pendente:'bg-amber-50 text-amber-700',
+  }
+  const labels = { emitida: 'Emitida', erro: 'Erro', pendente: 'Pendente' }
+  return (
+    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg[status] || 'bg-slate-100 text-slate-500'}`}>
+      {labels[status] || status}
+    </span>
+  )
+}
+
+// ── Modal: adicionar/editar tomador ────────────────────────────────
+function TomadorModal({ initial, onSave, onClose }) {
+  const [f, setF] = useState(initial || BLANK_FORM)
+  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }))
+  const [err, setErr] = useState('')
+
+  const handleSave = () => {
+    if (!f.nome.trim())     { setErr('Informe o nome do tomador.'); return }
+    if (!f.cpfCnpj.trim()) { setErr('Informe o CPF ou CNPJ.'); return }
+    const v = parseFloat(f.valor.replace(',', '.'))
+    if (!v || v <= 0)      { setErr('Informe o valor do serviço.'); return }
+    if (!f.mesRef)         { setErr('Informe a competência.'); return }
+    setErr('')
+    onSave({ ...f, valor: String(v.toFixed(2)) })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-base font-bold text-slate-800">Tomador da NFS-e</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><IcX c="w-5 h-5"/></button>
+        </div>
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-slate-500 block mb-1">Nome / Razão Social *</label>
+              <input value={f.nome} onChange={set('nome')} placeholder="Nome completo ou razão social"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">CPF / CNPJ *</label>
+              <input value={f.cpfCnpj}
+                onChange={e => setF(p => ({ ...p, cpfCnpj: maskCpfCnpj(e.target.value) }))}
+                placeholder="000.000.000-00"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono"/>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">Competência *</label>
+              <input type="month" value={f.mesRef} onChange={set('mesRef')}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">E-mail (para envio do PDF)</label>
+              <input type="email" value={f.email} onChange={set('email')} placeholder="cliente@email.com"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">Valor do serviço (R$) *</label>
+              <input value={f.valor}
+                onChange={e => setF(p => ({ ...p, valor: e.target.value.replace(/[^0-9,\.]/g, '') }))}
+                placeholder="0,00"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono"/>
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-slate-500 block mb-1">Discriminação do serviço</label>
+              <textarea value={f.discriminacao} onChange={set('discriminacao')}
+                placeholder="Descreva o serviço prestado (aparece na nota fiscal). Deixe em branco para não incluir."
+                rows={3}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"/>
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-slate-500 block mb-1">Código LC 116 (opcional)</label>
+              <select value={f.codLc116} onChange={set('codLc116')}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                <option value="">— Usar padrão do cadastro —</option>
+                {LC116.map(item => (
+                  <option key={item.codigo} value={item.codigo}>{item.codigo} — {item.descricao}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {err && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{err}</p>}
+        </div>
+
+        <div className="flex gap-2 mt-5">
+          <button onClick={onClose}
+            className="flex-1 py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50">
+            Cancelar
+          </button>
+          <button onClick={handleSave}
+            className="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700">
+            Salvar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Painel de progresso da emissão ─────────────────────────────────
+function EmissaoProgress({ items, results, current }) {
+  return (
+    <div className="bg-white border border-slate-100 rounded-2xl p-5 mb-6">
+      <h3 className="font-semibold text-slate-800 text-sm mb-3">⚡ Emissão em andamento…</h3>
+      <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-4">
+        <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all"
+          style={{ width: `${Math.round((results.length / items.length) * 100)}%` }}/>
+      </div>
+      <div className="space-y-1.5">
+        {items.map((item, i) => {
+          const res = results.find(r => r.index === i)
+          const isCurrent = current === i && !res
+          return (
+            <div key={i} className="flex items-center justify-between text-sm">
+              <span className="text-slate-700 truncate max-w-xs">{item.nome}</span>
+              <span className={
+                res?.ok     ? 'text-emerald-600 font-medium' :
+                res?.erro   ? 'text-red-500 text-xs' :
+                isCurrent   ? 'text-amber-500' : 'text-slate-300'
+              }>
+                {res?.ok   ? `✅ NFS-e ${res.numero || ''}` :
+                 res?.erro ? `❌ ${res.erro.slice(0, 60)}` :
+                 isCurrent ? '⏳ Emitindo…' : '—'}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Página principal ───────────────────────────────────────────────
+export default function NfseAvulsa() {
+  const { user } = useAuth()
+  const lsKey = user ? `nfsa_pending_${user.id}` : null
+
+  // Fila de tomadores pendentes (persiste em localStorage)
+  const [pending, setPending]     = useState([])
+  const [showModal, setShowModal] = useState(false)
+  const [editIdx, setEditIdx]     = useState(null)
+
+  // Estado de emissão em lote
+  const [emitting, setEmitting]   = useState(false)
+  const [emitResults, setEmitResults] = useState([])
+  const [emitCurrent, setEmitCurrent] = useState(null)
+  const [emitDone, setEmitDone]   = useState(false)
+
+  // Histórico de avulsas emitidas
+  const [history, setHistory]     = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+
+  // ── localStorage ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!lsKey) return
+    try { setPending(JSON.parse(localStorage.getItem(lsKey) || '[]')) } catch {}
+  }, [lsKey])
+
+  useEffect(() => {
+    if (!lsKey) return
+    localStorage.setItem(lsKey, JSON.stringify(pending))
+  }, [pending, lsKey])
+
+  // ── Histórico ────────────────────────────────────────────────
+  const loadHistory = useCallback(async () => {
+    if (!user) return
+    setLoadingHistory(true)
+    const { data } = await supabase
+      .from('nfse_emissoes')
+      .select('id, numero_nfse, numero_dps, tomador_nome, valor_servico, competencia, status, created_at, erro_msg, chave_acesso')
+      .eq('user_id', user.id)
+      .is('cobranca_id', null)
+      .order('created_at', { ascending: false })
+      .limit(100)
+    setHistory(data || [])
+    setLoadingHistory(false)
+  }, [user])
+
+  useEffect(() => { loadHistory() }, [loadHistory])
+
+  // ── Adicionar / Editar tomador ────────────────────────────────
+  const handleSaveModal = item => {
+    if (editIdx !== null) {
+      setPending(p => p.map((x, i) => i === editIdx ? item : x))
+    } else {
+      setPending(p => [...p, item])
+    }
+    setShowModal(false)
+    setEditIdx(null)
+  }
+
+  const handleRemove = idx => {
+    setPending(p => p.filter((_, i) => i !== idx))
+  }
+
+  const handleEdit = idx => {
+    setEditIdx(idx)
+    setShowModal(true)
+  }
+
+  // ── Emissão em lote ───────────────────────────────────────────
+  const handleEmitirTudo = async () => {
+    if (!pending.length) return
+    setEmitting(true)
+    setEmitResults([])
+    setEmitDone(false)
+
+    const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
+
+    for (let i = 0; i < pending.length; i++) {
+      setEmitCurrent(i)
+      const item = pending[i]
+      try {
+        const res = await fetch('/.netlify/functions/nfse-emitir', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
+          },
+          body: JSON.stringify({
+            userId:  user.id,
+            cobId:   null,
+            cobData: {
+              tenant:          item.nome,
+              cpf:             item.cpfCnpj,
+              email:           item.email   || '',
+              totalValue:      item.valor,
+              mesRef:          item.mesRef,
+              discriminacao:   item.discriminacao || null,
+              codServicoLc116: item.codLc116 || null,
+            },
+            homologacao: false,
+          }),
+        })
+        const data = await res.json()
+        if (res.ok && data.ok) {
+          setEmitResults(p => [...p, { index: i, ok: true, numero: data.numeroNfse || data.numeroDps }])
+        } else {
+          setEmitResults(p => [...p, { index: i, ok: false, erro: data.error || 'Erro desconhecido' }])
+        }
+      } catch (e) {
+        setEmitResults(p => [...p, { index: i, ok: false, erro: e.message }])
+      }
+    }
+
+    setEmitCurrent(null)
+    setEmitDone(true)
+    setEmitting(false)
+
+    // Remove da fila somente os que foram emitidos com sucesso
+    setEmitResults(prev => {
+      const successIdx = new Set(prev.filter(r => r.ok).map(r => r.index))
+      setPending(p => p.filter((_, i) => !successIdx.has(i)))
+      return prev
+    })
+
+    loadHistory()
+  }
+
+  // ── Render ────────────────────────────────────────────────────
+  const successCount = emitResults.filter(r => r.ok).length
+  const errorCount   = emitResults.filter(r => !r.ok).length
+
+  return (
+    <div className="p-6 max-w-5xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">NFS-e Avulsa</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Emita notas fiscais sem vínculo com contratos. Ideal para atendimentos avulsos.
+          </p>
+        </div>
+        <button
+          onClick={() => { setEditIdx(null); setShowModal(true) }}
+          disabled={emitting}
+          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50">
+          <IcPlus/> Adicionar Tomador
+        </button>
+      </div>
+
+      {/* Progress durante emissão */}
+      {(emitting || emitDone) && emitResults.length > 0 && (
+        <EmissaoProgress items={emitting ? pending : (pending.length ? pending : [])}
+          results={emitResults} current={emitCurrent}/>
+      )}
+
+      {/* Resumo pós-emissão */}
+      {emitDone && (
+        <div className={`rounded-xl px-4 py-3 mb-4 text-sm font-medium ${
+          errorCount === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+        }`}>
+          {successCount > 0 && `✅ ${successCount} NFS-e(s) emitida(s) com sucesso. `}
+          {errorCount   > 0 && `⚠️ ${errorCount} com erro — verifique abaixo e tente novamente.`}
+        </div>
+      )}
+
+      {/* Fila de pendentes */}
+      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden mb-8">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50">
+          <div className="flex items-center gap-2">
+            <IcDoc c="text-indigo-500"/>
+            <span className="text-sm font-semibold text-slate-700">
+              Fila de emissão
+            </span>
+            {pending.length > 0 && (
+              <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                {pending.length}
+              </span>
+            )}
+          </div>
+          {pending.length > 0 && !emitting && (
+            <button onClick={handleEmitirTudo}
+              className="flex items-center gap-1.5 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700">
+              <IcSend c="w-3.5 h-3.5"/> Gerar e Enviar Tudo ({pending.length})
+            </button>
+          )}
+        </div>
+
+        {pending.length === 0 ? (
+          <div className="text-center py-12 text-slate-400">
+            <IcDoc c="w-10 h-10 mx-auto mb-3 opacity-30"/>
+            <p className="text-sm">Nenhum tomador na fila.</p>
+            <p className="text-xs mt-1">Clique em "Adicionar Tomador" para começar.</p>
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-50">
+                <th className="px-5 py-2.5 text-left">Nome / Razão Social</th>
+                <th className="px-4 py-2.5 text-left">CPF / CNPJ</th>
+                <th className="px-4 py-2.5 text-left">Competência</th>
+                <th className="px-4 py-2.5 text-right">Valor</th>
+                <th className="px-4 py-2.5"/>
+              </tr>
+            </thead>
+            <tbody>
+              {pending.map((item, i) => (
+                <tr key={i} className="border-t border-slate-50 hover:bg-slate-50/50">
+                  <td className="px-5 py-3">
+                    <p className="font-medium text-slate-800">{item.nome}</p>
+                    {item.email && <p className="text-xs text-slate-400">{item.email}</p>}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{item.cpfCnpj}</td>
+                  <td className="px-4 py-3 text-slate-600">{item.mesRef}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-800">{fmtBRL(item.valor)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1">
+                      <button onClick={() => handleEdit(i)} disabled={emitting}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30">
+                        <IcEdit/>
+                      </button>
+                      <button onClick={() => handleRemove(i)} disabled={emitting}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-30">
+                        <IcX/>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Histórico */}
+      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
+          <span className="text-sm font-semibold text-slate-700">Histórico de emissões avulsas</span>
+          {loadingHistory && (
+            <div className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"/>
+          )}
+        </div>
+        {history.length === 0 && !loadingHistory ? (
+          <p className="text-center text-sm text-slate-400 py-10">Nenhuma emissão avulsa registrada.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-50">
+                <th className="px-5 py-2.5 text-left">Tomador</th>
+                <th className="px-4 py-2.5 text-left">Competência</th>
+                <th className="px-4 py-2.5 text-right">Valor</th>
+                <th className="px-4 py-2.5 text-center">Status</th>
+                <th className="px-4 py-2.5 text-left">NFS-e</th>
+                <th className="px-4 py-2.5 text-left">Data</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map(em => (
+                <tr key={em.id} className="border-t border-slate-50 hover:bg-slate-50/50">
+                  <td className="px-5 py-2.5 font-medium text-slate-800">{em.tomador_nome || '—'}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{em.competencia || '—'}</td>
+                  <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{fmtBRL(em.valor_servico)}</td>
+                  <td className="px-4 py-2.5 text-center"><StatusBadge status={em.status}/></td>
+                  <td className="px-4 py-2.5 text-xs font-mono text-slate-500">
+                    {em.numero_nfse || em.numero_dps || '—'}
+                    {em.erro_msg && (
+                      <span className="block text-red-500 text-[11px] max-w-xs truncate" title={em.erro_msg}>
+                        {em.erro_msg}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-slate-400">{fmtDate(em.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Modal */}
+      {showModal && (
+        <TomadorModal
+          initial={editIdx !== null ? pending[editIdx] : null}
+          onSave={handleSaveModal}
+          onClose={() => { setShowModal(false); setEditIdx(null) }}
+        />
+      )}
+    </div>
+  )
+}

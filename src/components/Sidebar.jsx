@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useSubscription, TRIAL_DAYS } from '../contexts/SubscriptionContext'
-import { IcHome, IcFile, IcDollar, IcTrend, IcSettings, IcUsers, IcLogout } from './Icons'
+import { IcHome, IcFile, IcDollar, IcTrend, IcSettings, IcUsers, IcLogout, IcReceipt } from './Icons'
 
 const LOGO_URL = '/logo-notafacil.png'
 
@@ -14,8 +14,9 @@ const fmtDate = d => {
 const NAV = [
   { to: '/dashboard',  label: 'Dashboard',     Icon: IcHome },
   { to: '/contratos',  label: 'Contratos',     Icon: IcFile },
-  { to: '/cobrancas',  label: 'Cobranças',     Icon: IcDollar },
-  { to: '/relatorios', label: 'Relatórios',    Icon: IcTrend },
+  { to: '/cobrancas',    label: 'Cobranças',      Icon: IcDollar },
+  { to: '/nfse-avulsa', label: 'NFS-e Avulsa',  Icon: IcReceipt },
+  { to: '/relatorios',  label: 'Relatórios',     Icon: IcTrend },
   { to: '/inquilinos', label: 'Clientes',      Icon: IcUsers },
   { to: '/config',     label: 'Configurações', Icon: IcSettings },
 ]
