@@ -552,25 +552,38 @@ function buildDpsXml(cfg, cob, homologacao) {
   const vServNum = Number(cob.totalValue) || 0
   const calcV = pct => pct > 0 ? (vServNum * pct / 100).toFixed(2) : null
 
-  const vRetIR     = calcV(ret.pIRRF   || 0)
+  // Nomes conforme XSD NFS-e Nacional: tribFed → piscofins | vRetCP | vRetIRRF | vRetCSLL
+  // PIS e COFINS entram dentro de <piscofins> com cálculo de base e alíquota.
+  // vRetCP = Contribuição Previdenciária (INSS), vRetIRRF = IRRF, vRetCSLL = CSLL.
+  const vRetIRRF   = calcV(ret.pIRRF   || 0)
   const vRetCSLL   = calcV(ret.pCSLL   || 0)
   const vRetCOFINS = calcV(ret.pCOFINS || 0)
   const vRetPIS    = calcV(ret.pPIS    || 0)
-  const vRetCP     = calcV(ret.pINSS   || 0)   // CP = Contribuição Previdenciária (INSS)
+  const vRetCP     = calcV(ret.pINSS   || 0)
 
-  const hasRetFed = vRetIR || vRetCSLL || vRetCOFINS || vRetPIS || vRetCP
+  const hasPisCofins = vRetCOFINS || vRetPIS
+  const hasRetFed    = vRetIRRF || vRetCSLL || vRetCOFINS || vRetPIS || vRetCP
 
-  const retTribXml = hasRetFed
-    ? `<retTrib>\n` +
-      (vRetCP     ? `<vRetCP>${vRetCP}</vRetCP>\n`         : '') +
-      (vRetIR     ? `<vRetIR>${vRetIR}</vRetIR>\n`         : '') +
-      (vRetCSLL   ? `<vRetCSLL>${vRetCSLL}</vRetCSLL>\n`   : '') +
-      (vRetCOFINS ? `<vRetCOFINS>${vRetCOFINS}</vRetCOFINS>\n` : '') +
-      (vRetPIS    ? `<vRetPIS>${vRetPIS}</vRetPIS>\n`       : '') +
-      `</retTrib>\n`
+  // <piscofins>: requer CST, base de cálculo e alíquotas mesmo para retenção na fonte.
+  // CST 70 = Operação tributável; vBCPisCofins = base = vServ.
+  const pisCofinsXml = hasPisCofins
+    ? `<piscofins>\n` +
+      `<CST>70</CST>\n` +
+      `<vBCPisCofins>${vServ}</vBCPisCofins>\n` +
+      (vRetPIS    ? `<pPis>${(Number(ret.pPIS)||0).toFixed(2)}</pPis>\n<vPis>${vRetPIS}</vPis>\n`       : `<pPis>0.00</pPis>\n<vPis>0.00</vPis>\n`) +
+      (vRetCOFINS ? `<pCofins>${(Number(ret.pCOFINS)||0).toFixed(2)}</pCofins>\n<vCofins>${vRetCOFINS}</vCofins>\n` : `<pCofins>0.00</pCofins>\n<vCofins>0.00</vCofins>\n`) +
+      (vRetPIS    ? `<vRetPis>${vRetPIS}</vRetPis>\n`       : '') +
+      (vRetCOFINS ? `<vRetCofins>${vRetCOFINS}</vRetCofins>\n` : '') +
+      `</piscofins>\n`
     : ''
 
-  console.log('[nfse-emitir] tpRetISSQN:', tpRetISSQN, '| retFed:', hasRetFed ? JSON.stringify({ vRetIR, vRetCSLL, vRetCOFINS, vRetPIS, vRetCP }) : 'nenhuma')
+  // Filhos diretos de <tribFed> (ordem XSD: piscofins, vRetCP, vRetIRRF, vRetCSLL)
+  const tribFedInnerXml = pisCofinsXml +
+    (vRetCP   ? `<vRetCP>${vRetCP}</vRetCP>\n`       : '') +
+    (vRetIRRF ? `<vRetIRRF>${vRetIRRF}</vRetIRRF>\n` : '') +
+    (vRetCSLL ? `<vRetCSLL>${vRetCSLL}</vRetCSLL>\n`  : '')
+
+  console.log('[nfse-emitir] tpRetISSQN:', tpRetISSQN, '| retFed:', hasRetFed ? JSON.stringify({ vRetIRRF, vRetCSLL, vRetCOFINS, vRetPIS, vRetCP }) : 'nenhuma')
 
   // Endereço do prestador é opcional no XSD — omitido para evitar erros de sequência.
   // A localização já está coberta por <cLocEmi> e <cLocPrestacao>.
@@ -630,7 +643,7 @@ ${infoComplXml}
 <tribISSQN>1</tribISSQN>
 <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
 ${!isSimples ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</tribMun>
-${hasRetFed ? `<tribFed>\n${retTribXml}</tribFed>\n` : ''}${totTribXml}
+${hasRetFed ? `<tribFed>\n${tribFedInnerXml}</tribFed>\n` : ''}${totTribXml}
 </trib>
 </valores>
 </infDPS>
