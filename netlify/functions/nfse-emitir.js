@@ -484,12 +484,12 @@ function buildDpsXml(cfg, cob, homologacao) {
     }
     tomadorTag = `<CPF>${cpfTomador}</CPF>`
   } else if (cpfTomador.length > 0) {
-    // Número de dígitos inesperado — usa cNaoNIF para não bloquear (código 0 = sem NIF nacional)
-    console.warn('[nfse-emitir] CPF/CNPJ do tomador com comprimento inesperado:', cpfTomador.length, '— usando cNaoNIF')
-    tomadorTag = `<cNaoNIF>0</cNaoNIF>`
+    // Número de dígitos inesperado — trata como sem NIF (código 3 = Outros)
+    console.warn('[nfse-emitir] CPF/CNPJ do tomador com comprimento inesperado:', cpfTomador.length, '— usando cNaoNIF=3')
+    tomadorTag = `<cNaoNIF>3</cNaoNIF>`
   } else {
-    // Sem CPF/CNPJ
-    tomadorTag = `<cNaoNIF>0</cNaoNIF>`
+    // Sem CPF/CNPJ — código 1 = pessoa natural não obrigada à inscrição no CPF
+    tomadorTag = `<cNaoNIF>1</cNaoNIF>`
   }
 
   // Discriminação do serviço:
