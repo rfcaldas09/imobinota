@@ -523,7 +523,12 @@ function StepEmpresa({ company, setCompany, cnpj, setCnpj, inscMun, setInscMun, 
 // ─────────────────────────────────────────────────────────────────────────────
 function StepFiscal({ ibge, setIbge, ibgeNome, setIbgeNome, codServico, setCodServico, aliquota, setAliquota, issAutoFilled, setIssAutoFilled }) {
   const [ibgeSearch,  setIbgeSearch]  = useState('')
-  const [servSearch,  setServSearch]  = useState('')
+  // Inicializa o display do serviço a partir do codServico já preenchido (pré-populate)
+  const [servSearch,  setServSearch]  = useState(() => {
+    if (!codServico) return ''
+    const s = LC116.find(s => s.cod === codServico)
+    return s ? `${s.cod} — ${s.desc}` : codServico
+  })
   const [servOpen,    setServOpen]    = useState(false)
 
   const filteredMun = MUNICIPIOS.filter(m =>
@@ -790,7 +795,6 @@ const STEPS = [
   { id: 'termos',  label: 'Termos',   skippable: false },
   { id: 'empresa', label: 'Empresa',  skippable: false },
   { id: 'fiscal',  label: 'Fiscal',   skippable: true  },
-  { id: 'pix',     label: 'PIX',      skippable: true  },
   { id: 'done'                                       },
 ]
 const CONTENT_STEPS = STEPS.filter(s => s.id !== 'welcome' && s.id !== 'done')
@@ -821,9 +825,34 @@ export default function OnboardingWizard({ onComplete, termsOnly = false }) {
   const [aliquota,      setAliquota]      = useState('')
   const [issAutoFilled, setIssAutoFilled] = useState(false)
 
-  // PIX
-  const [pixType, setPixType] = useState('cpf')
-  const [pixKey,  setPixKey]  = useState('')
+  // ── Pré-preenchimento: lê metadata do signup + profile do banco ──────────
+  useEffect(() => {
+    if (!user) return
+    const meta = user.user_metadata || {}
+
+    // Campos disponíveis imediatamente via auth metadata (gravados no signup)
+    if (meta.company_name) setCompany(c => c || meta.company_name)
+    if (meta.whatsapp)     setTelefone(t => t || meta.whatsapp)
+
+    // Busca profile completo no banco (pode ter dados fiscais, PIX, etc.)
+    supabase
+      .from('profiles')
+      .select('company_name, cnpj, inscricao_municipal, telefone, email_contato, nfse_municipio_ibge, nfse_municipio_nome, nfse_codigo_servico, aliquota_iss, pix_key_recebimento, pix_key_type')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(({ data: p }) => {
+        if (!p) return
+        if (p.company_name)        setCompany(v => v || p.company_name)
+        if (p.cnpj)                setCnpj(v => v || p.cnpj)
+        if (p.inscricao_municipal) setInscMun(v => v || p.inscricao_municipal)
+        if (p.telefone)            setTelefone(v => v || p.telefone)
+        if (p.email_contato)       setEmailCon(v => v || p.email_contato)
+        if (p.nfse_municipio_ibge) setIbge(v => v || p.nfse_municipio_ibge)
+        if (p.nfse_municipio_nome) setIbgeNome(v => v || p.nfse_municipio_nome)
+        if (p.nfse_codigo_servico) setCodServico(v => v || p.nfse_codigo_servico)
+        if (p.aliquota_iss != null) setAliquota(v => v || String(p.aliquota_iss).replace('.', ','))
+      })
+  }, [user]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const current = STEPS[step]
   const isDone  = current.id === 'done'
@@ -875,15 +904,6 @@ export default function OnboardingWizard({ onComplete, termsOnly = false }) {
         nfse_municipio_nome: ibgeNome.trim()   || null,
         nfse_codigo_servico: codServico.trim() || null,
         aliquota_iss: aliquota.replace(',', '.') ? parseFloat(aliquota.replace(',', '.')) || null : null,
-      }).eq('id', user.id)
-      setSaving(false)
-    }
-
-    if (current.id === 'pix' && pixKey.trim()) {
-      setSaving(true)
-      await supabase.from('profiles').update({
-        pix_key_recebimento: pixKey.trim(),
-        pix_key_type:        pixType,
       }).eq('id', user.id)
       setSaving(false)
     }
@@ -972,12 +992,6 @@ export default function OnboardingWizard({ onComplete, termsOnly = false }) {
               codServico={codServico} setCodServico={setCodServico}
               aliquota={aliquota} setAliquota={setAliquota}
               issAutoFilled={issAutoFilled} setIssAutoFilled={setIssAutoFilled}
-            />
-          )}
-          {current.id === 'pix' && (
-            <StepPix
-              pixType={pixType} setPixType={setPixType}
-              pixKey={pixKey} setPixKey={setPixKey}
             />
           )}
           {current.id === 'done' && <StepDone onNavigate={handleNavigate} />}

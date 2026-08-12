@@ -47,8 +47,9 @@ function AccessCard() {
     try {
       const { error: err } = await signUp(form.email, form.password, {
         company_name: form.company,
-        first_name: form.firstName,
-        last_name: form.lastName,
+        first_name:   form.firstName,
+        last_name:    form.lastName,
+        whatsapp:     form.whatsapp,
       })
       if (err) throw err
       navigate('/dashboard')

@@ -106,7 +106,8 @@ const MUNICIPIOS_SUL = [
 ]
 
 const VARS = [
-  { v:'{{inquilino}}', label:'Cliente' },
+  { v:'{{cliente}}',   label:'Cliente' },
+  { v:'{{inquilino}}', label:'Cliente (alias)' },
   { v:'{{imovel}}',    label:'Referência' },
   { v:'{{valor}}',     label:'Valor total' },
   { v:'{{vencimento}}',label:'Vencimento' },
@@ -116,16 +117,11 @@ const VARS = [
   { v:'{{empresa}}',   label:'Empresa' },
 ]
 
-const DEFAULT_BODY = `Olá, {{inquilino}}!
+const DEFAULT_BODY = `Olá, {{cliente}}!
 
-Segue em anexo o boleto e a nota fiscal de serviço referente à competência {{mes}}/{{ano}} do imóvel:
+Segue em anexo a nota fiscal de serviço referente à competência {{mes}}/{{ano}}:
 
-📍 {{imovel}}
 💰 Valor total: {{valor}}
-📅 Vencimento: {{vencimento}}
-
-Para pagar via PIX, utilize o link abaixo:
-{{link_boleto}}
 
 Em caso de dúvidas, entre em contato conosco.
 
@@ -278,7 +274,7 @@ export default function Config() {
     replyTo:    '',
     testEmailAddr: '',
     // Template
-    emailSubject: 'Boleto e NFS-e de {{mes}}/{{ano}} — {{imovel}}',
+    emailSubject: 'NFS-e {{mes}}/{{ano}}',
     emailBody:    DEFAULT_BODY,
     // API / Recebimentos
     pixKeyRecebimento: '',
@@ -330,7 +326,7 @@ export default function Config() {
           fromName:       data?.from_name         || '',
           replyTo:        data?.reply_to          || '',
           // Template
-          emailSubject: data?.email_subject || 'Boleto e NFS-e de {{mes}}/{{ano}} — {{imovel}}',
+          emailSubject: data?.email_subject || 'NFS-e {{mes}}/{{ano}}',
           emailBody:    data?.email_body    || DEFAULT_BODY,
           // API / Recebimentos
           pixKeyRecebimento: data?.pix_key_recebimento   || '',
@@ -490,6 +486,7 @@ export default function Config() {
 
   const renderPreview = (text) =>
     text
+      .replace(/{{cliente}}/g,   'João Carlos Santos')
       .replace(/{{inquilino}}/g, 'João Carlos Santos')
       .replace(/{{imovel}}/g, 'Sala 12 — R. 7 de Setembro, 230')
       .replace(/{{valor}}/g, 'R$ 2.150,00')
@@ -910,7 +907,7 @@ export default function Config() {
             </button>
             <button
               onClick={() => {
-                set('emailSubject', 'Boleto e NFS-e de {{mes}}/{{ano}} — {{imovel}}')
+                set('emailSubject', 'NFS-e {{mes}}/{{ano}}')
                 set('emailBody', DEFAULT_BODY)
               }}
               className="flex items-center gap-2 border border-indigo-200 bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-100 transition-colors">

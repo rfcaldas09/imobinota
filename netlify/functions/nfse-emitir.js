@@ -746,8 +746,8 @@ async function enviarEmailNfse({ profile: p, cobData, numeroNfse, nfseXml, homol
   const pdfFilename = `NFS-e_${numeroNfse || 'rascunho'}_${cobData.mesRef || ''}.pdf`
 
   // Template do e-mail
-  const subject  = p.email_subject || 'NFS-e {{mes}}/{{ano}} — {{imovel}}'
-  const bodyTpl  = p.email_body    || 'Prezado(a) {{inquilino}},\n\nSegue em anexo a NFS-e referente a {{mes}}/{{ano}}.\n\nAtenciosamente,\n{{empresa}}'
+  const subject  = p.email_subject || 'NFS-e {{mes}}/{{ano}}'
+  const bodyTpl  = p.email_body    || 'Olá, {{cliente}}!\n\nSegue em anexo a nota fiscal de serviço referente à competência {{mes}}/{{ano}}:\n\n💰 Valor total: {{valor}}\n\nEm caso de dúvidas, entre em contato conosco.\n\nAtenciosamente,\n{{empresa}}'
   const fromName = p.from_name || 'NotaFacil'
   const replyTo  = p.reply_to  || ''
 
@@ -756,6 +756,7 @@ async function enviarEmailNfse({ profile: p, cobData, numeroNfse, nfseXml, homol
   const mesNome = meses[parseInt(mesNum || '1', 10) - 1] || mesNum || ''
 
   const vars = {
+    '{{cliente}}':   cobData.tenant    || '',
     '{{inquilino}}': cobData.tenant    || '',
     '{{mes}}':       mesNome,
     '{{ano}}':       ano               || '',
