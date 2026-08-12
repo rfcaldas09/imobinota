@@ -12,13 +12,13 @@ const fmtDate = d => {
 }
 
 const NAV = [
-  { to: '/dashboard',  label: 'Dashboard',     Icon: IcHome },
-  { to: '/contratos',  label: 'Contratos Recorrentes', Icon: IcFile },
-  { to: '/cobrancas',    label: 'Cobranças',      Icon: IcDollar },
-  { to: '/nfse-avulsa', label: 'NFS-e Avulsa',  Icon: IcReceipt },
-  { to: '/relatorios',  label: 'Relatórios',     Icon: IcTrend },
-  { to: '/inquilinos', label: 'Clientes',      Icon: IcUsers },
-  { to: '/config',     label: 'Configurações', Icon: IcSettings },
+  { to: '/dashboard',   label: 'Dashboard',               Icon: IcHome },
+  { to: '/nfse-avulsa', label: 'Emitir NFS-e Avulsa',    Icon: IcReceipt },
+  { to: '/contratos',   label: 'Contratos Recorrentes',  Icon: IcFile },
+  { to: '/cobrancas',   label: 'Emitir NFS-e recorrente', Icon: IcDollar },
+  { to: '/relatorios',  label: 'Relatórios',              Icon: IcTrend },
+  { to: '/inquilinos',  label: 'Clientes',                Icon: IcUsers },
+  { to: '/config',      label: 'Configurações',           Icon: IcSettings },
 ]
 
 export default function Sidebar() {

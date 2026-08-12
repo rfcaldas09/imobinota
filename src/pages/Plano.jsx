@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useSubscription } from '../contexts/SubscriptionContext'
 
@@ -102,11 +102,20 @@ function PlanCard({ plan, isCurrent, isPaying, onAssinar }) {
 }
 
 // ── Painel de pagamento PIX (real via OpenPIX) ────────────────────
-function PixPanel({ plan, userId, onClose, onPaid }) {
+function PixPanel({ plan, userId, onClose }) {
   const [brCode, setBrCode]   = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
   const [copied, setCopied]   = useState(false)
+  const [displayAmount, setDisplayAmount] = useState(plan.price) // R$ exibido
+
+  // Cupom
+  const [couponInput, setCouponInput]     = useState('')
+  const [couponApplied, setCouponApplied] = useState(null)  // { codigo, valorMensal }
+  const [couponLoading, setCouponLoading] = useState(false)
+  const [couponError, setCouponError]     = useState('')
+
+  const cancelRef = useRef(false)
 
   useEffect(() => {
     const handle = e => { if (e.key === 'Escape') onClose() }
@@ -114,31 +123,66 @@ function PixPanel({ plan, userId, onClose, onPaid }) {
     return () => document.removeEventListener('keydown', handle)
   }, [onClose])
 
-  // Gera cobrança ao abrir o painel
-  useEffect(() => {
-    let cancelled = false
-    const generate = async () => {
-      setLoading(true); setError('')
-      try {
-        const res = await fetch('/.netlify/functions/plano-pagar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ planId: plan.id, userId }),
-        })
-        const data = await res.json()
-        if (!cancelled) {
-          if (!res.ok || data.error) { setError(data.error || 'Erro ao gerar cobrança'); return }
-          setBrCode(data.brCode)
-        }
-      } catch (err) {
-        if (!cancelled) setError(err.message)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
+  // Gera/regera cobrança PIX
+  const generatePix = async (cupomCodigo = null) => {
+    cancelRef.current = false
+    setLoading(true); setError('')
+    try {
+      const res = await fetch('/.netlify/functions/plano-pagar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId: plan.id, userId, cupomCodigo }),
+      })
+      const data = await res.json()
+      if (cancelRef.current) return
+      if (!res.ok || data.error) { setError(data.error || 'Erro ao gerar cobrança'); return }
+      setBrCode(data.brCode)
+      // data.amount vem em centavos
+      setDisplayAmount((data.amount || plan.price * 100) / 100)
+    } catch (err) {
+      if (!cancelRef.current) setError(err.message)
+    } finally {
+      if (!cancelRef.current) setLoading(false)
     }
-    generate()
-    return () => { cancelled = true }
-  }, [plan.id, userId])
+  }
+
+  // Gera PIX inicial (sem cupom)
+  useEffect(() => {
+    generatePix()
+    return () => { cancelRef.current = true }
+  }, [plan.id, userId]) // eslint-disable-line
+
+  // Aplica cupom e regenera PIX
+  const applyCoupon = async () => {
+    if (!couponInput.trim()) return
+    setCouponLoading(true); setCouponError(''); setCouponApplied(null)
+    try {
+      const codigo = couponInput.trim().toUpperCase()
+      const res = await fetch('/.netlify/functions/cupom-verificar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigo }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        setCouponError(data.error || 'Cupom inválido')
+        return
+      }
+      setCouponApplied({ codigo, valorMensal: data.valorMensal })
+      generatePix(codigo)
+    } catch (err) {
+      setCouponError(err.message)
+    } finally {
+      setCouponLoading(false)
+    }
+  }
+
+  const removeCoupon = () => {
+    setCouponApplied(null)
+    setCouponInput('')
+    setCouponError('')
+    generatePix(null)
+  }
 
   const copyCode = () => {
     if (!brCode) return
@@ -151,16 +195,61 @@ function PixPanel({ plan, userId, onClose, onPaid }) {
     ? { bg: 'bg-purple-600', bgLight: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' }
     : { bg: 'bg-indigo-600', bgLight: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' }
 
+  const fmtBRL = n => `R$ ${Number(n).toFixed(2).replace('.', ',')}`
+
   return (
     <div className={`bg-white border-2 ${accent.border} rounded-2xl p-5`}>
       <div className="flex items-center justify-between mb-4">
         <div>
           <p className="font-bold text-slate-900">Pagamento via PIX</p>
-          <p className="text-xs text-slate-400 mt-0.5">{plan.name} · R$ {plan.price.toFixed(2).replace('.',',')} /mês</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {plan.name}
+            {couponApplied
+              ? <> · <span className="line-through">{fmtBRL(plan.price)}</span> → <span className="text-emerald-600 font-semibold">{fmtBRL(couponApplied.valorMensal)}</span> /mês</>
+              : ` · ${fmtBRL(plan.price)} /mês`}
+          </p>
         </div>
         <button onClick={onClose} className="text-slate-300 hover:text-slate-500 text-xl leading-none">×</button>
       </div>
 
+      {/* ── Campo de cupom ──────────────────────────────────────── */}
+      <div className="mb-4">
+        {couponApplied ? (
+          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
+            <span className="text-emerald-600 text-sm">✅</span>
+            <span className="text-sm text-emerald-700 font-semibold flex-1">
+              Cupom <strong>{couponApplied.codigo}</strong> aplicado — {fmtBRL(couponApplied.valorMensal)}/mês
+            </span>
+            <button onClick={removeCoupon} className="text-xs text-slate-400 hover:text-slate-600 underline">remover</button>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={couponInput}
+                onChange={e => { setCouponInput(e.target.value.toUpperCase()); setCouponError('') }}
+                onKeyDown={e => e.key === 'Enter' && applyCoupon()}
+                placeholder="Código de desconto (opcional)"
+                className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-slate-50"
+                maxLength={20}
+              />
+              <button
+                onClick={applyCoupon}
+                disabled={!couponInput.trim() || couponLoading}
+                className="px-4 py-2 text-sm font-semibold bg-slate-700 text-white rounded-xl hover:bg-slate-800 disabled:opacity-40 transition-all whitespace-nowrap"
+              >
+                {couponLoading ? '…' : 'Aplicar'}
+              </button>
+            </div>
+            {couponError && (
+              <p className="text-xs text-red-600 pl-1">{couponError}</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── QR Code e detalhes ───────────────────────────────────── */}
       {loading ? (
         <div className="flex items-center justify-center py-10 text-slate-400 text-sm gap-3">
           <div className="w-5 h-5 border-2 border-slate-200 border-t-indigo-500 rounded-full animate-spin"/>
@@ -180,7 +269,10 @@ function PixPanel({ plan, userId, onClose, onPaid }) {
           <div className="flex-1 space-y-3">
             <div className={`rounded-xl px-4 py-3 ${accent.bgLight} border ${accent.border}`}>
               <p className={`text-xs font-semibold mb-0.5 ${accent.text}`}>Valor a pagar</p>
-              <p className="text-2xl font-black text-slate-900">R$ {plan.price.toFixed(2).replace('.',',')}</p>
+              {couponApplied && (
+                <p className="text-xs text-slate-400 line-through">{fmtBRL(plan.price)}</p>
+              )}
+              <p className="text-2xl font-black text-slate-900">{fmtBRL(displayAmount)}</p>
             </div>
 
             {brCode && (
@@ -221,7 +313,6 @@ export default function Plano() {
   const warn      = daysLeft <= 2
   const planKey   = (sub.plan === 'essencial' || sub.plan === 'pro') ? sub.plan : null
 
-  // Formata data legível
   const fmtDate = d => d ? new Date(d).toLocaleDateString('pt-BR') : '—'
 
   const handleAssinar = (planId) => {

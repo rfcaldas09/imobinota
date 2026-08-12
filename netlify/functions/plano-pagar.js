@@ -1,6 +1,9 @@
 // Netlify Function — gera cobrança PIX para pagamento de plano NotaFacil
 // Sem split (100% para a conta principal OpenPIX).
-// correlationID: "plano-{userId}-{planId}-{YYYYMM}" — evita duplicatas no mesmo mês.
+//
+// correlationID format: "plano-{userId}_{planId}_{YYYYMM}" (sem cupom)
+//                    ou "plano-{userId}_{planId}_{YYYYMM}_{CUPOMCODE}" (com cupom)
+// Usa _ como separador interno para não conflitar com traços do UUID.
 
 const PLANOS = {
   essencial: { nome: 'NotaFacil Essencial', valor: 19700 }, // R$ 197,00 em centavos
@@ -26,7 +29,7 @@ async function handle(event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Body inválido' }) }
   }
 
-  const { planId, userId } = body
+  const { planId, userId, cupomCodigo } = body
   if (!planId || !userId) {
     return { statusCode: 400, body: JSON.stringify({ error: 'planId e userId são obrigatórios' }) }
   }
@@ -36,24 +39,64 @@ async function handle(event) {
     return { statusCode: 400, body: JSON.stringify({ error: `Plano inválido: ${planId}` }) }
   }
 
-  const APP_ID = process.env.OPENPIX_APP_ID
+  const APP_ID           = process.env.OPENPIX_APP_ID
+  const SUPABASE_URL     = process.env.SUPABASE_URL
+  const SUPABASE_SVC_KEY = process.env.SUPABASE_SERVICE_KEY
+
   if (!APP_ID) {
     return { statusCode: 500, body: JSON.stringify({ error: 'OPENPIX_APP_ID não configurado' }) }
   }
 
-  // correlationID único por usuário + plano + mês (evita cobrar duas vezes no mês)
-  const now = new Date()
+  // ── Valida cupom (se informado) ────────────────────────────────────────────
+  let valorCentavos = plano.valor
+  let cupomAplicado = null
+
+  if (cupomCodigo && typeof cupomCodigo === 'string' && cupomCodigo.trim()) {
+    const codigoUpper = cupomCodigo.trim().toUpperCase()
+
+    if (!SUPABASE_URL || !SUPABASE_SVC_KEY) {
+      return { statusCode: 500, body: JSON.stringify({ error: 'Supabase não configurado para validar cupom' }) }
+    }
+
+    const cupomRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/cupons?codigo=eq.${encodeURIComponent(codigoUpper)}&ativo=eq.true&select=codigo,valor_mensal`,
+      {
+        headers: {
+          'apikey':        SUPABASE_SVC_KEY,
+          'Authorization': `Bearer ${SUPABASE_SVC_KEY}`,
+        },
+      }
+    )
+    const cupomRows = await cupomRes.json()
+
+    if (!cupomRes.ok || !Array.isArray(cupomRows) || cupomRows.length === 0) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'Cupom inválido ou inativo' }) }
+    }
+
+    const cupom = cupomRows[0]
+    valorCentavos = Math.round(parseFloat(cupom.valor_mensal) * 100)
+    cupomAplicado = codigoUpper
+    console.log('[plano-pagar] Cupom aplicado:', codigoUpper, '→ R$', cupom.valor_mensal)
+  }
+
+  // ── Gera correlationID ─────────────────────────────────────────────────────
+  // Usa _ como separador interno para não conflitar com os traços do UUID do userId
+  const now    = new Date()
   const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
-  const correlationID = `plano-${userId}-${planId}-${yyyymm}`
+  const correlationID = cupomAplicado
+    ? `plano-${userId}_${planId}_${yyyymm}_${cupomAplicado}`
+    : `plano-${userId}_${planId}_${yyyymm}`
 
   // QR expira no último dia do mês atual às 23:59
   const ultimoDia = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
   const expiresIn = Math.max(3600, Math.floor((ultimoDia - now) / 1000))
 
   const chargeBody = {
-    value:         plano.valor,
+    value:         valorCentavos,
     correlationID,
-    comment:       `Assinatura ${plano.nome} - ${yyyymm.slice(0, 4)}/${yyyymm.slice(4)}`,
+    comment:       cupomAplicado
+      ? `Assinatura ${plano.nome} - ${yyyymm.slice(0, 4)}/${yyyymm.slice(4)} (cupom: ${cupomAplicado})`
+      : `Assinatura ${plano.nome} - ${yyyymm.slice(0, 4)}/${yyyymm.slice(4)}`,
     expiresIn,
   }
 
@@ -76,7 +119,7 @@ async function handle(event) {
   if (!res.ok) {
     const msg = data?.error || data?.message || data?.errors?.[0]?.message || `Erro OpenPIX: ${res.status}`
 
-    // Se já existe cobrança para este mês, busca e retorna a existente
+    // Se já existe cobrança para esta combinação, busca e retorna a existente
     const isDuplicate = /correlat|j.{1,4}existe|already exist/i.test(msg)
     if (isDuplicate) {
       const getRes = await fetch(`https://api.openpix.com.br/api/v1/charge/${correlationID}`, {
@@ -89,11 +132,12 @@ async function handle(event) {
           statusCode: 200,
           body: JSON.stringify({
             ok: true,
-            brCode:     existing.brCode || ch.brCode || null,
-            amount:     ch.value || plano.valor,
-            planName:   plano.nome,
+            brCode:        existing.brCode || ch.brCode || null,
+            amount:        ch.value || valorCentavos,
+            planName:      plano.nome,
             correlationID,
-            existing:   true,
+            cupomAplicado,
+            existing:      true,
           }),
         }
       }
@@ -106,11 +150,12 @@ async function handle(event) {
   return {
     statusCode: 200,
     body: JSON.stringify({
-      ok: true,
-      brCode:       data.brCode || charge.brCode || null,
-      amount:       charge.value || plano.valor,
-      planName:     plano.nome,
+      ok:            true,
+      brCode:        data.brCode || charge.brCode || null,
+      amount:        charge.value || valorCentavos,
+      planName:      plano.nome,
       correlationID,
+      cupomAplicado,
     }),
   }
 }

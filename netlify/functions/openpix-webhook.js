@@ -73,7 +73,8 @@ exports.handler = async (event) => {
   }
 
   // ── 2. Detecta se é pagamento de PLANO ou de COBRANÇA de aluguel ──────────────
-  // correlationID de plano: "plano-{userId}-{planId}-{YYYYMM}"
+  // correlationID de plano (novo formato): "plano-{userId}_{planId}_{YYYYMM}[_{CUPOMCODE}]"
+  // correlationID de plano (formato legado): "plano-{userId}-{planId}-{YYYYMM}"
   const isPlanPayment = correlationID && /^plano-/.test(correlationID)
 
   let supabaseResult = null
@@ -81,12 +82,39 @@ exports.handler = async (event) => {
     try {
       if (isPlanPayment) {
         // ── Ativa assinatura do usuário ──────────────────────────────
-        // correlationID: plano-{userId}-{planId}-YYYYMM
-        const parts  = correlationID.split('-') // ['plano', userId, planId, YYYYMM]
-        const userId = parts[1]
-        const planId = parts[2]
-        const fim    = new Date()
-        fim.setDate(fim.getDate() + 30) // 30 dias a partir do pagamento
+        // Novo formato: plano-{userId}_{planId}_{YYYYMM}[_{CUPOMCODE}]
+        // Legado:       plano-{userId}-{planId}-{YYYYMM}  (UUID tem traços, parsing era bugado)
+        //
+        // Remove o prefixo "plano-" e divide pelo separador "_"
+        const remainder = correlationID.replace(/^plano-/, '')
+        const parts = remainder.split('_')
+
+        let userId, planId, cupomCodigo
+
+        if (parts.length >= 3) {
+          // Novo formato: parts = [userId, planId, YYYYMM, (cupom)?]
+          userId      = parts[0]  // UUID completo (pode conter traços)
+          planId      = parts[1]
+          cupomCodigo = parts[3] || null  // presente se houver cupom
+        } else {
+          // Formato legado (sem _): tentar extrair planId do final
+          // "550e8400-e29b-41d4-a716-446655440000-essencial-202608"
+          // planId são 'essencial' ou 'pro'; YYYYMM são 6 dígitos
+          const m = correlationID.match(/^plano-(.+)-(essencial|pro)-(\d{6})$/)
+          if (m) {
+            userId      = m[1]
+            planId      = m[2]
+            cupomCodigo = null
+          } else {
+            // Fallback: divisão simples (comportamento anterior, pode falhar com UUID)
+            const legacyParts = correlationID.split('-')
+            userId  = legacyParts[1]
+            planId  = legacyParts[2]
+          }
+        }
+
+        const fim = new Date()
+        fim.setDate(fim.getDate() + 30)
 
         const patch = await fetch(
           `${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`,
@@ -99,14 +127,52 @@ exports.handler = async (event) => {
               'Prefer':        'return=minimal',
             },
             body: JSON.stringify({
-              plano_tipo:    planId,
-              plano_fim:     fim.toISOString(),
-              plano_inicio:  new Date().toISOString(),
+              plano_tipo:   planId,
+              plano_fim:    fim.toISOString(),
+              plano_inicio: new Date().toISOString(),
             }),
           }
         )
         supabaseResult = { ok: patch.ok, status: patch.status, type: 'plano', planId, userId }
         console.log('[openpix-webhook] Plano ativado:', { userId, planId, fim })
+
+        // ── Incrementa contador de usos do cupom ────────────────────
+        if (cupomCodigo && patch.ok) {
+          try {
+            // Busca o valor atual de usos
+            const cupomGet = await fetch(
+              `${SUPABASE_URL}/rest/v1/cupons?codigo=eq.${encodeURIComponent(cupomCodigo)}&select=id,usos`,
+              {
+                headers: {
+                  'apikey':        SUPABASE_SVC_KEY,
+                  'Authorization': `Bearer ${SUPABASE_SVC_KEY}`,
+                },
+              }
+            )
+            const cupomRows = await cupomGet.json()
+
+            if (Array.isArray(cupomRows) && cupomRows.length > 0) {
+              const cupom = cupomRows[0]
+              await fetch(
+                `${SUPABASE_URL}/rest/v1/cupons?id=eq.${cupom.id}`,
+                {
+                  method: 'PATCH',
+                  headers: {
+                    'apikey':        SUPABASE_SVC_KEY,
+                    'Authorization': `Bearer ${SUPABASE_SVC_KEY}`,
+                    'Content-Type':  'application/json',
+                    'Prefer':        'return=minimal',
+                  },
+                  body: JSON.stringify({ usos: (cupom.usos || 0) + 1 }),
+                }
+              )
+              console.log('[openpix-webhook] Cupom incrementado:', cupomCodigo, '→ usos:', (cupom.usos || 0) + 1)
+            }
+          } catch (cupomErr) {
+            console.error('[openpix-webhook] Erro ao incrementar cupom:', cupomErr.message)
+          }
+        }
+
       } else {
         // ── Marca cobrança de aluguel como Pago ──────────────────────
         const patch = await fetch(
