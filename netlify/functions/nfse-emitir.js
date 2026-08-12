@@ -217,18 +217,24 @@ async function handle(event) {
   if (httpStatus !== 201) {
     // Extrai mensagem legível dos erros do SEFIN (formato JSON { erros: [{Codigo, Descricao, Complemento}] })
     let userMessage = `Erro na comunicação com o SEFIN (HTTP ${httpStatus})`
-    try {
-      const errJson = JSON.parse(responseBody)
-      const erros = errJson.erros || []
-      if (erros.length > 0) {
-        userMessage = erros.map(e => {
-          const cod   = e.Codigo      || e.codigo      || ''
-          const desc  = e.Descricao   || e.descricao   || ''
-          const compl = e.Complemento || e.complemento || ''
-          return cod ? `[${cod}] ${desc}${compl ? ': ' + compl : ''}` : desc
-        }).join('\n')
-      }
-    } catch { userMessage = responseBody.slice(0, 500) || userMessage }
+
+    // 503 = SEFIN fora do ar (responde com HTML do IIS, não JSON)
+    if (httpStatus === 503 || responseBody.includes('Service Unavailable')) {
+      userMessage = 'O servidor da SEFIN está fora do ar (503). Aguarde alguns minutos e tente novamente.'
+    } else {
+      try {
+        const errJson = JSON.parse(responseBody)
+        const erros = errJson.erros || []
+        if (erros.length > 0) {
+          userMessage = erros.map(e => {
+            const cod   = e.Codigo      || e.codigo      || ''
+            const desc  = e.Descricao   || e.descricao   || ''
+            const compl = e.Complemento || e.complemento || ''
+            return cod ? `[${cod}] ${desc}${compl ? ': ' + compl : ''}` : desc
+          }).join('\n')
+        }
+      } catch { userMessage = responseBody.slice(0, 500) || userMessage }
+    }
 
     await gravarEmissao(SUPABASE_URL, SERVICE_KEY, {
       user_id: userId, cobranca_id: cobId || null,
