@@ -355,164 +355,162 @@ export default function NfseAvulsa() {
   const errorCount   = emitResults.filter(r => !r.ok).length
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">NFS-e Avulsa</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Emita notas fiscais sem vínculo com contratos. Ideal para atendimentos avulsos.
-          </p>
-        </div>
-        <button
-          onClick={() => { setEditIdx(null); setShowModal(true) }}
-          disabled={emitting}
-          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50">
-          <IcPlus/> Adicionar Tomador
-        </button>
+    <div className="p-6 max-w-5xl mx-auto space-y-6">
+
+      {/* ── 1. Header da página ───────────────────────────────── */}
+      <div>
+        <h1 className="text-xl font-bold text-slate-900">NFS-e Avulsa</h1>
+        <p className="text-sm text-slate-500 mt-0.5">
+          Emita notas fiscais sem vínculo com contratos. Ideal para atendimentos avulsos.
+        </p>
       </div>
 
-      {/* Progress durante emissão */}
-      {(emitting || emitDone) && emitSnapshot.length > 0 && (
-        <EmissaoProgress
-          items={emitSnapshot}
-          results={emitResults}
-          current={emitCurrent}
-          done={emitDone}
-        />
-      )}
-
-      {/* Resumo pós-emissão */}
-      {emitDone && (
-        <div className={`rounded-xl px-4 py-3 mb-4 text-sm font-medium ${
-          errorCount === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-        }`}>
-          {successCount > 0 && `✅ ${successCount} NFS-e(s) emitida(s) com sucesso. `}
-          {errorCount   > 0 && `⚠️ ${errorCount} com erro — verifique abaixo e tente novamente.`}
-        </div>
-      )}
-
-      {/* Fila de pendentes */}
-      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden mb-8">
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50">
-          <div className="flex items-center gap-2">
-            <IcDoc c="text-indigo-500"/>
-            <span className="text-sm font-semibold text-slate-700">
-              Fila de emissão
-            </span>
-            {pending.length > 0 && (
-              <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
-                {pending.length}
-              </span>
+      {/* ── 2. KPI Cards + toggle de período ─────────────────── */}
+      <div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <div className="flex gap-2 items-center flex-wrap">
+            <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
+              {['mensal','anual'].map(v => (
+                <button key={v} onClick={() => setHistView(v)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${histView === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                  {v === 'mensal' ? '📅 Mensal' : '📊 Anual'}
+                </button>
+              ))}
+            </div>
+            {histView === 'mensal' ? (
+              <MonthPicker value={histMes} onChange={setHistMes}/>
+            ) : (
+              <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50 overflow-hidden select-none">
+                <button onClick={() => setHistAno(a => a - 1)}
+                  className="px-3 py-2.5 text-slate-500 hover:bg-slate-200 font-bold text-base leading-none">‹</button>
+                <span className="px-4 font-semibold text-slate-800 text-sm">{histAno}</span>
+                <button onClick={() => setHistAno(a => a + 1)}
+                  className="px-3 py-2.5 text-slate-500 hover:bg-slate-200 font-bold text-base leading-none">›</button>
+              </div>
             )}
           </div>
-          {pending.length > 0 && !emitting && (
-            <button onClick={handleEmitirTudo}
-              className="flex items-center gap-1.5 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700">
-              <IcSend c="w-3.5 h-3.5"/> Gerar e Enviar Tudo ({pending.length})
-            </button>
-          )}
         </div>
-
-        {pending.length === 0 ? (
-          <div className="text-center py-12 text-slate-400">
-            <IcDoc c="w-10 h-10 mx-auto mb-3 opacity-30"/>
-            <p className="text-sm">Nenhum tomador na fila.</p>
-            <p className="text-xs mt-1">Clique em "Adicionar Tomador" para começar.</p>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl p-5 text-white">
+            <p className="text-indigo-200 text-xs font-semibold uppercase tracking-wide mb-1">Total Emitido</p>
+            <p className="text-2xl font-bold mb-0.5">{fmtBRL(histTotalVal)}</p>
+            <p className="text-indigo-200 text-xs">
+              {histEmitidas.length} nota{histEmitidas.length !== 1 ? 's' : ''} emitida{histEmitidas.length !== 1 ? 's' : ''}
+            </p>
           </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-xs font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-50">
-                <th className="px-5 py-2.5 text-left">Nome / Razão Social</th>
-                <th className="px-4 py-2.5 text-left">CPF / CNPJ</th>
-                <th className="px-4 py-2.5 text-left">Competência</th>
-                <th className="px-4 py-2.5 text-right">Valor</th>
-                <th className="px-4 py-2.5"/>
-              </tr>
-            </thead>
-            <tbody>
-              {pending.map((item, i) => (
-                <tr key={i} className="border-t border-slate-50 hover:bg-slate-50/50">
-                  <td className="px-5 py-3">
-                    <p className="font-medium text-slate-800">{item.nome}</p>
-                    {item.email && <p className="text-xs text-slate-400">{item.email}</p>}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{item.cpfCnpj}</td>
-                  <td className="px-4 py-3 text-slate-600">{item.mesRef}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-slate-800">{fmtBRL(item.valor)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => handleEdit(i)} disabled={emitting}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30">
-                        <IcEdit/>
-                      </button>
-                      <button onClick={() => handleRemove(i)} disabled={emitting}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-30">
-                        <IcX/>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="bg-white rounded-2xl p-5 border border-slate-100">
+            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1">✅ Emitidas</p>
+            <p className="text-2xl font-bold text-emerald-600">{histEmitidas.length}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{fmtBRL(histTotalVal)}</p>
+          </div>
+          <div className="bg-white rounded-2xl p-5 border border-slate-100">
+            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1">❌ Com Erro</p>
+            <p className="text-2xl font-bold text-red-500">{histErros}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{histErros > 0 ? 'Verifique o histórico' : 'Nenhum erro'}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 3. Fila de emissão ────────────────────────────────── */}
+      <div>
+        {/* Progress durante emissão */}
+        {(emitting || emitDone) && emitSnapshot.length > 0 && (
+          <EmissaoProgress
+            items={emitSnapshot}
+            results={emitResults}
+            current={emitCurrent}
+            done={emitDone}
+          />
         )}
-      </div>
 
-      {/* ── Cards de KPI + filtro de período ─────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <h2 className="text-sm font-bold text-slate-800">Histórico de emissões avulsas</h2>
-        <div className="flex gap-2 items-center flex-wrap">
-          {/* Toggle Mensal / Anual */}
-          <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
-            {['mensal','anual'].map(v => (
-              <button key={v} onClick={() => setHistView(v)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${histView === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                {v === 'mensal' ? '📅 Mensal' : '📊 Anual'}
-              </button>
-            ))}
+        {/* Resumo pós-emissão */}
+        {emitDone && (
+          <div className={`rounded-xl px-4 py-3 mb-4 text-sm font-medium ${
+            errorCount === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+          }`}>
+            {successCount > 0 && `✅ ${successCount} NFS-e(s) emitida(s) com sucesso. `}
+            {errorCount   > 0 && `⚠️ ${errorCount} com erro — verifique abaixo e tente novamente.`}
           </div>
-          {/* Seletor de período */}
-          {histView === 'mensal' ? (
-            <MonthPicker value={histMes} onChange={setHistMes}/>
-          ) : (
-            <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50 overflow-hidden select-none">
-              <button onClick={() => setHistAno(a => a - 1)}
-                className="px-3 py-2.5 text-slate-500 hover:bg-slate-200 font-bold text-base leading-none">‹</button>
-              <span className="px-4 font-semibold text-slate-800 text-sm">{histAno}</span>
-              <button onClick={() => setHistAno(a => a + 1)}
-                className="px-3 py-2.5 text-slate-500 hover:bg-slate-200 font-bold text-base leading-none">›</button>
+        )}
+
+        <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50">
+            <div className="flex items-center gap-2">
+              <IcDoc c="text-indigo-500"/>
+              <span className="text-sm font-semibold text-slate-700">Fila de emissão</span>
+              {pending.length > 0 && (
+                <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                  {pending.length}
+                </span>
+              )}
             </div>
+            <div className="flex items-center gap-2">
+              {pending.length > 0 && !emitting && (
+                <button onClick={handleEmitirTudo}
+                  className="flex items-center gap-1.5 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700">
+                  <IcSend c="w-3.5 h-3.5"/> Gerar e Enviar Tudo ({pending.length})
+                </button>
+              )}
+              <button
+                onClick={() => { setEditIdx(null); setShowModal(true) }}
+                disabled={emitting}
+                className="flex items-center gap-1.5 border border-indigo-200 text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-50 disabled:opacity-50">
+                <IcPlus/> Adicionar Tomador
+              </button>
+            </div>
+          </div>
+
+          {pending.length === 0 ? (
+            <div className="text-center py-12 text-slate-400">
+              <IcDoc c="w-10 h-10 mx-auto mb-3 opacity-30"/>
+              <p className="text-sm">Nenhum tomador na fila.</p>
+              <p className="text-xs mt-1">Clique em "Adicionar Tomador" para começar.</p>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-50">
+                  <th className="px-5 py-2.5 text-left">Nome / Razão Social</th>
+                  <th className="px-4 py-2.5 text-left">CPF / CNPJ</th>
+                  <th className="px-4 py-2.5 text-left">Competência</th>
+                  <th className="px-4 py-2.5 text-right">Valor</th>
+                  <th className="px-4 py-2.5"/>
+                </tr>
+              </thead>
+              <tbody>
+                {pending.map((item, i) => (
+                  <tr key={i} className="border-t border-slate-50 hover:bg-slate-50/50">
+                    <td className="px-5 py-3">
+                      <p className="font-medium text-slate-800">{item.nome}</p>
+                      {item.email && <p className="text-xs text-slate-400">{item.email}</p>}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{item.cpfCnpj}</td>
+                    <td className="px-4 py-3 text-slate-600">{item.mesRef}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-slate-800">{fmtBRL(item.valor)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => handleEdit(i)} disabled={emitting}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30">
+                          <IcEdit/>
+                        </button>
+                        <button onClick={() => handleRemove(i)} disabled={emitting}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-30">
+                          <IcX/>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl p-4 text-white">
-          <p className="text-indigo-200 text-xs font-semibold uppercase tracking-wide mb-1">Total Emitido</p>
-          <p className="text-xl font-bold mb-0.5">{fmtBRL(histTotalVal)}</p>
-          <p className="text-indigo-200 text-xs">
-            {histEmitidas.length} nota{histEmitidas.length !== 1 ? 's' : ''} emitida{histEmitidas.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <div className="bg-white rounded-2xl p-4 border border-slate-100">
-          <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1">✅ Emitidas</p>
-          <p className="text-xl font-bold text-emerald-600">{histEmitidas.length}</p>
-          <p className="text-xs text-slate-400 mt-0.5">{fmtBRL(histTotalVal)}</p>
-        </div>
-        <div className="bg-white rounded-2xl p-4 border border-slate-100">
-          <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1">❌ Com Erro</p>
-          <p className="text-xl font-bold text-red-500">{histErros}</p>
-          <p className="text-xs text-slate-400 mt-0.5">{histErros > 0 ? 'Verifique o histórico' : 'Nenhum erro'}</p>
-        </div>
-      </div>
-
-      {/* Histórico */}
+      {/* ── 4. Histórico ─────────────────────────────────────── */}
       <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
         <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
-          <span className="text-sm font-semibold text-slate-700">Notas do período</span>
+          <span className="text-sm font-semibold text-slate-700">Histórico de emissões avulsas</span>
           {loadingHistory && (
             <div className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"/>
           )}
