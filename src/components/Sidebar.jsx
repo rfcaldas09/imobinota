@@ -13,7 +13,7 @@ const fmtDate = d => {
 
 const NAV = [
   { to: '/dashboard',  label: 'Dashboard',     Icon: IcHome },
-  { to: '/contratos',  label: 'Contratos',     Icon: IcFile },
+  { to: '/contratos',  label: 'Contratos Recorrentes', Icon: IcFile },
   { to: '/cobrancas',    label: 'Cobranças',      Icon: IcDollar },
   { to: '/nfse-avulsa', label: 'NFS-e Avulsa',  Icon: IcReceipt },
   { to: '/relatorios',  label: 'Relatórios',     Icon: IcTrend },

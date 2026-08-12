@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { useNfseReadiness } from '../contexts/NfseReadinessContext'
 import { LC116 } from '../lib/lc116'
 import { MUNICIPIOS_SUL } from '../lib/municipios'
 
@@ -201,7 +203,13 @@ function Lc116Picker({ value, onChange }) {
 
 export default function Config() {
   const { user } = useAuth()
-  const [tab, setTab]           = useState('empresa')
+  const { refresh: refreshNfse } = useNfseReadiness()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [tab, setTab]           = useState(() => {
+    const t = searchParams.get('tab')
+    const valid = ['empresa', 'fiscal', 'email', 'template', 'api']
+    return valid.includes(t) ? t : 'empresa'
+  })
   const [saved, setSaved]       = useState(false)
   const [saving, setSaving]     = useState(false)
   const [loadingProfile, setLoadingProfile] = useState(true)
@@ -407,6 +415,7 @@ export default function Config() {
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
+    refreshNfse()   // atualiza o banner de pendências
   }
 
   const sendTest = async () => {
@@ -556,6 +565,7 @@ export default function Config() {
                   set('certNome', file.name)
                   set('certPassword', '') // limpa senha da UI
                   setCertMsg({ ok: true, msg: `${file.name} enviado com sucesso.` })
+                  refreshNfse()   // atualiza banner de pendências
                 } catch (err) {
                   setCertMsg({ ok: false, msg: err.message || 'Erro ao enviar certificado.' })
                 } finally {

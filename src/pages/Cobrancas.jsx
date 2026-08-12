@@ -1423,19 +1423,6 @@ export default function Cobrancas() {
             className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40">
             <IcRefresh c={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}/>
           </button>
-          <button onClick={() => setAddCob(true)}
-            className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-50 shadow-sm whitespace-nowrap">
-            <IcPlus c="w-4 h-4"/> Adicionar Cobrança
-          </button>
-          <button onClick={() => isActive ? setShowBatch(true) : navigate('/plano')}
-            title={!isActive ? 'Assine um plano para usar esta função' : ''}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm shadow-md whitespace-nowrap ${
-              isActive
-                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700 shadow-indigo-200'
-                : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-            }`}>
-            {isActive ? <IcZap c="w-4 h-4"/> : '🔒'} Gerar e Enviar Tudo
-          </button>
         </div>
       </div>
 
@@ -1463,14 +1450,31 @@ export default function Cobrancas() {
         ))}
       </div>
 
-      {/* ── Filtros ────────────────────────────────────────── */}
-      <div className="flex bg-white border border-slate-200 rounded-xl p-1 gap-1 w-fit">
-        {FILTERS.map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${filter === f ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
-            {f}
+      {/* ── Filtros + Ações ────────────────────────────────── */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex bg-white border border-slate-200 rounded-xl p-1 gap-1">
+          {FILTERS.map(f => (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${filter === f ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+              {f}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setAddCob(true)}
+            className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-semibold text-sm hover:bg-slate-50 shadow-sm whitespace-nowrap">
+            <IcPlus c="w-4 h-4"/> Adicionar Cobrança
           </button>
-        ))}
+          <button onClick={() => isActive ? setShowBatch(true) : navigate('/plano')}
+            title={!isActive ? 'Assine um plano para usar esta função' : ''}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm shadow-md whitespace-nowrap ${
+              isActive
+                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700 shadow-indigo-200'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+            }`}>
+            {isActive ? <IcZap c="w-4 h-4"/> : '🔒'} Gerar e Enviar Tudo
+          </button>
+        </div>
       </div>
 
       {/* ── Tabela ─────────────────────────────────────────── */}
