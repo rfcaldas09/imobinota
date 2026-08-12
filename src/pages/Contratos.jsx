@@ -103,9 +103,41 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
     email: '', phone: '', start: new Date().toISOString().slice(0,10),
     end: '', status: 'Ativo', codServicoLc116: '',
     discriminacaoServico: '', solicitarDiscriminacaoMensal: false,
+    // Retenções
+    issRetido: false, pIRRF: '', pCSLL: '', pCOFINS: '', pPIS: '', pINSS: '',
   }
   const [f, setF] = useState({ ...blank, ...initial })
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
+
+  const maskPct = v => {
+    const c = v.replace(/[^\d,]/g, '').replace(/,+/g, ',')
+    const [int, dec] = c.split(',')
+    return dec !== undefined ? `${(int||'').slice(0,3)},${dec.slice(0,2)}` : (int||'').slice(0,3)
+  }
+  const parsePctLocal = v => parseFloat((v||'').replace(',','.')) || 0
+
+  const [showRet, setShowRet] = useState(
+    !!(initial?.issRetido || initial?.pIRRF || initial?.pCSLL || initial?.pCOFINS || initial?.pPIS || initial?.pINSS)
+  )
+
+  const vServNum = parseFloat(f.value||0) || 0
+  const calcRetV = pct => pct > 0 ? (vServNum * pct / 100) : 0
+  const retIRRF   = calcRetV(parsePctLocal(f.pIRRF))
+  const retCSLL   = calcRetV(parsePctLocal(f.pCSLL))
+  const retCOFINS = calcRetV(parsePctLocal(f.pCOFINS))
+  const retPIS    = calcRetV(parsePctLocal(f.pPIS))
+  const retINSS   = calcRetV(parsePctLocal(f.pINSS))
+  const totalRet  = retIRRF + retCSLL + retCOFINS + retPIS + retINSS
+
+  const PRESET_RET = { pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '' }
+
+  const TAX_FIELDS_C = [
+    { key: 'pIRRF',   label: 'IRRF',   ret: retIRRF   },
+    { key: 'pCSLL',   label: 'CSLL',   ret: retCSLL   },
+    { key: 'pCOFINS', label: 'COFINS', ret: retCOFINS },
+    { key: 'pPIS',    label: 'PIS',    ret: retPIS    },
+    { key: 'pINSS',   label: 'INSS',   ret: retINSS   },
+  ]
 
   useEffect(() => {
     const handle = e => { if (e.key === 'Escape') onClose() }
@@ -129,6 +161,13 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
       codServicoLc116:             f.codServicoLc116             || null,
       discriminacaoServico:        f.discriminacaoServico         || null,
       solicitarDiscriminacaoMensal: !!f.solicitarDiscriminacaoMensal,
+      // Retenções
+      issRetido:  !!f.issRetido,
+      pIRRF:   parsePctLocal(f.pIRRF)   || null,
+      pCSLL:   parsePctLocal(f.pCSLL)   || null,
+      pCOFINS: parsePctLocal(f.pCOFINS) || null,
+      pPIS:    parsePctLocal(f.pPIS)    || null,
+      pINSS:   parsePctLocal(f.pINSS)   || null,
     })
   }
 
@@ -259,6 +298,81 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
               <p className="text-xs text-slate-400 mt-0.5">Antes de emitir, o sistema pedirá o texto — útil para contratos com número de ordem de compra ou referência que muda todo mês.</p>
             </div>
           </label>
+
+          {/* Retenções */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <button type="button" onClick={() => setShowRet(s => !s)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Retenções de Impostos</span>
+                {(f.issRetido || totalRet > 0) && (
+                  <span className="text-xs font-bold bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
+                    {f.issRetido ? 'ISS ' : ''}{totalRet > 0 ? `+ ret. federais` : ''}
+                  </span>
+                )}
+              </div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                strokeLinecap="round" strokeLinejoin="round"
+                className={`w-4 h-4 text-slate-400 transition-transform ${showRet ? 'rotate-180' : ''}`}>
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
+            {showRet && (
+              <div className="px-4 py-4 space-y-4">
+                {/* ISS */}
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input type="checkbox" checked={!!f.issRetido}
+                    onChange={e => set('issRetido', e.target.checked)}
+                    className="mt-0.5 accent-indigo-600"/>
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">ISS retido pelo tomador</p>
+                    <p className="text-xs text-slate-400 mt-0.5">O tomador desconta e recolhe o ISS diretamente à prefeitura</p>
+                  </div>
+                </label>
+                {/* Federais */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Retenções Federais</p>
+                    <button type="button" onClick={() => setF(p => ({ ...p, ...PRESET_RET }))}
+                      className="text-xs text-indigo-600 hover:underline font-medium">
+                      Preencher padrão (IRRF+CSLL+PIS+COFINS)
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {TAX_FIELDS_C.map(({ key, label, ret }) => (
+                      <div key={key} className="flex items-center gap-2">
+                        <span className="w-16 text-xs font-semibold text-slate-600 shrink-0">{label}</span>
+                        <div className="relative shrink-0">
+                          <input value={f[key]}
+                            onChange={e => set(key, maskPct(e.target.value))}
+                            placeholder="0,00"
+                            className="w-20 px-2 py-1.5 text-sm text-right border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono pr-6"/>
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                        </div>
+                        {ret > 0 && (
+                          <span className="text-xs font-semibold text-red-500">
+                            − {ret.toLocaleString('pt-BR', { style:'currency', currency:'BRL' })}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {totalRet > 0 && vServNum > 0 && (
+                  <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs space-y-1">
+                    <div className="flex justify-between text-slate-500">
+                      <span>Retenções federais</span>
+                      <span className="font-semibold text-red-500">− {totalRet.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-slate-800 border-t border-slate-200 pt-1">
+                      <span>Valor líquido estimado</span>
+                      <span>{(vServNum - totalRet).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex gap-3 px-6 py-4 border-t border-slate-100">
@@ -687,6 +801,12 @@ const mapRow = row => ({
   codServicoLc116:             row.cod_servico_lc116             || '',
   discriminacaoServico:        row.discriminacao_servico         || '',
   solicitarDiscriminacaoMensal: !!row.solicitar_discriminacao_mensal,
+  issRetido:  !!row.iss_retido,
+  pIRRF:   row.pct_irrf   != null ? String(row.pct_irrf).replace('.', ',')   : '',
+  pCSLL:   row.pct_csll   != null ? String(row.pct_csll).replace('.', ',')   : '',
+  pCOFINS: row.pct_cofins != null ? String(row.pct_cofins).replace('.', ',') : '',
+  pPIS:    row.pct_pis    != null ? String(row.pct_pis).replace('.', ',')    : '',
+  pINSS:   row.pct_inss   != null ? String(row.pct_inss).replace('.', ',')   : '',
   totalValue:       (Number(row.valor_aluguel)||0) + (Number(row.seguro_financeiro)||0) +
                     (Number(row.seguro_incendio)||0) + (Number(row.iptu)||0),
 })
@@ -762,6 +882,12 @@ export default function Contratos() {
         cod_servico_lc116:             data.codServicoLc116             || null,
         discriminacao_servico:         data.discriminacaoServico         || null,
         solicitar_discriminacao_mensal: !!data.solicitarDiscriminacaoMensal,
+        iss_retido:  !!data.issRetido,
+        pct_irrf:    data.pIRRF   || null,
+        pct_csll:    data.pCSLL   || null,
+        pct_cofins:  data.pCOFINS || null,
+        pct_pis:     data.pPIS    || null,
+        pct_inss:    data.pINSS   || null,
       }).select().single()
       if (error) throw error
 
@@ -816,6 +942,12 @@ export default function Contratos() {
         cod_servico_lc116:             data.codServicoLc116             || null,
         discriminacao_servico:         data.discriminacaoServico         || null,
         solicitar_discriminacao_mensal: !!data.solicitarDiscriminacaoMensal,
+        iss_retido:  !!data.issRetido,
+        pct_irrf:    data.pIRRF   || null,
+        pct_csll:    data.pCSLL   || null,
+        pct_cofins:  data.pCOFINS || null,
+        pct_pis:     data.pPIS    || null,
+        pct_inss:    data.pINSS   || null,
         status:                        data.status,
       }).eq('id', data.id)
       if (error) throw error

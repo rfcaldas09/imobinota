@@ -83,6 +83,12 @@ const mapCob = (row, lastNfse = null) => {
     codServicoLc116:             row.contratos?.cod_servico_lc116             || null,
     discriminacaoServico:        row.contratos?.discriminacao_servico         || '',
     solicitarDiscriminacaoMensal: !!row.contratos?.solicitar_discriminacao_mensal,
+    issRetido:  !!row.contratos?.iss_retido,
+    pIRRF:   Number(row.contratos?.pct_irrf)   || null,
+    pCSLL:   Number(row.contratos?.pct_csll)   || null,
+    pCOFINS: Number(row.contratos?.pct_cofins) || null,
+    pPIS:    Number(row.contratos?.pct_pis)    || null,
+    pINSS:   Number(row.contratos?.pct_inss)   || null,
     dueDay:          row.dia_vencimento,
     status:          row.status || 'Pendente',
     mesRef:          row.mes_referencia,
@@ -412,7 +418,15 @@ function NfseModal({ cob, user, onClose }) {
             seguroIncendio:   cob.seguroIncendio,
             iptu:             cob.iptu,
             codServicoLc116:  cob.codServicoLc116 || null,
-          discriminacao:    discriminacao        || null,
+            discriminacao:    discriminacao        || null,
+            retencoes: {
+              tpRetISSQN: cob.issRetido ? 2 : 1,
+              pIRRF:   cob.pIRRF   || null,
+              pCSLL:   cob.pCSLL   || null,
+              pCOFINS: cob.pCOFINS || null,
+              pPIS:    cob.pPIS    || null,
+              pINSS:   cob.pINSS   || null,
+            },
           },
         }),
       })
@@ -779,7 +793,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
     const ref = mesStr(mesRef)
     const { data: cobsDoMes } = await supabase
       .from('cobrancas')
-      .select('id, valor_total, mes_referencia, contrato_id, contratos(imovel, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, seguro_financeiro, seguro_incendio, iptu), inquilinos(nome, cpf, email)')
+      .select('id, valor_total, mes_referencia, contrato_id, contratos(imovel, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, seguro_financeiro, seguro_incendio, iptu, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss), inquilinos(nome, cpf, email)')
       .eq('user_id', user.id)
       .eq('mes_referencia', ref)
       .in('contrato_id', contracts.map(c => c.id))
@@ -877,6 +891,14 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
               iptu:             cob.iptu,
               codServicoLc116:  cob.codServicoLc116 || null,
               discriminacao,
+              retencoes: {
+                tpRetISSQN: cob.issRetido ? 2 : 1,
+                pIRRF:   cob.pIRRF   || null,
+                pCSLL:   cob.pCSLL   || null,
+                pCOFINS: cob.pCOFINS || null,
+                pPIS:    cob.pPIS    || null,
+                pINSS:   cob.pINSS   || null,
+              },
             },
           }),
         })
@@ -1320,7 +1342,7 @@ export default function Cobrancas() {
     // Query principal — sem join nfse_emissoes (exige FK formal no banco)
     const { data, error } = await supabase
       .from('cobrancas')
-      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal), inquilinos(nome, cpf, email)')
+      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss), inquilinos(nome, cpf, email)')
       .eq('user_id', user.id)
       .eq('mes_referencia', ref)
       .order('created_at', { ascending: false })
