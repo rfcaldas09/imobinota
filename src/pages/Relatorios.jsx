@@ -31,19 +31,31 @@ export default function Relatorios() {
   const { user } = useAuth()
   const now      = new Date()
   const [year, setYear]       = useState(now.getFullYear())
-  const [rows, setRows]       = useState([])   // linhas brutas do banco
+  const [rows, setRows]       = useState([])     // cobranças do ano
+  const [avulsas, setAvulsas] = useState([])     // NFS-e avulsas emitidas no ano
   const [loading, setLoading] = useState(true)
 
   const load = async () => {
     if (!user) return
     setLoading(true)
-    const { data } = await supabase
-      .from('cobrancas')
-      .select('mes_referencia, valor_total, status')
-      .eq('user_id', user.id)
-      .gte('mes_referencia', `${year}-01-01`)
-      .lte('mes_referencia', `${year}-12-31`)
-    setRows(data || [])
+    const [{ data: cobData }, { data: avData }] = await Promise.all([
+      supabase
+        .from('cobrancas')
+        .select('mes_referencia, valor_total, status')
+        .eq('user_id', user.id)
+        .gte('mes_referencia', `${year}-01-01`)
+        .lte('mes_referencia', `${year}-12-31`),
+      supabase
+        .from('nfse_emissoes')
+        .select('competencia, valor_servico')
+        .eq('user_id', user.id)
+        .is('cobranca_id', null)
+        .eq('status', 'emitida')
+        .gte('competencia', `${year}-01`)
+        .lte('competencia', `${year}-12`),
+    ])
+    setRows(cobData || [])
+    setAvulsas(avData || [])
     setLoading(false)
   }
 
@@ -52,23 +64,28 @@ export default function Relatorios() {
   // ── Agrega por mês ─────────────────────────────────────────────
   const months = useMemo(() => {
     return MESES.map((label, i) => {
-      const key = `${year}-${String(i + 1).padStart(2, '0')}-01`
-      const mes = rows.filter(r => r.mes_referencia === key)
+      const key     = `${year}-${String(i + 1).padStart(2, '0')}-01`
+      const compKey = `${year}-${String(i + 1).padStart(2, '0')}`   // YYYY-MM para avulsas
+      const mes     = rows.filter(r => r.mes_referencia === key)
+      const avMes   = avulsas.filter(a => a.competencia === compKey)
 
-      const paidVal    = mes.filter(r => r.status === 'Pago').reduce((s, r) => s + Number(r.valor_total), 0)
+      const paidCobVal = mes.filter(r => r.status === 'Pago').reduce((s, r) => s + Number(r.valor_total), 0)
+      const avulsaVal  = avMes.reduce((s, a) => s + Number(a.valor_servico || 0), 0)
+      const paidVal    = paidCobVal + avulsaVal   // avulsas sempre contam como arrecadado
       const overdueVal = mes.filter(r => r.status === 'Em Atraso').reduce((s, r) => s + Number(r.valor_total), 0)
       const pendVal    = mes.filter(r => r.status === 'Pendente').reduce((s, r) => s + Number(r.valor_total), 0)
-      const paidN      = mes.filter(r => r.status === 'Pago').length
+      const paidN      = mes.filter(r => r.status === 'Pago').length + avMes.length
       const overdueN   = mes.filter(r => r.status === 'Em Atraso').length
       const pendN      = mes.filter(r => r.status === 'Pendente').length
+      const avulsaN    = avMes.length
       const total      = paidVal + overdueVal + pendVal
       const adim       = total > 0 ? Math.round((paidVal / total) * 100) : null
       const isCurrent  = i === now.getMonth() && year === now.getFullYear()
       const isFuture   = new Date(year, i, 1) > now
 
-      return { key, label, paidVal, overdueVal, pendVal, paidN, overdueN, pendN, total, adim, isCurrent, isFuture, count: mes.length }
+      return { key, label, paidVal, overdueVal, pendVal, paidN, overdueN, pendN, avulsaN, avulsaVal, total, adim, isCurrent, isFuture, count: mes.length + avMes.length }
     })
-  }, [rows, year])
+  }, [rows, avulsas, year])
 
   // Apenas meses com dados (para médias e totais)
   const comDados = useMemo(() => months.filter(m => m.count > 0), [months])
@@ -88,7 +105,7 @@ export default function Relatorios() {
   }, [comDados])
 
   const exportCSV = () => {
-    const header = 'Mês,Arrecadado,Em Atraso,Pendente,Adimplência,Pagos,Inadimplentes,Pendentes'
+    const header = 'Mês,Arrecadado,Em Atraso,Pendente,Adimplência,Pagos,Avulsas NFS-e,Inadimplentes,Pendentes'
     const lines = months
       .filter(m => m.count > 0)
       .map(m => [
@@ -97,7 +114,7 @@ export default function Relatorios() {
         m.overdueVal.toFixed(2),
         m.pendVal.toFixed(2),
         m.adim !== null ? `${m.adim}%` : '—',
-        m.paidN, m.overdueN, m.pendN,
+        m.paidN, m.avulsaN, m.overdueN, m.pendN,
       ].join(','))
     const csv = [header, ...lines].join('\n')
     const a = document.createElement('a')
@@ -147,8 +164,8 @@ export default function Relatorios() {
       ) : ann.mesesComDados === 0 ? (
         <div className="text-center py-32">
           <p className="text-5xl mb-3">📭</p>
-          <p className="text-slate-500 font-medium">Nenhuma cobrança emitida em {year}</p>
-          <p className="text-slate-400 text-sm mt-1">Gere cobranças no Dashboard ou na aba Contratos</p>
+          <p className="text-slate-500 font-medium">Nenhuma cobrança ou NFS-e avulsa emitida em {year}</p>
+          <p className="text-slate-400 text-sm mt-1">Gere cobranças em Contratos ou emita notas em NFS-e Avulsa</p>
         </div>
       ) : (
         <>
@@ -245,7 +262,16 @@ export default function Relatorios() {
                         ) : <span className="text-slate-300">—</span>}
                       </td>
                       <td className="px-5 py-3 text-center font-medium text-slate-700">
-                        {m.count > 0 ? fmtN(m.paidN) : '—'}
+                        {m.count > 0 ? (
+                          <span>
+                            {fmtN(m.paidN)}
+                            {m.avulsaN > 0 && (
+                              <span className="ml-1 text-xs text-indigo-500 font-semibold" title={`${m.avulsaN} NFS-e avulsa${m.avulsaN !== 1 ? 's' : ''}`}>
+                                (+{m.avulsaN} av.)
+                              </span>
+                            )}
+                          </span>
+                        ) : '—'}
                       </td>
                       <td className="px-5 py-3 text-center font-medium text-red-500">
                         {m.count > 0 ? fmtN(m.overdueN) : '—'}
