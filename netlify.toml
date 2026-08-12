@@ -6,6 +6,9 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+[functions."plano-lembrete"]
+  schedule = "0 10 * * *"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

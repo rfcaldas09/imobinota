@@ -701,8 +701,12 @@ function NfseViewModal({ cob, user, onClose }) {
                       <span className="font-semibold text-slate-800 text-sm">
                         NFS-e nº {em.numero_nfse || '—'}
                       </span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${em.status === 'erro' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                        {em.status || 'emitida'}
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        em.status === 'erro'      ? 'bg-red-100 text-red-700' :
+                        em.status === 'cancelada' ? 'bg-slate-100 text-slate-500' :
+                                                    'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {em.status === 'cancelada' ? 'Cancelada' : em.status || 'emitida'}
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5">

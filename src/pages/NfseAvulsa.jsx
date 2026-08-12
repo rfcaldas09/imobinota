@@ -16,6 +16,7 @@ const IcSend    = ({ c='' }) => ic('<line x1="22" y1="2" x2="11" y2="13"/><polyg
 const IcEdit    = ({ c='' }) => ic('<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>', c)
 const IcDoc     = ({ c='' }) => ic('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>', c)
 const IcDownload= ({ c='' }) => ic('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>', c)
+const IcBan     = ({ c='' }) => ic('<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>', c)
 
 // ── Helpers ────────────────────────────────────────────────────────
 const digits  = v => v.replace(/\D/g, '')
@@ -68,17 +69,21 @@ const fmtPct   = v => v > 0 ? v.toLocaleString('pt-BR', { minimumFractionDigits:
 // ── Status badge ───────────────────────────────────────────────────
 function StatusBadge({ status }) {
   const cfg = {
-    emitida: 'bg-emerald-50 text-emerald-700',
-    erro:    'bg-red-50 text-red-600',
-    pendente:'bg-amber-50 text-amber-700',
+    emitida:   'bg-emerald-50 text-emerald-700',
+    erro:      'bg-red-50 text-red-600',
+    pendente:  'bg-amber-50 text-amber-700',
+    cancelada: 'bg-slate-100 text-slate-500',
   }
-  const labels = { emitida: 'Emitida', erro: 'Erro', pendente: 'Pendente' }
+  const labels = { emitida: 'Emitida', erro: 'Erro', pendente: 'Pendente', cancelada: 'Cancelada' }
   return (
     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg[status] || 'bg-slate-100 text-slate-500'}`}>
       {labels[status] || status}
     </span>
   )
 }
+
+// 48h em ms — mesma janela do backend
+const PRAZO_CANCEL_MS = 48 * 60 * 60 * 1000
 
 // ── Modal: adicionar/editar tomador ────────────────────────────────
 function TomadorModal({ initial, onSave, onClose }) {
@@ -549,6 +554,39 @@ export default function NfseAvulsa() {
   // ── Download PDF ─────────────────────────────────────────────
   const [downloadingId, setDownloadingId] = useState(null)
 
+  // ── Cancelamento de NFS-e ─────────────────────────────────────
+  const [cancelConfirmId, setCancelConfirmId] = useState(null) // id da emissão aguardando confirmação
+  const [cancellingId,    setCancellingId]    = useState(null) // id em processo de cancelamento
+
+  const handleCancelar = async (em) => {
+    if (cancelConfirmId !== em.id) {
+      // Primeiro clique → pede confirmação
+      setCancelConfirmId(em.id)
+      return
+    }
+    // Segundo clique → confirma e cancela
+    setCancelConfirmId(null)
+    setCancellingId(em.id)
+    try {
+      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
+      const res = await fetch('/.netlify/functions/nfse-cancelar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
+        },
+        body: JSON.stringify({ userId: user.id, emissaoId: em.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao cancelar')
+      await loadHistory()
+    } catch (e) {
+      alert(`Erro ao cancelar NFS-e: ${e.message}`)
+    } finally {
+      setCancellingId(null)
+    }
+  }
+
   const handleDownloadPdf = async (emissaoId, tomadorNome) => {
     setDownloadingId(emissaoId)
     try {
@@ -791,17 +829,61 @@ export default function NfseAvulsa() {
                   </td>
                   <td className="px-4 py-2.5 text-xs text-slate-400">{fmtDate(em.created_at)}</td>
                   <td className="px-4 py-2.5">
-                    {em.status === 'emitida' && (
-                      <button
-                        onClick={() => handleDownloadPdf(em.id, em.tomador_nome)}
-                        disabled={downloadingId === em.id}
-                        title="Baixar PDF da NFS-e"
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 transition-colors">
-                        {downloadingId === em.id
-                          ? <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"/>
-                          : <IcDownload/>}
-                      </button>
-                    )}
+                    {em.status === 'emitida' && (() => {
+                      const dentroDosPrazo = (new Date() - new Date(em.created_at)) < PRAZO_CANCEL_MS
+                      const confirmando    = cancelConfirmId === em.id
+                      const cancelando     = cancellingId    === em.id
+                      return (
+                        <div className="flex items-center gap-1">
+                          {/* Botão download PDF */}
+                          <button
+                            onClick={() => handleDownloadPdf(em.id, em.tomador_nome)}
+                            disabled={downloadingId === em.id || cancelando}
+                            title="Baixar PDF da NFS-e"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 transition-colors">
+                            {downloadingId === em.id
+                              ? <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"/>
+                              : <IcDownload/>}
+                          </button>
+
+                          {/* Botão cancelar */}
+                          {dentroDosPrazo ? (
+                            confirmando ? (
+                              /* Estado de confirmação: mostra "Confirmar?" + "Não" */
+                              <span className="flex items-center gap-1 text-xs">
+                                <button
+                                  onClick={() => handleCancelar(em)}
+                                  disabled={cancelando}
+                                  className="px-2 py-0.5 rounded bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-40 transition-colors">
+                                  {cancelando ? '...' : 'Confirmar'}
+                                </button>
+                                <button
+                                  onClick={() => setCancelConfirmId(null)}
+                                  className="px-1.5 py-0.5 rounded text-slate-500 hover:bg-slate-100 transition-colors">
+                                  Não
+                                </button>
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => handleCancelar(em)}
+                                disabled={cancelando || downloadingId === em.id}
+                                title="Cancelar NFS-e (emitida com erro)"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 transition-colors">
+                                {cancelando
+                                  ? <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin"/>
+                                  : <IcBan/>}
+                              </button>
+                            )
+                          ) : (
+                            /* Fora do prazo: ícone cinza com tooltip */
+                            <span title="Prazo de cancelamento expirado (máximo 48h após emissão)"
+                              className="p-1.5 cursor-not-allowed opacity-30">
+                              <IcBan/>
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </td>
                 </tr>
               ))}
