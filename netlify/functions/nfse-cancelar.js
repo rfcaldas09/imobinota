@@ -150,7 +150,7 @@ ${tipoInsc === '2' ? `<CNPJ>${cnpjDigits}</CNPJ>` : `<CPF>${cnpjDigits.slice(-11
 
   let sefinStatus, sefinBody
   try {
-    const result = await deleteWithMtls(sefinUrl, pedCanXmlSigned, certPem, keyPem)
+    const result = await postCancelMtls(sefinUrl, pedCanXmlSigned, certPem, keyPem)
     sefinStatus  = result.status
     sefinBody    = result.body
   } catch (err) {
@@ -288,11 +288,12 @@ function gzipBuffer(buf) {
   )
 }
 
-async function deleteWithMtls(url, xmlBody, certPem, keyPem) {
-  const gz              = await gzipBuffer(Buffer.from(xmlBody, 'utf8'))
+// Cancelamento: POST /SefinNacional/nfse/{chaveAcesso} com body { pedCanXmlGZipB64 }
+async function postCancelMtls(url, xmlBody, certPem, keyPem) {
+  const gz               = await gzipBuffer(Buffer.from(xmlBody, 'utf8'))
   const pedCanXmlGZipB64 = gz.toString('base64')
-  const jsonBody        = JSON.stringify({ pedCanXmlGZipB64 })
-  const bodyBuf         = Buffer.from(jsonBody, 'utf8')
+  const jsonBody         = JSON.stringify({ pedCanXmlGZipB64 })
+  const bodyBuf          = Buffer.from(jsonBody, 'utf8')
 
   return new Promise((resolve, reject) => {
     const parsed  = new URL(url)
@@ -300,7 +301,7 @@ async function deleteWithMtls(url, xmlBody, certPem, keyPem) {
       hostname:           parsed.hostname,
       port:               parsed.port || 443,
       path:               parsed.pathname + parsed.search,
-      method:             'DELETE',
+      method:             'POST',
       cert:               certPem,
       key:                keyPem,
       rejectUnauthorized: true,

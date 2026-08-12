@@ -31,6 +31,20 @@ export default function AdminCupons() {
   const fmtBRL = n => `R$ ${Number(n).toFixed(2).replace('.', ',')}`
   const fmtDate = d => d ? new Date(d).toLocaleDateString('pt-BR') : '—'
 
+  // ── Helper: sincroniza cupom com o Stripe ────────────────────
+  const syncStripe = async (action, codigo, valorMensal) => {
+    try {
+      await fetch('/.netlify/functions/cupom-stripe-sync', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ action, codigo, valorMensal }),
+      })
+      // Erro no Stripe não bloqueia o fluxo — apenas loga
+    } catch (e) {
+      console.warn('[AdminCupons] Stripe sync falhou:', e.message)
+    }
+  }
+
   // ── Criar novo cupom ──────────────────────────────────────────
   const handleCreate = async (e) => {
     e.preventDefault()
@@ -47,13 +61,17 @@ export default function AdminCupons() {
     const { error: err } = await supabase
       .from('cupons')
       .insert({ codigo, valor_mensal: valor })
-    setSaving(false)
 
     if (err) {
+      setSaving(false)
       setFormError(err.message.includes('unique') ? 'Código já existe' : err.message)
       return
     }
 
+    // Sincroniza com Stripe (fire-and-forget — falha não bloqueia)
+    await syncStripe('create', codigo, valor)
+
+    setSaving(false)
     setNovoCodigo(''); setNovoValor('')
     setSuccess(`Cupom "${codigo}" criado com sucesso!`)
     setTimeout(() => setSuccess(''), 3000)
@@ -62,12 +80,23 @@ export default function AdminCupons() {
 
   // ── Toggle ativo / inativo ────────────────────────────────────
   const handleToggle = async (cupom) => {
+    const novoAtivo = !cupom.ativo
     const { error: err } = await supabase
       .from('cupons')
-      .update({ ativo: !cupom.ativo })
+      .update({ ativo: novoAtivo })
       .eq('id', cupom.id)
     if (err) { setError(err.message); return }
-    setCupons(prev => prev.map(c => c.id === cupom.id ? { ...c, ativo: !c.ativo } : c))
+
+    // Sincroniza com Stripe
+    if (novoAtivo) {
+      // Reativando: recria o cupom no Stripe
+      await syncStripe('recreate', cupom.codigo, cupom.valor_mensal)
+    } else {
+      // Desativando: deleta do Stripe
+      await syncStripe('delete', cupom.codigo)
+    }
+
+    setCupons(prev => prev.map(c => c.id === cupom.id ? { ...c, ativo: novoAtivo } : c))
   }
 
   return (

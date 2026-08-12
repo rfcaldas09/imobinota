@@ -63,22 +63,29 @@ exports.handler = async (event) => {
       )
       const cupomRows = await cupomRes.json()
       if (Array.isArray(cupomRows) && cupomRows.length > 0) {
-        // Cria cupom no Stripe (amount_off em centavos) ou reutiliza se já existe
-        const nomeCupom = `NOTAFACIL-${codigoUpper}`
-        const existing = await stripe.coupons.list({ limit: 100 }).then(r => r.data.find(c => c.name === nomeCupom))
-        if (existing) {
-          stripeCouponId = existing.id
-        } else {
-          const valorOriginal = planId === 'pro' ? 29700 : 19700
-          const valorDesconto = Math.round(parseFloat(cupomRows[0].valor_mensal) * 100)
-          const desconto = valorOriginal - valorDesconto
-          const cupom = await stripe.coupons.create({
-            name:       nomeCupom,
-            amount_off: desconto > 0 ? desconto : 0,
-            currency:   'brl',
-            duration:   'forever',
-          })
-          stripeCouponId = cupom.id
+        // O ID do cupom no Stripe é o próprio código — criado antecipadamente via AdminCupons
+        try {
+          const existing = await stripe.coupons.retrieve(codigoUpper)
+          if (existing && !existing.deleted) {
+            stripeCouponId = existing.id
+          }
+        } catch (err) {
+          if (err.statusCode === 404) {
+            // Cupom ainda não foi sincronizado (pré-existente) — cria on-the-fly como fallback
+            const valorOriginal = planId === 'pro' ? 29700 : 19700
+            const valorDesconto = Math.round(parseFloat(cupomRows[0].valor_mensal) * 100)
+            const desconto      = valorOriginal - valorDesconto
+            if (desconto > 0) {
+              const cupom = await stripe.coupons.create({
+                id:         codigoUpper,
+                name:       `NotaFacil — ${codigoUpper}`,
+                amount_off: desconto,
+                currency:   'brl',
+                duration:   'forever',
+              })
+              stripeCouponId = cupom.id
+            }
+          } else throw err
         }
       }
     }
