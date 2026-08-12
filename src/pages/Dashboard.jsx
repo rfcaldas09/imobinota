@@ -56,6 +56,8 @@ export default function Dashboard() {
   const [ano, setAno]       = useState(() => new Date().getFullYear())
   const [loading, setLoading]     = useState(true)
   const [lastUpdated, setLastUpdated] = useState(null)
+  const [avulsasMensais, setAvulsasMensais] = useState([])
+  const [avulsasAnuais,  setAvulsasAnuais]  = useState([])
 
   const load = async () => {
     if (!user) return
@@ -75,6 +77,18 @@ export default function Dashboard() {
         .eq('user_id', user.id)
         .eq('mes_referencia', mesStr(mesRef))
       setCobrancas((cobData || []).map(mapCob))
+
+      // Avulsas emitidas no mês
+      const mesComp = `${mesRef.getFullYear()}-${String(mesRef.getMonth()+1).padStart(2,'0')}`
+      const { data: avMensData } = await supabase
+        .from('nfse_emissoes')
+        .select('id, valor_servico')
+        .eq('user_id', user.id)
+        .is('cobranca_id', null)
+        .eq('status', 'emitida')
+        .eq('competencia', mesComp)
+      setAvulsasMensais(avMensData || [])
+      setAvulsasAnuais([])
     } else {
       // Anual: carrega todas as cobranças do ano
       const { data: cobData } = await supabase
@@ -85,6 +99,18 @@ export default function Dashboard() {
         .lte('mes_referencia', `${ano}-12-31`)
       setCobAnuais(cobData || [])
       setCobrancas([]) // limpa visão mensal
+
+      // Avulsas emitidas no ano
+      const { data: avAnualData } = await supabase
+        .from('nfse_emissoes')
+        .select('id, valor_servico')
+        .eq('user_id', user.id)
+        .is('cobranca_id', null)
+        .eq('status', 'emitida')
+        .gte('competencia', `${ano}-01`)
+        .lte('competencia', `${ano}-12`)
+      setAvulsasAnuais(avAnualData || [])
+      setAvulsasMensais([])
     }
 
     setLastUpdated(new Date())
@@ -101,7 +127,12 @@ export default function Dashboard() {
   const paidVal    = useMemo(() => paid.reduce((s,c)    => s + c.totalValue, 0), [paid])
   const pendingVal = useMemo(() => pending.reduce((s,c)  => s + c.totalValue, 0), [pending])
   const overdueVal = useMemo(() => overdue.reduce((s,c)  => s + c.totalValue, 0), [overdue])
-  const totalVal   = paidVal + pendingVal + overdueVal
+
+  // Avulsas somam ao total emitido e à parcela "Pagos" (nota avulsa = já pago)
+  const avulsaMensalVal = useMemo(() => avulsasMensais.reduce((s, a) => s + Number(a.valor_servico || 0), 0), [avulsasMensais])
+  const avulsaAnualVal  = useMemo(() => avulsasAnuais.reduce((s, a) => s + Number(a.valor_servico || 0), 0), [avulsasAnuais])
+
+  const totalVal   = paidVal + pendingVal + overdueVal + avulsaMensalVal
   const pct = v => totalVal > 0 ? Math.round((v / totalVal) * 100) : 0
 
   // ── KPIs anuais ───────────────────────────────────────────────────
@@ -254,21 +285,27 @@ export default function Dashboard() {
                   <p className="text-indigo-200 text-xs font-semibold uppercase tracking-wide mb-1">Total Emitido</p>
                   <p className="text-2xl font-bold mb-1">{fmt(totalVal)}</p>
                   <p className="text-indigo-200 text-xs">
-                    {cobrancas.length > 0
-                      ? `${cobrancas.length} cobrança${cobrancas.length !== 1 ? 's' : ''} · ${mesLabel(mesRef)}`
+                    {cobrancas.length > 0 || avulsasMensais.length > 0
+                      ? [
+                          cobrancas.length > 0 ? `${cobrancas.length} cobrança${cobrancas.length !== 1 ? 's' : ''}` : null,
+                          avulsasMensais.length > 0 ? `${avulsasMensais.length} avulsa${avulsasMensais.length !== 1 ? 's' : ''}` : null,
+                        ].filter(Boolean).join(' · ') + ` · ${mesLabel(mesRef)}`
                       : `Sem cobranças em ${mesLabel(mesRef)}`}
                   </p>
                 </div>
                 {[
-                  { label:'✅ Pagos',     val: paidVal,    list: paid,    color:'emerald', text:'text-emerald-600' },
-                  { label:'⏳ Pendentes', val: pendingVal, list: pending, color:'amber',   text:'text-amber-600'  },
-                  { label:'🔴 Em Atraso', val: overdueVal, list: overdue, color:'red',     text:'text-red-600'    },
-                ].map(({ label, val, list, color, text }) => (
+                  { label:'✅ Pagos',     val: paidVal + avulsaMensalVal, count: paid.length, extraCount: avulsasMensais.length, color:'emerald', text:'text-emerald-600' },
+                  { label:'⏳ Pendentes', val: pendingVal,                count: pending.length, extraCount: 0,                  color:'amber',   text:'text-amber-600'  },
+                  { label:'🔴 Em Atraso', val: overdueVal,                count: overdue.length, extraCount: 0,                  color:'red',     text:'text-red-600'    },
+                ].map(({ label, val, count, extraCount, color, text }) => (
                   <div key={label} className="bg-white rounded-2xl p-5 border border-slate-100">
                     <div className="mb-3">
                       <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide mb-1">{label}</p>
                       <p className={`text-xl font-bold ${text}`}>{fmt(val)}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">{list.length} cobrança{list.length !== 1 ? 's' : ''}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {count} cobrança{count !== 1 ? 's' : ''}
+                        {extraCount > 0 ? ` · ${extraCount} avulsa${extraCount !== 1 ? 's' : ''}` : ''}
+                      </p>
                     </div>
                     <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                       <div className={`h-full bg-${color}-500 rounded-full transition-all`} style={{ width:`${pct(val)}%` }}/>
@@ -313,21 +350,30 @@ export default function Dashboard() {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl p-5 text-white col-span-2 lg:col-span-1">
                   <p className="text-indigo-200 text-xs font-semibold uppercase tracking-wide mb-1">Total Anual</p>
-                  <p className="text-2xl font-bold mb-1">{fmt(anuais.total)}</p>
-                  <p className="text-indigo-200 text-xs">{anuais.count} cobrança{anuais.count !== 1 ? 's' : ''} · {ano}</p>
+                  <p className="text-2xl font-bold mb-1">{fmt(anuais.total + avulsaAnualVal)}</p>
+                  <p className="text-indigo-200 text-xs">
+                    {[
+                      anuais.count > 0 ? `${anuais.count} cobrança${anuais.count !== 1 ? 's' : ''}` : null,
+                      avulsasAnuais.length > 0 ? `${avulsasAnuais.length} avulsa${avulsasAnuais.length !== 1 ? 's' : ''}` : null,
+                    ].filter(Boolean).join(' · ') || 'Sem cobranças'} · {ano}
+                  </p>
                 </div>
                 {[
-                  { label:'✅ Pagos',     val: anuais.pagos, n: anuais.pagosN, color:'emerald', text:'text-emerald-600' },
-                  { label:'⏳ Pendentes', val: anuais.pend,  n: anuais.pendN,  color:'amber',   text:'text-amber-600'  },
-                  { label:'🔴 Em Atraso', val: anuais.atras, n: anuais.atrasN, color:'red',     text:'text-red-600'    },
-                ].map(({ label, val, n, color, text }) => {
-                  const p = anuais.total > 0 ? Math.round((val / anuais.total) * 100) : 0
+                  { label:'✅ Pagos',     val: anuais.pagos + avulsaAnualVal, n: anuais.pagosN, extraN: avulsasAnuais.length, color:'emerald', text:'text-emerald-600' },
+                  { label:'⏳ Pendentes', val: anuais.pend,                   n: anuais.pendN,  extraN: 0,                   color:'amber',   text:'text-amber-600'  },
+                  { label:'🔴 Em Atraso', val: anuais.atras,                  n: anuais.atrasN, extraN: 0,                   color:'red',     text:'text-red-600'    },
+                ].map(({ label, val, n, extraN, color, text }) => {
+                  const totalAnual = anuais.total + avulsaAnualVal
+                  const p = totalAnual > 0 ? Math.round((val / totalAnual) * 100) : 0
                   return (
                     <div key={label} className="bg-white rounded-2xl p-5 border border-slate-100">
                       <div className="mb-3">
                         <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide mb-1">{label}</p>
                         <p className={`text-xl font-bold ${text}`}>{fmt(val)}</p>
-                        <p className="text-xs text-slate-400 mt-0.5">{n} cobrança{n !== 1 ? 's' : ''}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {n} cobrança{n !== 1 ? 's' : ''}
+                          {extraN > 0 ? ` · ${extraN} avulsa${extraN !== 1 ? 's' : ''}` : ''}
+                        </p>
                       </div>
                       <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                         <div className={`h-full bg-${color}-500 rounded-full`} style={{ width:`${p}%` }}/>

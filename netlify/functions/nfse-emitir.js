@@ -198,7 +198,7 @@ async function handle(event) {
     return { statusCode: 400, body: JSON.stringify({ error: validErr.message }) }
   }
   console.log('[nfse-emitir] DPS gerada, assinando...')
-  console.log('[nfse-emitir] DPS XML (primeiros 800 chars):', dpsXml.slice(0, 800))
+  console.log('[nfse-emitir] DPS XML COMPLETO:\n', dpsXml)
 
   // ── 6. Assina o XML ─────────────────────────────────────────────
   const dpsAssinada = signDps(dpsXml, privateKey, certForge)
@@ -211,7 +211,7 @@ async function handle(event) {
   const { status: httpStatus, body: responseBody } = await postWithMtls(
     sefinUrl, dpsAssinada, certPem, forge.pki.privateKeyToPem(privateKey)
   )
-  console.log('[nfse-emitir] SEFIN status:', httpStatus, '| body:', responseBody.slice(0, 500))
+  console.log('[nfse-emitir] SEFIN status:', httpStatus, '| body COMPLETO:', responseBody)
 
   // SEFIN retorna 201 para sucesso
   if (httpStatus !== 201) {

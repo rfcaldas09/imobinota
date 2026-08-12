@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import Lc116Picker from '../components/Lc116Picker'
+import MonthPicker from '../components/MonthPicker'
 
 // ── Ícones inline ──────────────────────────────────────────────────
 const ic = (d, cls = '') => (
@@ -145,30 +146,53 @@ function TomadorModal({ initial, onSave, onClose }) {
 }
 
 // ── Painel de progresso da emissão ─────────────────────────────────
-function EmissaoProgress({ items, results, current }) {
+function EmissaoProgress({ items, results, current, done }) {
+  const [expanded, setExpanded] = useState(null)
+  const total    = items.length
+  const finished = results.length
+  const pct      = total > 0 ? Math.round((finished / total) * 100) : 0
+
   return (
     <div className="bg-white border border-slate-100 rounded-2xl p-5 mb-6">
-      <h3 className="font-semibold text-slate-800 text-sm mb-3">⚡ Emissão em andamento…</h3>
-      <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-4">
-        <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all"
-          style={{ width: `${Math.round((results.length / items.length) * 100)}%` }}/>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-slate-800 text-sm">
+          {done ? '✅ Emissão concluída' : '⚡ Emitindo notas…'}
+        </h3>
+        <span className="text-xs text-slate-400">{finished}/{total}</span>
       </div>
-      <div className="space-y-1.5">
+      <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-4">
+        <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-500"
+          style={{ width: `${pct}%` }}/>
+      </div>
+      <div className="space-y-2">
         {items.map((item, i) => {
-          const res = results.find(r => r.index === i)
-          const isCurrent = current === i && !res
+          const res        = results.find(r => r.index === i)
+          const isCurrent  = current === i && !res
+          const isPending  = !res && !isCurrent
+          const isExpanded = expanded === i
+
           return (
-            <div key={i} className="flex items-center justify-between text-sm">
-              <span className="text-slate-700 truncate max-w-xs">{item.nome}</span>
-              <span className={
-                res?.ok     ? 'text-emerald-600 font-medium' :
-                res?.erro   ? 'text-red-500 text-xs' :
-                isCurrent   ? 'text-amber-500' : 'text-slate-300'
-              }>
-                {res?.ok   ? `✅ NFS-e ${res.numero || ''}` :
-                 res?.erro ? `❌ ${res.erro.slice(0, 60)}` :
-                 isCurrent ? '⏳ Emitindo…' : '—'}
-              </span>
+            <div key={i}>
+              <div className="flex items-center justify-between text-sm gap-2">
+                <span className="text-slate-700 truncate">{item.nome}</span>
+                <span className={`flex-shrink-0 font-medium ${
+                  res?.ok    ? 'text-emerald-600' :
+                  res?.erro  ? 'text-red-500 cursor-pointer hover:underline' :
+                  isCurrent  ? 'text-amber-500' : 'text-slate-300'
+                }`}
+                  onClick={() => res?.erro && setExpanded(isExpanded ? null : i)}
+                  title={res?.erro ? 'Clique para ver o erro completo' : undefined}
+                >
+                  {res?.ok      ? `✅ NFS-e ${res.numero || ''}` :
+                   res?.erro    ? `❌ ${res.erro.length > 80 ? res.erro.slice(0, 80) + '…' : res.erro}` :
+                   isCurrent    ? '⏳ Emitindo…' : '—'}
+                </span>
+              </div>
+              {res?.erro && isExpanded && (
+                <div className="mt-1 ml-0 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 break-all">
+                  {res.erro}
+                </div>
+              )}
             </div>
           )
         })}
@@ -188,14 +212,20 @@ export default function NfseAvulsa() {
   const [editIdx, setEditIdx]     = useState(null)
 
   // Estado de emissão em lote
-  const [emitting, setEmitting]   = useState(false)
+  const [emitting, setEmitting]       = useState(false)
+  const [emitSnapshot, setEmitSnapshot] = useState([])   // cópia de `pending` no momento do disparo
   const [emitResults, setEmitResults] = useState([])
   const [emitCurrent, setEmitCurrent] = useState(null)
-  const [emitDone, setEmitDone]   = useState(false)
+  const [emitDone, setEmitDone]       = useState(false)
 
   // Histórico de avulsas emitidas
-  const [history, setHistory]     = useState([])
+  const [history, setHistory]         = useState([])
   const [loadingHistory, setLoadingHistory] = useState(false)
+
+  // Filtro de período do histórico
+  const [histView, setHistView] = useState('mensal')
+  const [histMes,  setHistMes]  = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
+  const [histAno,  setHistAno]  = useState(() => new Date().getFullYear())
 
   // ── localStorage ──────────────────────────────────────────────
   useEffect(() => {
@@ -248,15 +278,17 @@ export default function NfseAvulsa() {
   // ── Emissão em lote ───────────────────────────────────────────
   const handleEmitirTudo = async () => {
     if (!pending.length) return
+    const snapshot = [...pending]   // congela a lista no momento do clique
+    setEmitSnapshot(snapshot)
     setEmitting(true)
     setEmitResults([])
     setEmitDone(false)
 
     const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
 
-    for (let i = 0; i < pending.length; i++) {
+    for (let i = 0; i < snapshot.length; i++) {
       setEmitCurrent(i)
-      const item = pending[i]
+      const item = snapshot[i]
       try {
         const res = await fetch('/.netlify/functions/nfse-emitir', {
           method: 'POST',
@@ -304,6 +336,20 @@ export default function NfseAvulsa() {
     loadHistory()
   }
 
+  // ── KPIs do histórico por período ────────────────────────────
+  const filteredHistory = useMemo(() => {
+    if (histView === 'mensal') {
+      const comp = `${histMes.getFullYear()}-${String(histMes.getMonth()+1).padStart(2,'0')}`
+      return history.filter(em => em.competencia === comp)
+    } else {
+      return history.filter(em => em.competencia?.startsWith(String(histAno)))
+    }
+  }, [history, histView, histMes, histAno])
+
+  const histEmitidas = useMemo(() => filteredHistory.filter(em => em.status === 'emitida'), [filteredHistory])
+  const histTotalVal = useMemo(() => histEmitidas.reduce((s, em) => s + Number(em.valor_servico || 0), 0), [histEmitidas])
+  const histErros    = useMemo(() => filteredHistory.filter(em => em.status === 'erro').length, [filteredHistory])
+
   // ── Render ────────────────────────────────────────────────────
   const successCount = emitResults.filter(r => r.ok).length
   const errorCount   = emitResults.filter(r => !r.ok).length
@@ -327,9 +373,13 @@ export default function NfseAvulsa() {
       </div>
 
       {/* Progress durante emissão */}
-      {(emitting || emitDone) && emitResults.length > 0 && (
-        <EmissaoProgress items={emitting ? pending : (pending.length ? pending : [])}
-          results={emitResults} current={emitCurrent}/>
+      {(emitting || emitDone) && emitSnapshot.length > 0 && (
+        <EmissaoProgress
+          items={emitSnapshot}
+          results={emitResults}
+          current={emitCurrent}
+          done={emitDone}
+        />
       )}
 
       {/* Resumo pós-emissão */}
@@ -410,16 +460,65 @@ export default function NfseAvulsa() {
         )}
       </div>
 
+      {/* ── Cards de KPI + filtro de período ─────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <h2 className="text-sm font-bold text-slate-800">Histórico de emissões avulsas</h2>
+        <div className="flex gap-2 items-center flex-wrap">
+          {/* Toggle Mensal / Anual */}
+          <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
+            {['mensal','anual'].map(v => (
+              <button key={v} onClick={() => setHistView(v)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${histView === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                {v === 'mensal' ? '📅 Mensal' : '📊 Anual'}
+              </button>
+            ))}
+          </div>
+          {/* Seletor de período */}
+          {histView === 'mensal' ? (
+            <MonthPicker value={histMes} onChange={setHistMes}/>
+          ) : (
+            <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50 overflow-hidden select-none">
+              <button onClick={() => setHistAno(a => a - 1)}
+                className="px-3 py-2.5 text-slate-500 hover:bg-slate-200 font-bold text-base leading-none">‹</button>
+              <span className="px-4 font-semibold text-slate-800 text-sm">{histAno}</span>
+              <button onClick={() => setHistAno(a => a + 1)}
+                className="px-3 py-2.5 text-slate-500 hover:bg-slate-200 font-bold text-base leading-none">›</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl p-4 text-white">
+          <p className="text-indigo-200 text-xs font-semibold uppercase tracking-wide mb-1">Total Emitido</p>
+          <p className="text-xl font-bold mb-0.5">{fmtBRL(histTotalVal)}</p>
+          <p className="text-indigo-200 text-xs">
+            {histEmitidas.length} nota{histEmitidas.length !== 1 ? 's' : ''} emitida{histEmitidas.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+        <div className="bg-white rounded-2xl p-4 border border-slate-100">
+          <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1">✅ Emitidas</p>
+          <p className="text-xl font-bold text-emerald-600">{histEmitidas.length}</p>
+          <p className="text-xs text-slate-400 mt-0.5">{fmtBRL(histTotalVal)}</p>
+        </div>
+        <div className="bg-white rounded-2xl p-4 border border-slate-100">
+          <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1">❌ Com Erro</p>
+          <p className="text-xl font-bold text-red-500">{histErros}</p>
+          <p className="text-xs text-slate-400 mt-0.5">{histErros > 0 ? 'Verifique o histórico' : 'Nenhum erro'}</p>
+        </div>
+      </div>
+
       {/* Histórico */}
       <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
         <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
-          <span className="text-sm font-semibold text-slate-700">Histórico de emissões avulsas</span>
+          <span className="text-sm font-semibold text-slate-700">Notas do período</span>
           {loadingHistory && (
             <div className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"/>
           )}
         </div>
-        {history.length === 0 && !loadingHistory ? (
-          <p className="text-center text-sm text-slate-400 py-10">Nenhuma emissão avulsa registrada.</p>
+        {filteredHistory.length === 0 && !loadingHistory ? (
+          <p className="text-center text-sm text-slate-400 py-10">Nenhuma emissão neste período.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -433,7 +532,7 @@ export default function NfseAvulsa() {
               </tr>
             </thead>
             <tbody>
-              {history.map(em => (
+              {filteredHistory.map(em => (
                 <tr key={em.id} className="border-t border-slate-50 hover:bg-slate-50/50">
                   <td className="px-5 py-2.5 font-medium text-slate-800">{em.tomador_nome || '—'}</td>
                   <td className="px-4 py-2.5 text-slate-500">{em.competencia || '—'}</td>
