@@ -64,7 +64,6 @@ function TomadorModal({ initial, onSave, onClose }) {
 
   const handleSave = () => {
     if (!f.nome.trim())     { setErr('Informe o nome do tomador.'); return }
-    if (!f.cpfCnpj.trim()) { setErr('Informe o CPF ou CNPJ.'); return }
     const v = parseFloat(f.valor.replace(',', '.'))
     if (!v || v <= 0)      { setErr('Informe o valor do serviço.'); return }
     if (!f.mesRef)         { setErr('Informe a competência.'); return }
@@ -88,10 +87,10 @@ function TomadorModal({ initial, onSave, onClose }) {
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-500 block mb-1">CPF / CNPJ *</label>
+              <label className="text-xs font-medium text-slate-500 block mb-1">CPF / CNPJ <span className="font-normal text-slate-400">(opcional)</span></label>
               <input value={f.cpfCnpj}
                 onChange={e => setF(p => ({ ...p, cpfCnpj: maskCpfCnpj(e.target.value) }))}
-                placeholder="000.000.000-00"
+                placeholder="Deixe em branco para não identificar"
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono"/>
             </div>
             <div>
