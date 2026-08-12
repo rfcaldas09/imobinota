@@ -71,17 +71,30 @@ exports.handler = async (event) => {
 
   // ── 2. Busca perfil do prestador ───────────────────────────────
   const profRes = await supabaseFetch(SUPABASE_URL, SERVICE_KEY,
-    `profiles?id=eq.${userId}&select=cnpj,inscricao_municipal,nfse_municipio_ibge,nfse_cert_path,nfse_cert_senha_enc,nfse_serie`, 'GET')
-  const profRows = await profRes.json()
-  const p = profRows?.[0]
+    `profiles?id=eq.${userId}&select=cnpj,inscricao_municipal,nfse_municipio_ibge,nfse_cert_path,nfse_cert_password_enc,nfse_serie`, 'GET')
 
+  if (!profRes.ok) {
+    const errBody = await profRes.text()
+    console.error('[nfse-cancelar] Erro ao buscar perfil HTTP', profRes.status, errBody)
+    return { statusCode: 500, body: JSON.stringify({ error: `Erro ao buscar perfil: ${profRes.status} — ${errBody}` }) }
+  }
+
+  const profRows = await profRes.json()
+
+  // Se Supabase retornou um objeto de erro em vez de array, loga e retorna mensagem clara
+  if (!Array.isArray(profRows)) {
+    console.error('[nfse-cancelar] Supabase retornou erro de schema:', JSON.stringify(profRows))
+    return { statusCode: 500, body: JSON.stringify({ error: `Erro de schema: ${profRows?.message || JSON.stringify(profRows)}` }) }
+  }
+
+  const p = profRows[0]
   if (!p) return { statusCode: 404, body: JSON.stringify({ error: 'Perfil não encontrado' }) }
   if (!p.nfse_cert_path) return { statusCode: 400, body: JSON.stringify({ error: 'Certificado digital não configurado' }) }
 
   // ── 3. Descriptografa senha e extrai cert ─────────────────────
   let certPem, keyPem, certForge, privateKey
   try {
-    const certPassword = decryptPassword(p.nfse_cert_senha_enc, CERT_KEY)
+    const certPassword = decryptPassword(p.nfse_cert_password_enc, CERT_KEY)
     if (!certPassword) throw new Error('Senha do certificado não encontrada')
     const certBytes = await downloadCert(SUPABASE_URL, SERVICE_KEY, p.nfse_cert_path)
     const pfx = parsePfx(certBytes, certPassword)
