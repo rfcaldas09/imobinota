@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-import { LC116 } from '../lib/lc116'
+import Lc116Picker from '../components/Lc116Picker'
 
 // ── Ícones inline ──────────────────────────────────────────────────
 const ic = (d, cls = '') => (
@@ -119,14 +119,11 @@ function TomadorModal({ initial, onSave, onClose }) {
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"/>
             </div>
             <div className="col-span-2">
-              <label className="text-xs font-medium text-slate-500 block mb-1">Código LC 116 (opcional)</label>
-              <select value={f.codLc116} onChange={set('codLc116')}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400">
-                <option value="">— Usar padrão do cadastro —</option>
-                {LC116.map(item => (
-                  <option key={item.codigo} value={item.codigo}>{item.codigo} — {item.descricao}</option>
-                ))}
-              </select>
+              <Lc116Picker
+                value={f.codLc116}
+                onChange={v => setF(p => ({ ...p, codLc116: v }))}
+                label="Código LC 116 (opcional)"
+              />
             </div>
           </div>
 
