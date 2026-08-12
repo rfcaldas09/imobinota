@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { LC116 } from '../lib/lc116'
+import { MUNICIPIOS_SUL } from '../lib/municipios'
 
 // ── Salva senha do certificado via função server-side (criptografa com NFSE_CERT_KEY) ─
 async function salvarSenhaCert(password, certPath, jwt) {
@@ -80,30 +81,6 @@ const TABS = [
 
 // Lista de municípios comuns do Sul para facilitar a busca
 // nac: true  = município usa o Emissor Público Nacional (SEFIN) — aceita DPS via API nacional
-// nac: false = município usa sistema municipal próprio — NÃO compatível com o endpoint nacional
-// nacEm: data prevista de migração para o Emissor Nacional (ISO 8601), se anunciada oficialmente
-const MUNICIPIOS_SUL = [
-  // ── SANTA CATARINA ──────────────────────────────────────────────────────────
-  { ibge:'4205407', nome:'Florianópolis — SC', nac:true  },                                    // Emissor Nacional desde 27/08/2025
-  { ibge:'4204202', nome:'Chapecó — SC',        nac:true  },                                    // Emissor Nacional desde 15/08/2024
-  { ibge:'4202404', nome:'Blumenau — SC',        nac:true,  nacEm:'2026-08-01' },               // Emissor Nacional desde 01/08/2026 (migração confirmada)
-  { ibge:'4209102', nome:'Joinville — SC',       nac:true,  nacEm:'2026-07-20' },               // Emissor Nacional desde 20/07/2026 (migração confirmada)
-  { ibge:'4216602', nome:'São José — SC',        nac:false },                                   // usa AtendeNet (emissor próprio) — sem data anunciada
-  { ibge:'4215802', nome:'São Bento do Sul — SC',nac:false },                                   // mantém emissor próprio — sem data anunciada
-  { ibge:'4211900', nome:'Palhoça — SC',         nac:false },                                   // sem anúncio de migração
-  // ── RIO GRANDE DO SUL ───────────────────────────────────────────────────────
-  { ibge:'4314902', nome:'Porto Alegre — RS',    nac:true  },                                    // Emissor Nacional desde 17/04/2023
-  { ibge:'4305108', nome:'Caxias do Sul — RS',   nac:false },                                   // decidiu manter emissor próprio (ADN apenas)
-  { ibge:'4316907', nome:'Santa Maria — RS',     nac:false },                                   // sem anúncio de migração
-  { ibge:'4314407', nome:'Pelotas — RS',         nac:true,  nacEm:'2026-08-01' },               // Emissor Nacional desde 01/08/2026 (Decreto 7.208/2026)
-  { ibge:'4309100', nome:'Gramado — RS',         nac:false },                                   // mantém emissor próprio — sem data anunciada
-  // ── PARANÁ ──────────────────────────────────────────────────────────────────
-  { ibge:'4106902', nome:'Curitiba — PR',        nac:true  },                                    // Emissor Nacional desde 30/08/2023
-  { ibge:'4113700', nome:'Londrina — PR',        nac:true  },                                    // Emissor Nacional desde 01/01/2026
-  { ibge:'4115200', nome:'Maringá — PR',         nac:true  },                                    // Emissor Nacional desde 15/06/2023
-  { ibge:'4119905', nome:'Ponta Grossa — PR',    nac:false },                                   // mantém Elotech — migração "gradual, sem data"
-  { ibge:'4104808', nome:'Cascavel — PR',        nac:false },                                   // mantém emissor próprio — ADN apenas
-]
 
 const VARS = [
   { v:'{{cliente}}',   label:'Cliente' },
@@ -243,7 +220,6 @@ export default function Config() {
     inscMun:      '',
     telefone:     '',
     emailContato: '',
-    endereco:     '',
     certOk:       false,
     certNome:     '',
     certValidade: '',
@@ -297,7 +273,6 @@ export default function Config() {
           inscMun:      data?.inscricao_municipal   || '',
           telefone:     data?.telefone              || user.phone || '',
           emailContato: data?.email_contato         || user.email || '',
-          endereco:     data?.endereco              || '',
           certOk:       !!data?.nfse_cert_path,
           certNome:     data?.nfse_cert_path ? data.nfse_cert_path.split('/').pop() : '',
           certPassword: '',
@@ -350,7 +325,6 @@ export default function Config() {
         inscricao_municipal: f.inscMun,
         telefone:            f.telefone,
         email_contato:       f.emailContato,
-        endereco:            f.endereco,
       })
       // Salva senha do certificado se preenchida (campo fica na aba Empresa)
       const certPwdValue = certPasswordRef.current?.value || f.certPassword
@@ -548,9 +522,6 @@ export default function Config() {
                     <Inp value={f.emailContato} onChange={e => set('emailContato', e.target.value)} type="email" placeholder="contato@empresa.com.br"/>
                   </div>
                 </div>
-                <Row label="Endereço">
-                  <Inp value={f.endereco} onChange={e => set('endereco', e.target.value)} placeholder="Rua, número, bairro, cidade — UF"/>
-                </Row>
               </div>
             )}
           </Section>

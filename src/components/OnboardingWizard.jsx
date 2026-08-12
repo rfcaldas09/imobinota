@@ -3,44 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
-
-// ── ISS por município (IBGE) — valor sugerido, confirmar na prefeitura ────────
-const ISS_IBGE = {
-  '4202008': '2,00', // Blumenau SC
-  '4205407': '2,00', // Florianópolis SC
-  '4209102': '2,00', // Joinville SC
-  '4213906': '2,00', // São José SC
-  '4216602': '2,00', // Tubarão SC
-  '4204202': '5,00', // Criciúma SC
-  '4219002': '2,00', // Chapecó SC
-  '4314902': '3,00', // Porto Alegre RS
-  '4310801': '5,00', // Gramado RS
-  '4304606': '2,00', // Caxias do Sul RS
-  '4118204': '2,00', // Ponta Grossa PR
-  '4106902': '2,50', // Curitiba PR
-  '4113700': '5,00', // Londrina PR
-  '4115200': '5,00', // Maringá PR
-  '4104808': '2,00', // Cascavel PR
-}
-
-// ── Municípios do Sul ─────────────────────────────────────────────────────────
-const MUNICIPIOS = [
-  { ibge:'4202008', nome:'Blumenau — SC' },
-  { ibge:'4205407', nome:'Florianópolis — SC' },
-  { ibge:'4209102', nome:'Joinville — SC' },
-  { ibge:'4213906', nome:'São José — SC' },
-  { ibge:'4216602', nome:'Tubarão — SC' },
-  { ibge:'4204202', nome:'Criciúma — SC' },
-  { ibge:'4219002', nome:'Chapecó — SC' },
-  { ibge:'4314902', nome:'Porto Alegre — RS' },
-  { ibge:'4310801', nome:'Gramado — RS' },
-  { ibge:'4304606', nome:'Caxias do Sul — RS' },
-  { ibge:'4118204', nome:'Ponta Grossa — PR' },
-  { ibge:'4106902', nome:'Curitiba — PR' },
-  { ibge:'4113700', nome:'Londrina — PR' },
-  { ibge:'4115200', nome:'Maringá — PR' },
-  { ibge:'4104808', nome:'Cascavel — PR' },
-]
+import { MUNICIPIOS_SUL, ISS_IBGE } from '../lib/municipios'
 
 // ── Códigos LC 116/2003 — lista completa ──────────────────────────────────────
 const LC116 = [
@@ -531,7 +494,7 @@ function StepFiscal({ ibge, setIbge, ibgeNome, setIbgeNome, codServico, setCodSe
   })
   const [servOpen,    setServOpen]    = useState(false)
 
-  const filteredMun = MUNICIPIOS.filter(m =>
+  const filteredMun = MUNICIPIOS_SUL.filter(m =>
     m.nome.toLowerCase().includes(ibgeSearch.toLowerCase())
   )
   const filteredServ = LC116.filter(s =>
@@ -833,6 +796,7 @@ export default function OnboardingWizard({ onComplete, termsOnly = false }) {
     // Campos disponíveis imediatamente via auth metadata (gravados no signup)
     if (meta.company_name) setCompany(c => c || meta.company_name)
     if (meta.whatsapp)     setTelefone(t => t || meta.whatsapp)
+    if (user.email)        setEmailCon(e => e || user.email)
 
     // Busca profile completo no banco (pode ter dados fiscais, PIX, etc.)
     supabase
