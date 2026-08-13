@@ -330,15 +330,15 @@ function gzipBuffer(buf) {
 // Corpo JSON: { pedidoRegistroEventoXmlGZipB64: "..." }
 // ATENÇÃO: campo DIFERENTE da emissão (dpsXmlGZipB64). Confirmado pelo fórum ACBr.
 async function postEventoMtls(url, xmlBody, certPem, keyPem) {
-  const gz                            = await gzipBuffer(Buffer.from(xmlBody, 'utf8'))
+  const gz                             = await gzipBuffer(Buffer.from(xmlBody, 'utf8'))
   const pedidoRegistroEventoXmlGZipB64 = gz.toString('base64')
   const jsonBody                       = JSON.stringify({ pedidoRegistroEventoXmlGZipB64 })
-  const bodyBuf                = Buffer.from(jsonBody, 'utf8')
+  const bodyBuf                        = Buffer.from(jsonBody, 'utf8')
 
   console.log('[nfse-cancelar] JSON body length:', bodyBuf.length, '| GZipB64 length:', pedidoRegistroEventoXmlGZipB64.length)
   console.log('[nfse-cancelar] XML pedRegEvento (primeiros 500 chars):', xmlBody.slice(0, 500))
 
-  return new Promise((resolve, reject) => {
+  const doRequest = () => new Promise((resolve, reject) => {
     const parsed  = new URL(url)
     const options = {
       hostname:           parsed.hostname,
@@ -366,4 +366,21 @@ async function postEventoMtls(url, xmlBody, certPem, keyPem) {
     req.write(bodyBuf)
     req.end()
   })
+
+  // Retry automático em caso de 503 (indisponibilidade temporária do SEFIN)
+  const MAX_TENTATIVAS = 3
+  const BACKOFF_MS     = 4000
+
+  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
+    const result = await doRequest()
+    if (result.status !== 503 && !result.body.includes('Service Unavailable')) {
+      return result
+    }
+    if (tentativa < MAX_TENTATIVAS) {
+      console.warn(`[nfse-cancelar] SEFIN 503 (tentativa ${tentativa}/${MAX_TENTATIVAS}) — aguardando ${BACKOFF_MS}ms`)
+      await new Promise(r => setTimeout(r, BACKOFF_MS))
+    }
+  }
+
+  return { status: 503, body: 'Service Unavailable' }
 }
