@@ -96,10 +96,30 @@ exports.handler = async (event) => {
       case 'invoice.paid': {
         // Pagamento confirmado — ativa/renova plano por 35 dias (margem para ciclo mensal)
         const invoice = stripeEvent.data.object
-        const customerId     = invoice.customer
-        const subscriptionId = invoice.subscription
 
-        if (!subscriptionId) break // invoice avulsa, não é assinatura
+        // Log completo para debug (API version 2026-07-29.dahlia pode mudar campos)
+        console.log('[stripe-webhook] invoice.paid campos:', JSON.stringify({
+          id:                   invoice.id,
+          customer:             invoice.customer,
+          subscription:         invoice.subscription,
+          subscription_details: invoice.subscription_details,
+          billing_reason:       invoice.billing_reason,
+          status:               invoice.status,
+        }))
+
+        const customerId = invoice.customer
+
+        // A partir de algumas versões novas do Stripe, subscription_details.subscription
+        // substitui o campo direto invoice.subscription
+        const subscriptionId =
+          invoice.subscription ||
+          invoice.subscription_details?.subscription ||
+          invoice.parent?.subscription_details?.subscription
+
+        if (!subscriptionId) {
+          console.log('[stripe-webhook] invoice.paid sem subscriptionId — ignorando (invoice avulsa)')
+          break
+        }
 
         const sub    = await stripe.subscriptions.retrieve(subscriptionId)
         const planId = sub.metadata?.plan_id || 'essencial'

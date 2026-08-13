@@ -163,6 +163,16 @@ ${tipoInsc === '2' ? `<CNPJ>${cnpjDigits}</CNPJ>` : `<CPF>${cnpjDigits.slice(-11
 
   // SEFIN retorna 200 ou 204 em caso de sucesso
   if (sefinStatus !== 200 && sefinStatus !== 204) {
+    // 503 = serviço SEFIN temporariamente indisponível (comum no cancelamento)
+    if (sefinStatus === 503 || sefinStatus === 502 || sefinStatus === 504) {
+      return {
+        statusCode: 503,
+        body: JSON.stringify({
+          error: 'O serviço de cancelamento do SEFIN está temporariamente indisponível. Tente novamente em alguns minutos.',
+          sefinStatus,
+        }),
+      }
+    }
     // Tenta extrair mensagem amigável do retorno SEFIN
     let errMsg = `SEFIN retornou HTTP ${sefinStatus}`
     try {
