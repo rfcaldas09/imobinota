@@ -335,7 +335,7 @@ async function postEventoMtls(url, xmlBody, certPem, keyPem) {
   const jsonBody                       = JSON.stringify({ pedidoRegistroEventoXmlGZipB64 })
   const bodyBuf                = Buffer.from(jsonBody, 'utf8')
 
-  console.log('[nfse-cancelar] JSON body length:', bodyBuf.length, '| GZipB64 length:', xmlGZipB64.length)
+  console.log('[nfse-cancelar] JSON body length:', bodyBuf.length, '| GZipB64 length:', pedidoRegistroEventoXmlGZipB64.length)
   console.log('[nfse-cancelar] XML pedRegEvento (primeiros 500 chars):', xmlBody.slice(0, 500))
 
   return new Promise((resolve, reject) => {
