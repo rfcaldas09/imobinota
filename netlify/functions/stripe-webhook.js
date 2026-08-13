@@ -97,20 +97,20 @@ exports.handler = async (event) => {
         // Pagamento confirmado — ativa/renova plano por 35 dias (margem para ciclo mensal)
         const invoice = stripeEvent.data.object
 
-        // Log completo para debug (API version 2026-07-29.dahlia pode mudar campos)
+        // Log completo para debug (API version 2026-07-29.dahlia mudou campos do invoice)
         console.log('[stripe-webhook] invoice.paid campos:', JSON.stringify({
           id:                   invoice.id,
           customer:             invoice.customer,
           subscription:         invoice.subscription,
           subscription_details: invoice.subscription_details,
+          parent:               invoice.parent,
           billing_reason:       invoice.billing_reason,
           status:               invoice.status,
         }))
 
         const customerId = invoice.customer
 
-        // A partir de algumas versões novas do Stripe, subscription_details.subscription
-        // substitui o campo direto invoice.subscription
+        // Na API 2026-07-29.dahlia, o subscription ID migrou para invoice.parent
         const subscriptionId =
           invoice.subscription ||
           invoice.subscription_details?.subscription ||
@@ -121,8 +121,26 @@ exports.handler = async (event) => {
           break
         }
 
-        const sub    = await stripe.subscriptions.retrieve(subscriptionId)
-        const planId = sub.metadata?.plan_id || 'essencial'
+        const sub = await stripe.subscriptions.retrieve(subscriptionId, {
+          expand: ['items.data.price'],
+        })
+
+        // Deriva planId a partir do price.id da assinatura (mais confiável que metadata)
+        const PRICES = {
+          essencial: process.env.STRIPE_PRICE_ESSENCIAL,
+          pro:       process.env.STRIPE_PRICE_PRO,
+        }
+        const subPriceId = sub.items?.data?.[0]?.price?.id
+        let planId = sub.metadata?.plan_id  // tenta metadata primeiro
+        if (!planId || !['essencial', 'pro'].includes(planId)) {
+          // Deriva pelo price ID — fonte mais confiável
+          if (subPriceId === PRICES.pro)       planId = 'pro'
+          else if (subPriceId === PRICES.essencial) planId = 'essencial'
+          else planId = 'essencial' // fallback
+        }
+
+        console.log('[stripe-webhook] planId derivado:', { planId, subPriceId, metadataPlanId: sub.metadata?.plan_id })
+
         const userId = sub.metadata?.supabase_user_id || await getUserIdByCustomer(customerId)
 
         if (!userId) {
