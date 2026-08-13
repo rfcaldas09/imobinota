@@ -751,18 +751,17 @@ function NfseViewModal({ cob, user, onClose }) {
 
 // ── Opções de ação no BatchModal ──────────────────────────────────
 const BATCH_ACTIONS = [
-  { id: 'boleto', label: 'Somente Cobranças', icon: '💳', desc: 'Em breve', disabled: true },
-  { id: 'nfse',   label: 'Somente NFS-e',    icon: '📄', desc: 'Emite notas fiscais de serviço' },
-  { id: 'ambos',  label: 'Cobrança + NFS-e', icon: '⚡', desc: 'Em breve', disabled: true },
+  { id: 'nfse', label: 'Somente NFS-e', icon: '📄', desc: 'Emite notas fiscais de serviço' },
 ]
 
 // ── Modal Gerar e Enviar em Massa ─────────────────────────────────
 function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDone }) {
   const { isActive } = useSubscription()
-  const [step, setStep]         = useState('pick') // pick | discriminacao | running | done
+  const [step, setStep]         = useState('pick') // pick | selecao | discriminacao | running | done
   const [action, setAction]     = useState('nfse')
   const [mesRef, setMesRef]     = useState(initialMes)
-  const [preview, setPreview]   = useState(null)
+  const [preview, setPreview]   = useState(null)  // { toCreate, skipped, pendingContracts }
+  const [selectedIds, setSelectedIds] = useState(null) // Set de IDs selecionados no step selecao
   const [progress, setProgress] = useState(0)
   const [logs, setLogs]         = useState([])
   const [result, setResult]     = useState(null)
@@ -777,8 +776,8 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
       .eq('user_id', user.id).eq('mes_referencia', ref)
       .then(({ data }) => {
         const ids = new Set((data || []).map(e => e.contrato_id))
-        const toCreate = contracts.filter(c => !ids.has(c.id)).length
-        setPreview({ toCreate, skipped: contracts.length - toCreate })
+        const pendingContracts = contracts.filter(c => !ids.has(c.id))
+        setPreview({ toCreate: pendingContracts.length, skipped: contracts.length - pendingContracts.length, pendingContracts })
       })
   }, [mesRef, user, contracts])
 
@@ -793,6 +792,17 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
   const needsPix = action === 'boleto' || action === 'ambos'
   const canConfirm = isActive && preview && preview.toCreate > 0 && !(needsPix && !pixKey)
 
+  // Contratos que realmente serão processados (todos os pendentes, ou apenas os selecionados)
+  const activeContracts = selectedIds
+    ? contracts.filter(c => selectedIds.has(c.id))
+    : contracts
+
+  const goToSelecao = () => {
+    const pendingIds = new Set((preview?.pendingContracts || []).map(c => c.id))
+    setSelectedIds(pendingIds)
+    setStep('selecao')
+  }
+
   const buildFila = async () => {
     const ref = mesStr(mesRef)
     const { data: cobsDoMes } = await supabase
@@ -800,7 +810,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
       .select('id, valor_total, mes_referencia, contrato_id, contratos(imovel, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, seguro_financeiro, seguro_incendio, iptu, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss), inquilinos(nome, cpf, email)')
       .eq('user_id', user.id)
       .eq('mes_referencia', ref)
-      .in('contrato_id', contracts.map(c => c.id))
+      .in('contrato_id', activeContracts.map(c => c.id))
 
     return (cobsDoMes || []).map(cob => ({
       id:              cob.id,
@@ -826,7 +836,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
     setResult(null)
 
     // ── Passo 1: cria cobrancas (pula as que já existem) ──────────
-    const res = await emitirCobrancas(user.id, contracts, mesRef)
+    const res = await emitirCobrancas(user.id, activeContracts, mesRef)
     if (res.error) {
       setResult({ created: 0, skipped: res.skipped, fails: 0, error: res.error })
       setStep('done')
@@ -934,8 +944,8 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
   }
 
   const total = (() => {
-    // estimativa para barra de progresso — número de cobrancas que vão ser emitidas
-    return preview?.toCreate ?? 0
+    // estimativa para barra de progresso — usa selecionados se houver, senão todos os pendentes
+    return selectedIds ? selectedIds.size : (preview?.toCreate ?? 0)
   })()
   const pct = total > 0 ? Math.round((progress / total) * 100) : (progress > 0 ? 100 : 0)
 
@@ -962,39 +972,6 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
             <MonthPicker value={mesRef} onChange={v => { setMesRef(v); setPreview(null) }}/>
 
             {/* Seleção de ação */}
-            <div className="mt-4 space-y-2">
-              {BATCH_ACTIONS.map(a => (
-                <button key={a.id}
-                  onClick={() => !a.disabled && setAction(a.id)}
-                  disabled={a.disabled}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all ${
-                    a.disabled
-                      ? 'border-slate-100 bg-slate-50 cursor-not-allowed opacity-50'
-                      : action === a.id
-                        ? 'border-indigo-500 bg-indigo-50'
-                        : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}>
-                  <span className="text-xl">{a.icon}</span>
-                  <div className="flex-1">
-                    <p className={`text-sm font-semibold ${a.disabled ? 'text-slate-400' : action === a.id ? 'text-indigo-800' : 'text-slate-700'}`}>{a.label}</p>
-                    <p className={`text-xs mt-0.5 ${a.disabled ? 'text-slate-300' : action === a.id ? 'text-indigo-500' : 'text-slate-400'}`}>{a.desc}</p>
-                  </div>
-                  {!a.disabled && action === a.id && (
-                    <div className="w-4 h-4 rounded-full bg-indigo-500 flex items-center justify-center flex-shrink-0">
-                      <IcCheck c="w-3 h-3 text-white stroke-[3]"/>
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-
-            {/* Aviso se sem chave PIX */}
-            {needsPix && !pixKey && (
-              <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
-                ⚠️ Configure sua chave PIX de recebimento em <strong>Configurações → Integrações</strong> antes de gerar cobranças.
-              </div>
-            )}
-
             {/* Preview */}
             {preview ? (
               <div className={`mt-3 rounded-xl px-4 py-3 text-sm ${
@@ -1016,9 +993,79 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
 
             <div className="flex gap-3 mt-6">
               <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50">Cancelar</button>
-              <button onClick={confirm} disabled={!canConfirm}
+              <button onClick={goToSelecao} disabled={!canConfirm}
                 className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold flex items-center justify-center gap-2 shadow-md shadow-indigo-200 disabled:opacity-40 disabled:cursor-not-allowed">
-                <span>{selectedAction?.icon}</span> Confirmar
+                <span>{selectedAction?.icon}</span> Continuar →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'selecao' && preview && (
+          <div className="p-7 flex flex-col" style={{ maxHeight: '90vh' }}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-xl flex-shrink-0">📋</div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Selecionar contratos</h2>
+                <p className="text-xs text-slate-400">Marque os que deseja gerar para {mesLabel(mesRef)}</p>
+              </div>
+            </div>
+
+            {/* Barra selecionar todos + contador */}
+            <div className="flex items-center justify-between mb-3">
+              <button
+                onClick={() => {
+                  const allIds = new Set((preview.pendingContracts || []).map(c => c.id))
+                  const allSelected = (preview.pendingContracts || []).every(c => selectedIds?.has(c.id))
+                  setSelectedIds(allSelected ? new Set() : allIds)
+                }}
+                className="text-xs text-indigo-600 font-semibold hover:underline"
+              >
+                {(preview.pendingContracts || []).every(c => selectedIds?.has(c.id))
+                  ? 'Desmarcar todos'
+                  : 'Selecionar todos'}
+              </button>
+              <span className="text-xs text-slate-500 font-medium">
+                <span className="text-indigo-700 font-bold">{selectedIds?.size ?? 0}</span> de {preview.pendingContracts?.length ?? 0} selecionados
+              </span>
+            </div>
+
+            {/* Lista de contratos */}
+            <div className="overflow-y-auto flex-1 space-y-1.5 pr-1" style={{ maxHeight: '50vh' }}>
+              {(preview.pendingContracts || []).map(c => {
+                const checked = selectedIds?.has(c.id) ?? false
+                return (
+                  <label key={c.id}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-all ${
+                      checked ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <input type="checkbox" checked={checked} onChange={() => {
+                      setSelectedIds(prev => {
+                        const next = new Set(prev)
+                        if (next.has(c.id)) next.delete(c.id); else next.add(c.id)
+                        return next
+                      })
+                    }} className="accent-indigo-600 w-4 h-4 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-800 truncate">{c.tenant}</p>
+                      <p className="text-xs text-slate-400 truncate">{c.property}</p>
+                    </div>
+                    <span className="text-sm font-semibold text-slate-700 flex-shrink-0">
+                      {(c.totalValue ?? 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+
+            <div className="flex gap-3 mt-5 pt-4 border-t border-slate-100">
+              <button onClick={() => setStep('pick')} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50">Voltar</button>
+              <button
+                onClick={confirm}
+                disabled={(selectedIds?.size ?? 0) === 0}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-md shadow-indigo-200 disabled:opacity-40 disabled:cursor-not-allowed">
+                📄 Confirmar {selectedIds?.size ? `(${selectedIds.size})` : ''}
               </button>
             </div>
           </div>
