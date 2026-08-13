@@ -1,24 +1,33 @@
 // Netlify Function — cancela NFS-e emitida via SEFIN Nacional
 // POST { userId, emissaoId, homologacao? }
 //
-// Fluxo:
+// Fluxo correto (conforme manual v1.2 e XSD v1.01 da API):
 //   1. Busca emissão no Supabase (valida dono, status e prazo de 48h)
-//   2. Busca perfil do prestador (certificado, IM, CNPJ, IBGE)
-//   3. Monta XML de pedido de cancelamento e assina com cert A1
-//   4. DELETE /SefinNacional/nfse/{chaveAcesso} via mTLS
-//   5. Atualiza status = 'cancelada' no Supabase
+//   2. Busca perfil do prestador (certificado, CNPJ, IBGE)
+//   3. Monta XML pedRegEvento com evento e101101 (Cancelamento de NFS-e)
+//   4. Assina com XMLDSig RSA-SHA256 (mesmo padrão da emissão)
+//   5. GZip + Base64 → POST JSON com mTLS em /SefinNacional/nfse/{chaveAcesso}/eventos
+//   6. Atualiza status = 'cancelada' no Supabase
+//
+// REFERÊNCIA TÉCNICA:
+//   - XSD: pedRegEvento_v1.01.xsd + tiposEventos_v1.01.xsd
+//   - Endpoint: POST /nfse/{chaveAcesso}/eventos  (API Eventos, seção 1.5 do manual)
+//   - Evento: e101101 (Cancelamento de NFS-e) — cMotivo: 1=Erro na Emissão
+//   - Id do pedRegEvento: PRE + chNFSe(50 digits) + 101101
 
-const https       = require('https')
-const crypto      = require('crypto')
-const zlib        = require('zlib')
-const forge       = require('node-forge')
-const xmlCrypto   = require('xml-crypto')
+const https      = require('https')
+const crypto     = require('crypto')
+const zlib       = require('zlib')
+const forge      = require('node-forge')
+const xmlCrypto  = require('xml-crypto')
 
-const SEFIN_URL_PROD = 'https://sefin.nfse.gov.br/SefinNacional/nfse'
-const SEFIN_URL_TEST = 'https://sefin.producaorestrita.nfse.gov.br/SefinNacional/nfse'
+const SEFIN_BASE_PROD = 'https://sefin.nfse.gov.br/SefinNacional/nfse'
+const SEFIN_BASE_TEST = 'https://sefin.producaorestrita.nfse.gov.br/SefinNacional/nfse'
 
-// Motivo fixo: 1 = emitida com erro
+// Motivo fixo: 1 = Erro na Emissão (conforme XSD TSCodJustCanc)
 const MOTIVO_CANCEL = '1'
+// xMotivo: mínimo 15 chars, máximo 255 chars (TSMotivo)
+const XMOTIVO_TEXT = 'Nota emitida com erro pelo prestador de servicos.'
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -35,9 +44,9 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: 'userId e emissaoId são obrigatórios' }) }
   }
 
-  const SUPABASE_URL  = process.env.SUPABASE_URL
-  const SERVICE_KEY   = process.env.SUPABASE_SERVICE_KEY
-  const CERT_KEY      = process.env.NFSE_CERT_KEY
+  const SUPABASE_URL = process.env.SUPABASE_URL
+  const SERVICE_KEY  = process.env.SUPABASE_SERVICE_KEY
+  const CERT_KEY     = process.env.NFSE_CERT_KEY
 
   if (!SUPABASE_URL || !SERVICE_KEY) {
     return { statusCode: 500, body: JSON.stringify({ error: 'Supabase não configurado' }) }
@@ -58,30 +67,34 @@ exports.handler = async (event) => {
   if (em.status !== 'emitida') {
     return { statusCode: 400, body: JSON.stringify({ error: `Não é possível cancelar uma nota com status "${em.status}"` }) }
   }
-  if (!em.chave_acesso || !em.numero_nfse) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Chave de acesso ou número da NFS-e não disponíveis para cancelamento' }) }
+  if (!em.chave_acesso) {
+    return { statusCode: 400, body: JSON.stringify({ error: 'Chave de acesso da NFS-e não disponível para cancelamento' }) }
+  }
+
+  // Valida que a chave tem 50 dígitos numéricos (requisito do XSD TSChaveNFSe)
+  const chaveOk = /^\d{50}$/.test(em.chave_acesso)
+  if (!chaveOk) {
+    return { statusCode: 400, body: JSON.stringify({ error: `Chave de acesso inválida: "${em.chave_acesso}" (esperado 50 dígitos numéricos)` }) }
   }
 
   // Valida janela de 48h
-  const emitidaEm   = new Date(em.created_at)
-  const limiteCanc  = new Date(emitidaEm.getTime() + 48 * 60 * 60 * 1000)
+  const emitidaEm  = new Date(em.created_at)
+  const limiteCanc = new Date(emitidaEm.getTime() + 48 * 60 * 60 * 1000)
   if (new Date() > limiteCanc) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Prazo de cancelamento expirado (máximo 48h após emissão)' }) }
   }
 
   // ── 2. Busca perfil do prestador ───────────────────────────────
   const profRes = await supabaseFetch(SUPABASE_URL, SERVICE_KEY,
-    `profiles?id=eq.${userId}&select=cnpj,inscricao_municipal,nfse_municipio_ibge,nfse_cert_path,nfse_cert_password_enc,nfse_serie`, 'GET')
+    `profiles?id=eq.${userId}&select=cnpj,nfse_cert_path,nfse_cert_password_enc`, 'GET')
 
   if (!profRes.ok) {
     const errBody = await profRes.text()
     console.error('[nfse-cancelar] Erro ao buscar perfil HTTP', profRes.status, errBody)
-    return { statusCode: 500, body: JSON.stringify({ error: `Erro ao buscar perfil: ${profRes.status} — ${errBody}` }) }
+    return { statusCode: 500, body: JSON.stringify({ error: `Erro ao buscar perfil: ${profRes.status}` }) }
   }
 
   const profRows = await profRes.json()
-
-  // Se Supabase retornou um objeto de erro em vez de array, loga e retorna mensagem clara
   if (!Array.isArray(profRows)) {
     console.error('[nfse-cancelar] Supabase retornou erro de schema:', JSON.stringify(profRows))
     return { statusCode: 500, body: JSON.stringify({ error: `Erro de schema: ${profRows?.message || JSON.stringify(profRows)}` }) }
@@ -106,53 +119,59 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: `Erro no certificado: ${err.message}` }) }
   }
 
-  // ── 4. Monta XML de pedido de cancelamento ─────────────────────
-  const digits    = v => String(v).replace(/\D/g, '')
-  const cnpjDigits = digits(p.cnpj)
-  const tipoInsc   = cnpjDigits.length === 14 ? '2' : '1'
-  const insc14     = cnpjDigits.padStart(14, '0')
-  const ibge7      = String(p.nfse_municipio_ibge).slice(0, 7)
-  const serie5     = String(p.nfse_serie || '00001').slice(0, 5).padStart(5, '0')
-  const tpAmb      = homologacao ? '2' : '1'
+  // ── 4. Monta XML pedRegEvento ──────────────────────────────────
+  // Conforme XSD pedRegEvento_v1.01.xsd + tiposEventos_v1.01.xsd
+  const cnpjDigits = (p.cnpj || '').replace(/\D/g, '')
+  const isCnpj     = cnpjDigits.length === 14
+  const autorTag   = isCnpj
+    ? `<CNPJAutor>${cnpjDigits}</CNPJAutor>`
+    : `<CPFAutor>${cnpjDigits.slice(-11)}</CPFAutor>`
 
-  // Id do PedCan: PED + ibge7(7) + tipoInsc(1) + cnpj(14) + serie(5) + numero_nfse padded(15)
-  const nNfseStr  = String(em.numero_nfse).padStart(15, '0')
-  const idPedCan  = `PED${ibge7}${tipoInsc}${insc14}${serie5}${nNfseStr}`
+  // Id = PRE + chNFSe(50) + codigoEvento(6) — padrão TSIdPedRegEvt PRE[0-9]{56}
+  const codigoEvento = '101101'  // e101101 = Cancelamento de NFS-e
+  const idPedReg     = `PRE${em.chave_acesso}${codigoEvento}`
 
-  const brt    = new Date(new Date().getTime() - 5000 - 3 * 3600 * 1000)
-  const dhCanc = brt.toISOString().replace(/\.\d+Z$/, '-03:00')
+  // Data/hora em BRT com margem de 5s contra clock drift
+  const brt      = new Date(new Date().getTime() - 5000 - 3 * 3600 * 1000)
+  const dhEvento = brt.toISOString().replace(/\.\d+Z$/, '-03:00')
+  const tpAmb    = homologacao ? '2' : '1'
 
-  const pedCanXml = `<?xml version="1.0" encoding="UTF-8"?>
-<PedCanNFSe xmlns="http://www.sped.fazenda.gov.br/nfse"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  versao="1.00">
-<infPedCan Id="${idPedCan}" versao="1.00">
+  const pedRegEventoXml = `<?xml version="1.0" encoding="UTF-8"?>
+<pedRegEvento xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">
+<infPedReg Id="${idPedReg}">
+<tpAmb>${tpAmb}</tpAmb>
+<verAplic>NOTAFACIL-1.0</verAplic>
+<dhEvento>${dhEvento}</dhEvento>
+${autorTag}
 <chNFSe>${em.chave_acesso}</chNFSe>
-<cMotCancNFSe>${MOTIVO_CANCEL}</cMotCancNFSe>
-<dhCancNFSe>${dhCanc}</dhCancNFSe>
-<prest>
-${tipoInsc === '2' ? `<CNPJ>${cnpjDigits}</CNPJ>` : `<CPF>${cnpjDigits.slice(-11)}</CPF>`}
-</prest>
-</infPedCan>
-</PedCanNFSe>`
+<e101101>
+<xDesc>Cancelamento de NFS-e</xDesc>
+<cMotivo>${MOTIVO_CANCEL}</cMotivo>
+<xMotivo>${XMOTIVO_TEXT}</xMotivo>
+</e101101>
+</infPedReg>
+</pedRegEvento>`
 
-  // Assina o XML
-  let pedCanXmlSigned
+  console.log('[nfse-cancelar] pedRegEvento XML montado | Id:', idPedReg, '| chNFSe:', em.chave_acesso)
+
+  // ── 5. Assina o XML ────────────────────────────────────────────
+  let pedRegEventoXmlSigned
   try {
-    pedCanXmlSigned = signXml(pedCanXml, privateKey, certForge, idPedCan)
+    pedRegEventoXmlSigned = signXml(pedRegEventoXml, privateKey, certForge, idPedReg)
   } catch (err) {
     return { statusCode: 500, body: JSON.stringify({ error: `Erro ao assinar XML: ${err.message}` }) }
   }
 
-  // ── 5. Envia POST mTLS ao SEFIN ───────────────────────────────
-  // Endpoint de cancelamento: POST /SefinNacional/nfse/cancelamento
-  // A chave de acesso vai dentro do XML (chNFSe), não na URL
-  const sefinBase = homologacao ? SEFIN_URL_TEST : SEFIN_URL_PROD
-  const sefinUrl  = `${sefinBase}/cancelamento`
+  // ── 6. Envia POST mTLS ao SEFIN — API Eventos ─────────────────
+  // Endpoint: POST /SefinNacional/nfse/{chaveAcesso}/eventos
+  const sefinBase = homologacao ? SEFIN_BASE_TEST : SEFIN_BASE_PROD
+  const sefinUrl  = `${sefinBase}/${em.chave_acesso}/eventos`
+
+  console.log('[nfse-cancelar] enviando para SEFIN:', sefinUrl)
 
   let sefinStatus, sefinBody
   try {
-    const result = await postCancelMtls(sefinUrl, pedCanXmlSigned, certPem, keyPem)
+    const result = await postEventoMtls(sefinUrl, pedRegEventoXmlSigned, certPem, keyPem)
     sefinStatus  = result.status
     sefinBody    = result.body
   } catch (err) {
@@ -161,9 +180,8 @@ ${tipoInsc === '2' ? `<CNPJ>${cnpjDigits}</CNPJ>` : `<CPF>${cnpjDigits.slice(-11
 
   console.log('[nfse-cancelar] SEFIN status:', sefinStatus, '| body:', sefinBody)
 
-  // SEFIN retorna 200 ou 204 em caso de sucesso
-  if (sefinStatus !== 200 && sefinStatus !== 204) {
-    // 503 = serviço SEFIN temporariamente indisponível (comum no cancelamento)
+  // SEFIN retorna 200 ou 201 em caso de sucesso
+  if (sefinStatus !== 200 && sefinStatus !== 201 && sefinStatus !== 204) {
     if (sefinStatus === 503 || sefinStatus === 502 || sefinStatus === 504) {
       return {
         statusCode: 503,
@@ -173,21 +191,24 @@ ${tipoInsc === '2' ? `<CNPJ>${cnpjDigits}</CNPJ>` : `<CPF>${cnpjDigits.slice(-11
         }),
       }
     }
+
     // Tenta extrair mensagem amigável do retorno SEFIN
     let errMsg = `SEFIN retornou HTTP ${sefinStatus}`
     try {
       const parsed = JSON.parse(sefinBody)
-      errMsg = parsed?.message || parsed?.xMotivo || parsed?.erros?.[0]?.xMsg || errMsg
+      errMsg = parsed?.message || parsed?.xMotivo ||
+        (Array.isArray(parsed?.erros) ? parsed.erros.map(e => e.xMsg || e.Descricao || e.descricao).join('; ') : null) ||
+        errMsg
     } catch {}
-    return { statusCode: 400, body: JSON.stringify({ error: errMsg, sefinRaw: sefinBody }) }
+    return { statusCode: 400, body: JSON.stringify({ error: errMsg, sefinStatus, sefinRaw: sefinBody }) }
   }
 
-  // ── 6. Atualiza status no Supabase ─────────────────────────────
+  // ── 7. Atualiza status no Supabase ─────────────────────────────
   await supabaseFetch(SUPABASE_URL, SERVICE_KEY,
     `nfse_emissoes?id=eq.${emissaoId}`, 'PATCH', {
-      status:               'cancelada',
-      cancelado_em:         new Date().toISOString(),
-      motivo_cancelamento:  MOTIVO_CANCEL,
+      status:              'cancelada',
+      cancelado_em:        new Date().toISOString(),
+      motivo_cancelamento: MOTIVO_CANCEL,
     })
 
   console.log('[nfse-cancelar] Cancelamento concluído:', { emissaoId, chaveAcesso: em.chave_acesso })
@@ -300,12 +321,16 @@ function gzipBuffer(buf) {
   )
 }
 
-// Cancelamento: POST /SefinNacional/nfse/{chaveAcesso} com body { pedCanXmlGZipB64 }
-async function postCancelMtls(url, xmlBody, certPem, keyPem) {
-  const gz               = await gzipBuffer(Buffer.from(xmlBody, 'utf8'))
-  const pedCanXmlGZipB64 = gz.toString('base64')
-  const jsonBody         = JSON.stringify({ pedCanXmlGZipB64 })
-  const bodyBuf          = Buffer.from(jsonBody, 'utf8')
+// POST /SefinNacional/nfse/{chaveAcesso}/eventos com mTLS
+// Corpo JSON: { pedRegEventoXmlGZipB64: "..." }
+// Padrão da API: mesmo que dpsXmlGZipB64 para emissão
+async function postEventoMtls(url, xmlBody, certPem, keyPem) {
+  const gz                    = await gzipBuffer(Buffer.from(xmlBody, 'utf8'))
+  const pedRegEventoXmlGZipB64 = gz.toString('base64')
+  const jsonBody              = JSON.stringify({ pedRegEventoXmlGZipB64 })
+  const bodyBuf               = Buffer.from(jsonBody, 'utf8')
+
+  console.log('[nfse-cancelar] JSON body length:', bodyBuf.length, '| GZipB64 length:', pedRegEventoXmlGZipB64.length)
 
   return new Promise((resolve, reject) => {
     const parsed  = new URL(url)
