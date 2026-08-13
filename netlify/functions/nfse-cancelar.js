@@ -137,7 +137,7 @@ exports.handler = async (event) => {
   const tpAmb    = homologacao ? '2' : '1'
 
   const pedRegEventoXml = `<?xml version="1.0" encoding="UTF-8"?>
-<pedRegEvento xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">
+<pedRegEvento xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">
 <infPedReg Id="${idPedReg}">
 <tpAmb>${tpAmb}</tpAmb>
 <verAplic>NOTAFACIL-1.0</verAplic>
@@ -193,14 +193,18 @@ ${autorTag}
     }
 
     // Tenta extrair mensagem amigável do retorno SEFIN
-    let errMsg = `SEFIN retornou HTTP ${sefinStatus}`
+    let errMsg = `SEFIN HTTP ${sefinStatus}`
     try {
       const parsed = JSON.parse(sefinBody)
-      errMsg = parsed?.message || parsed?.xMotivo ||
-        (Array.isArray(parsed?.erros) ? parsed.erros.map(e => e.xMsg || e.Descricao || e.descricao).join('; ') : null) ||
-        errMsg
-    } catch {}
-    return { statusCode: 400, body: JSON.stringify({ error: errMsg, sefinStatus, sefinRaw: sefinBody }) }
+      const detalhe = parsed?.message || parsed?.xMotivo ||
+        (Array.isArray(parsed?.erros) ? parsed.erros.map(e => e.xMsg || e.Descricao || e.descricao).join('; ') : null)
+      if (detalhe) errMsg += `: ${detalhe}`
+    } catch {
+      // body não é JSON — mostra início do texto
+      errMsg += ` — ${sefinBody.slice(0, 200)}`
+    }
+    console.error('[nfse-cancelar] SEFIN ERRO | status:', sefinStatus, '| body COMPLETO:', sefinBody)
+    return { statusCode: 400, body: JSON.stringify({ error: errMsg, sefinStatus, sefinRaw: sefinBody.slice(0, 500) }) }
   }
 
   // ── 7. Atualiza status no Supabase ─────────────────────────────
@@ -325,12 +329,16 @@ function gzipBuffer(buf) {
 // Corpo JSON: { pedRegEventoXmlGZipB64: "..." }
 // Padrão da API: mesmo que dpsXmlGZipB64 para emissão
 async function postEventoMtls(url, xmlBody, certPem, keyPem) {
-  const gz                    = await gzipBuffer(Buffer.from(xmlBody, 'utf8'))
-  const pedRegEventoXmlGZipB64 = gz.toString('base64')
-  const jsonBody              = JSON.stringify({ pedRegEventoXmlGZipB64 })
-  const bodyBuf               = Buffer.from(jsonBody, 'utf8')
+  const gz                     = await gzipBuffer(Buffer.from(xmlBody, 'utf8'))
+  const xmlGZipB64             = gz.toString('base64')
+  // Tenta os dois nomes de campo possíveis — o Swagger exige mTLS e não é acessível externamente.
+  // Se pedRegEventoXmlGZipB64 falhar com "An error has occurred.", trocar para pedRegEvXmlGZipB64.
+  const pedRegEventoXmlGZipB64 = xmlGZipB64
+  const jsonBody               = JSON.stringify({ pedRegEventoXmlGZipB64 })
+  const bodyBuf                = Buffer.from(jsonBody, 'utf8')
 
-  console.log('[nfse-cancelar] JSON body length:', bodyBuf.length, '| GZipB64 length:', pedRegEventoXmlGZipB64.length)
+  console.log('[nfse-cancelar] JSON body length:', bodyBuf.length, '| GZipB64 length:', xmlGZipB64.length)
+  console.log('[nfse-cancelar] XML pedRegEvento (primeiros 500 chars):', xmlBody.slice(0, 500))
 
   return new Promise((resolve, reject) => {
     const parsed  = new URL(url)
