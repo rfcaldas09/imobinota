@@ -144,7 +144,6 @@ exports.handler = async (event) => {
 <dhEvento>${dhEvento}</dhEvento>
 ${autorTag}
 <chNFSe>${em.chave_acesso}</chNFSe>
-<nPedRegEvento>1</nPedRegEvento>
 <e101101>
 <xDesc>Cancelamento de NFS-e</xDesc>
 <cMotivo>${MOTIVO_CANCEL}</cMotivo>
