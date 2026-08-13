@@ -144,6 +144,7 @@ exports.handler = async (event) => {
 <dhEvento>${dhEvento}</dhEvento>
 ${autorTag}
 <chNFSe>${em.chave_acesso}</chNFSe>
+<nPedRegEvento>1</nPedRegEvento>
 <e101101>
 <xDesc>Cancelamento de NFS-e</xDesc>
 <cMotivo>${MOTIVO_CANCEL}</cMotivo>
@@ -326,15 +327,12 @@ function gzipBuffer(buf) {
 }
 
 // POST /SefinNacional/nfse/{chaveAcesso}/eventos com mTLS
-// Corpo JSON: { pedRegEventoXmlGZipB64: "..." }
-// Padrão da API: mesmo que dpsXmlGZipB64 para emissão
+// Corpo JSON: { pedidoRegistroEventoXmlGZipB64: "..." }
+// ATENÇÃO: campo DIFERENTE da emissão (dpsXmlGZipB64). Confirmado pelo fórum ACBr.
 async function postEventoMtls(url, xmlBody, certPem, keyPem) {
-  const gz                     = await gzipBuffer(Buffer.from(xmlBody, 'utf8'))
-  const xmlGZipB64             = gz.toString('base64')
-  // Tenta os dois nomes de campo possíveis — o Swagger exige mTLS e não é acessível externamente.
-  // Se pedRegEventoXmlGZipB64 falhar com "An error has occurred.", trocar para pedRegEvXmlGZipB64.
-  const pedRegEventoXmlGZipB64 = xmlGZipB64
-  const jsonBody               = JSON.stringify({ pedRegEventoXmlGZipB64 })
+  const gz                            = await gzipBuffer(Buffer.from(xmlBody, 'utf8'))
+  const pedidoRegistroEventoXmlGZipB64 = gz.toString('base64')
+  const jsonBody                       = JSON.stringify({ pedidoRegistroEventoXmlGZipB64 })
   const bodyBuf                = Buffer.from(jsonBody, 'utf8')
 
   console.log('[nfse-cancelar] JSON body length:', bodyBuf.length, '| GZipB64 length:', xmlGZipB64.length)
