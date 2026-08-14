@@ -6,6 +6,7 @@ import MonthPicker from '../components/MonthPicker'
 import Badge from '../components/Badge'
 import Lc116Picker from '../components/Lc116Picker'
 import OnboardingWizard, { OnboardingBanner, useOnboarding } from '../components/OnboardingWizard'
+import * as XLSX from 'xlsx'
 
 const ic = (d, cls='') => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -23,6 +24,7 @@ const IcChevR   = ({ c='' }) => ic('<polyline points="9 18 15 12 9 6"/>', c)
 const IcChevL   = ({ c='' }) => ic('<polyline points="15 18 9 12 15 6"/>', c)
 const IcScan    = ({ c='' }) => ic('<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="3" y1="12" x2="21" y2="12"/>', c)
 const IcTrash   = ({ c='' }) => ic('<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>', c)
+const IcUpload  = ({ c='' }) => ic('<polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>', c)
 
 const fmt     = v => Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
 const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
@@ -72,6 +74,273 @@ const isExpiringSoon = (c) => {
   if (!c.end) return false
   const diff = (new Date(c.end) - new Date()) / 86400000
   return diff >= 0 && diff <= 60
+}
+
+// ── Parser de planilha XLS → contratos ────────────────────────────
+function parseContratosXls(data) {
+  return data.map((row, i) => {
+    const nome = String(row['NOME COMPLETO'] || row['Nome'] || row['NOME'] || '').trim()
+
+    // CPF: Excel armazena como número, perdendo zeros à esquerda → repadding
+    let cpfRaw = String(row['CPF/CNPJ'] || row['CPF'] || row['CNPJ'] || '').replace(/\D/g, '')
+    if (cpfRaw && cpfRaw.length < 11)  cpfRaw = cpfRaw.padStart(11, '0')   // CPF
+    else if (cpfRaw && cpfRaw.length > 11 && cpfRaw.length < 14) cpfRaw = cpfRaw.padStart(14, '0') // CNPJ
+    const cpf = cpfRaw ? maskCpfCnpj(cpfRaw) : ''
+
+    const email = String(row['E-MAIL'] || row['Email'] || row['EMAIL'] || '').trim()
+    const phone = String(row['TELEFONE'] || row['Telefone'] || '').trim()
+    const property = String(row['REFERÊNCIA'] || row['REFERENCIA'] || row['Referência'] || row['Referencia'] || '').trim()
+
+    // Datas — openpyxl e XLSX retornam Date ou string
+    const parseDate = v => {
+      if (!v) return ''
+      if (v instanceof Date) return v.toISOString().slice(0, 10)
+      const s = String(v)
+      if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+      return ''
+    }
+    const start = parseDate(row['INÍCIO DO CONTRATO'] || row['INICIO DO CONTRATO'] || row['Início'] || row['Inicio'])
+    const end   = parseDate(row['FIM DO CONTRATO'] || row['Fim'] || '')
+
+    // Valor
+    const vRaw = row['VALOR'] ?? row['Valor'] ?? 0
+    const value = typeof vRaw === 'number' ? vRaw : parseFloat(String(vRaw).replace(/\./g,'').replace(',','.')) || 0
+
+    const dueDay = parseInt(row['DIA VENC.'] || row['DIA VENCIMENTO'] || row['Dia Venc'] || 10) || 10
+
+    const discriminacaoServico = String(row['DADOS PGTO. (OBS.)'] || row['OBS'] || row['Observação'] || '').trim()
+
+    return {
+      _id:                    i,
+      tenant:                 nome,
+      cpf,
+      email,
+      phone,
+      property,
+      start,
+      end,
+      value,
+      dueDay,
+      discriminacaoServico,
+      codServicoLc116:        '',   // definido no modal
+      seguroFinanceiro:       0,
+      seguroIncendio:         0,
+      iptu:                   0,
+      status:                 'Ativo',
+      solicitarDiscriminacaoMensal: false,
+      issRetido:              false,
+      pIRRF:                  1.50,
+      pCSLL:                  1.00,
+      pCOFINS:                3.00,
+      pPIS:                   0.65,
+      pINSS:                  null,
+    }
+  }).filter(r => r.tenant && r.value > 0)
+}
+
+// ── Modal: importar contratos de planilha XLS ─────────────────────
+function ImportContratosModal({ onImport, onClose }) {
+  const [step, setStep]           = useState('upload')
+  const [rows, setRows]           = useState([])
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [fileName, setFileName]   = useState('')
+  const [dragOver, setDragOver]   = useState(false)
+  const [parseErr, setParseErr]   = useState('')
+  const [lc116, setLc116]         = useState('')
+  const fileRef = useRef(null)
+
+  const processFile = file => {
+    if (!file) return
+    setParseErr('')
+    const reader = new FileReader()
+    reader.onload = e => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const data = XLSX.utils.sheet_to_json(ws, { defval: '' })
+        if (!data.length) { setParseErr('Planilha vazia ou sem dados.'); return }
+        const parsed = parseContratosXls(data)
+        if (!parsed.length) {
+          setParseErr('Nenhuma linha válida encontrada. Verifique se a planilha tem "NOME COMPLETO" e "VALOR".')
+          return
+        }
+        setRows(parsed)
+        setSelectedIds(new Set(parsed.map(r => r._id)))
+        setFileName(file.name)
+        setStep('preview')
+      } catch (err) { setParseErr('Erro ao ler arquivo: ' + err.message) }
+    }
+    reader.readAsArrayBuffer(file)
+  }
+
+  const allSelected  = rows.length > 0 && selectedIds.size === rows.length
+  const noneSelected = selectedIds.size === 0
+  const toggleAll    = () => allSelected ? setSelectedIds(new Set()) : setSelectedIds(new Set(rows.map(r => r._id)))
+  const toggleRow    = id => setSelectedIds(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  const handleImport = () => {
+    const toImport = rows
+      .filter(r => selectedIds.has(r._id))
+      .map(r => ({ ...r, codServicoLc116: lc116 || null }))
+    onImport(toImport)
+  }
+
+  const fmtVal = v => Number(v || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
+
+  // ── Upload step ─────────────────────────────────────────────────
+  if (step === 'upload') return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+          <h2 className="text-base font-bold text-slate-800">Importar Contratos de planilha</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><IcX c="w-5 h-5"/></button>
+        </div>
+        <div className="px-6 py-5 space-y-5">
+          {/* Código LC 116 padrão */}
+          <div>
+            <Lc116Picker
+              value={lc116}
+              onChange={setLc116}
+              label="Código LC 116 (aplicado a todos os contratos importados)"
+            />
+            <p className="text-xs text-slate-400 mt-1">Deixe em branco para usar o padrão configurado no perfil.</p>
+          </div>
+
+          {/* Drop zone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={e => { e.preventDefault(); setDragOver(false); processFile(e.dataTransfer.files[0]) }}
+            onClick={() => fileRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors select-none ${
+              dragOver ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
+            }`}>
+            <IcUpload c="w-8 h-8 mx-auto mb-3 text-slate-300"/>
+            <p className="text-sm font-medium text-slate-600">Arraste o arquivo aqui</p>
+            <p className="text-xs text-slate-400 mt-1">ou clique para selecionar</p>
+            <p className="text-xs text-slate-300 mt-2">.xlsx · .xls</p>
+          </div>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
+            onChange={e => processFile(e.target.files[0])}/>
+
+          {parseErr && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{parseErr}</p>}
+        </div>
+        <div className="px-6 pb-6">
+          <button onClick={onClose}
+            className="w-full py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50">
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // ── Preview step ────────────────────────────────────────────────
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-auto">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+          <div>
+            <h2 className="text-base font-bold text-slate-800">Revisão da importação</h2>
+            <p className="text-xs text-slate-400 mt-0.5">{fileName}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><IcX c="w-5 h-5"/></button>
+        </div>
+
+        {/* Controls */}
+        <div className="px-6 py-3 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3 bg-slate-50">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="min-w-64">
+              <Lc116Picker value={lc116} onChange={setLc116} label="Código LC 116 padrão"/>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={toggleAll} className="text-xs font-semibold text-indigo-600 hover:underline">
+              {allSelected ? 'Desmarcar todos' : 'Selecionar todos'}
+            </button>
+            <span className="text-xs font-semibold bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full">
+              {selectedIds.size} de {rows.length} selecionados
+            </span>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="max-h-[50vh] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-white z-10 border-b border-slate-100">
+              <tr className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                <th className="px-4 py-2.5 w-10">
+                  <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-indigo-600"/>
+                </th>
+                <th className="px-3 py-2.5 text-left">Nome</th>
+                <th className="px-3 py-2.5 text-left">CPF</th>
+                <th className="px-3 py-2.5 text-left">Referência</th>
+                <th className="px-3 py-2.5 text-right">Valor</th>
+                <th className="px-3 py-2.5 text-center">Dia Venc.</th>
+                <th className="px-3 py-2.5 text-left">Início</th>
+                <th className="px-3 py-2.5 text-left">Obs.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => {
+                const checked = selectedIds.has(row._id)
+                return (
+                  <tr key={row._id} onClick={() => toggleRow(row._id)}
+                    className={`border-t border-slate-50 cursor-pointer transition-colors ${
+                      checked ? 'hover:bg-slate-50/50' : 'opacity-40 hover:opacity-60 bg-slate-50'
+                    }`}>
+                    <td className="px-4 py-2.5 text-center" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={checked} onChange={() => toggleRow(row._id)}
+                        className="accent-indigo-600"/>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <p className="font-medium text-slate-800 truncate max-w-[180px]">{row.tenant}</p>
+                      {row.email && <p className="text-xs text-slate-400 truncate max-w-[180px]">{row.email}</p>}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{row.cpf || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-slate-600 max-w-[140px] truncate" title={row.property}>
+                      {row.property || '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-slate-800 whitespace-nowrap">
+                      {fmtVal(row.value)}
+                    </td>
+                    <td className="px-3 py-2.5 text-center text-slate-600">{row.dueDay}</td>
+                    <td className="px-3 py-2.5 text-xs text-slate-500">{row.start || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-slate-400 max-w-[140px] truncate" title={row.discriminacaoServico}>
+                      {row.discriminacaoServico || '—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Nota */}
+        <p className="text-xs text-slate-400 px-6 pt-4">
+          💡 Retenções federais padrão serão aplicadas (IRRF 1,5%, CSLL 1%, COFINS 3%, PIS 0,65%). ISS não retido. Cobrança do mês corrente criada automaticamente ao importar.
+        </p>
+
+        {/* Footer */}
+        <div className="flex gap-2 px-6 py-5 border-t border-slate-100 mt-2">
+          <button onClick={() => setStep('upload')}
+            className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50">
+            ← Voltar
+          </button>
+          <button onClick={handleImport} disabled={noneSelected}
+            className="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed">
+            Importar selecionados ({selectedIds.size})
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ── Componentes do formulário (fora do ContractForm para não perder foco) ──
@@ -810,11 +1079,13 @@ export default function Contratos() {
   const [page, setPage]           = useState(1)
   const [selected, setSelected]   = useState(null)
   const [editing, setEditing]     = useState(null)
-  const [adding, setAdding]       = useState(false)
-  const [scanning, setScanning]   = useState(null)
-  const [toDelete, setToDelete]   = useState(null)
-  const [isRenewal, setIsRenewal] = useState(false)
-  const { toasts, toast }         = useToast()
+  const [adding, setAdding]           = useState(false)
+  const [scanning, setScanning]       = useState(null)
+  const [toDelete, setToDelete]       = useState(null)
+  const [isRenewal, setIsRenewal]     = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importProgress, setImportProgress]   = useState(null) // { running, done, items:[{nome,status,error}] }
+  const { toasts, toast }             = useToast()
 
   // ── Carregar contratos ─────────────────────────────────────────
   const load = async () => {
@@ -904,6 +1175,83 @@ export default function Contratos() {
     } catch (err) {
       toast(err.message || 'Erro ao criar contrato', 'error')
     } finally { setSaving(false) }
+  }
+
+  // ── Importar contratos em lote ─────────────────────────────────
+  const handleImportContratos = async (rows) => {
+    setShowImportModal(false)
+    setImportProgress({ running: true, done: false, items: rows.map(r => ({ nome: r.tenant, status: 'pending' })) })
+
+    for (let i = 0; i < rows.length; i++) {
+      setImportProgress(p => ({ ...p, items: p.items.map((it, idx) => idx === i ? { ...it, status: 'running' } : it) }))
+      try {
+        const data = rows[i]
+        const cpfDigits = data.cpf ? data.cpf.replace(/\D/g, '') : null
+
+        // 1. Upsert inquilino
+        let inquilino_id = null
+        if (cpfDigits) {
+          const { data: existing } = await supabase.from('inquilinos').select('id').eq('user_id', user.id).eq('cpf', cpfDigits).maybeSingle()
+          if (existing) {
+            inquilino_id = existing.id
+            await supabase.from('inquilinos').update({ nome: data.tenant, email: data.email || null, telefone: data.phone || null }).eq('id', existing.id)
+          }
+        }
+        if (!inquilino_id) {
+          const { data: inq, error: errInq } = await supabase.from('inquilinos').insert({
+            user_id: user.id, nome: data.tenant, cpf: cpfDigits || null, email: data.email || null, telefone: data.phone || null,
+          }).select().single()
+          if (errInq) throw errInq
+          inquilino_id = inq.id
+        }
+
+        // 2. Criar contrato
+        const { data: newContract, error } = await supabase.from('contratos').insert({
+          user_id: user.id, inquilino_id,
+          imovel:              data.property,
+          valor_aluguel:       data.value,
+          seguro_financeiro:   0,
+          seguro_incendio:     0,
+          iptu:                0,
+          dia_vencimento:      data.dueDay,
+          data_inicio:         data.start  || null,
+          data_fim:            data.end    || null,
+          status:              'Ativo',
+          cod_servico_lc116:             data.codServicoLc116 || null,
+          discriminacao_servico:         data.discriminacaoServico || null,
+          solicitar_discriminacao_mensal: false,
+          iss_retido:  false,
+          pct_irrf:    data.pIRRF   || null,
+          pct_csll:    data.pCSLL   || null,
+          pct_cofins:  data.pCOFINS || null,
+          pct_pis:     data.pPIS    || null,
+          pct_inss:    data.pINSS   || null,
+        }).select().single()
+        if (error) throw error
+
+        // 3. Auto-criar cobrança no mês corrente
+        try {
+          const today = new Date()
+          const dueDay = parseInt(data.dueDay, 10)
+          const thisMonthDue = new Date(today.getFullYear(), today.getMonth(), dueDay)
+          const mesRef = thisMonthDue >= today
+            ? new Date(today.getFullYear(), today.getMonth(), 1)
+            : new Date(today.getFullYear(), today.getMonth() + 1, 1)
+          await emitirUmaCobranca(user.id, {
+            id: newContract.id, inquilino_id, value: data.value,
+            seguroFinanceiro: 0, seguroIncendio: 0, iptu: 0,
+            totalValue: data.value, dueDay,
+          }, mesRef)
+        } catch { /* falha silenciosa */ }
+
+        setImportProgress(p => ({ ...p, items: p.items.map((it, idx) => idx === i ? { ...it, status: 'ok' } : it) }))
+      } catch (err) {
+        setImportProgress(p => ({ ...p, items: p.items.map((it, idx) => idx === i ? { ...it, status: 'error', error: err.message } : it) }))
+      }
+    }
+
+    setImportProgress(p => ({ ...p, running: false, done: true }))
+    load()
   }
 
   // ── Editar contrato ────────────────────────────────────────────
@@ -1020,6 +1368,10 @@ export default function Contratos() {
           </p>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setShowImportModal(true)}
+            className="flex items-center gap-2 bg-white border border-emerald-200 text-emerald-700 px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-emerald-50 transition-colors">
+            <IcUpload c="w-4 h-4"/> Importar Excel
+          </button>
           <button onClick={() => setAdding(true)}
             className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-50 transition-colors">
             <IcPlus c="w-4 h-4"/> Novo Contrato
@@ -1186,6 +1538,66 @@ export default function Contratos() {
       {toDelete && (
         <DeleteModal contract={toDelete} deleting={deleting}
           onConfirm={handleDelete} onClose={() => setToDelete(null)}/>
+      )}
+
+      {/* Painel de progresso da importação em lote */}
+      {importProgress && (
+        <div className="fixed bottom-6 right-6 z-50 bg-white rounded-2xl shadow-2xl border border-slate-100 w-80 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-bold text-slate-800">
+              {importProgress.done ? '✅ Importação concluída' : '⏳ Importando contratos…'}
+            </p>
+            {importProgress.done && (
+              <button onClick={() => setImportProgress(null)}
+                className="text-slate-400 hover:text-slate-600"><IcX c="w-4 h-4"/></button>
+            )}
+          </div>
+          {/* Barra de progresso */}
+          {(() => {
+            const total    = importProgress.items.length
+            const finished = importProgress.items.filter(it => it.status === 'ok' || it.status === 'error').length
+            const pct      = total > 0 ? Math.round((finished / total) * 100) : 0
+            return (
+              <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden mb-3">
+                <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-300"
+                  style={{ width: `${pct}%` }}/>
+              </div>
+            )
+          })()}
+          <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+            {importProgress.items.map((it, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs">
+                <span className="shrink-0 mt-0.5">
+                  {it.status === 'ok'      ? '✅' :
+                   it.status === 'error'   ? '❌' :
+                   it.status === 'running' ? '⏳' : '○'}
+                </span>
+                <span className={`flex-1 truncate ${it.status === 'error' ? 'text-red-600' : 'text-slate-700'}`}
+                  title={it.error || it.nome}>
+                  {it.nome}
+                  {it.error && <span className="block text-red-400 text-[10px] truncate">{it.error}</span>}
+                </span>
+              </div>
+            ))}
+          </div>
+          {importProgress.done && (() => {
+            const ok  = importProgress.items.filter(it => it.status === 'ok').length
+            const err = importProgress.items.filter(it => it.status === 'error').length
+            return (
+              <p className={`text-xs mt-3 font-semibold ${err > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                {ok} importado{ok !== 1 ? 's' : ''}{err > 0 ? ` · ${err} com erro` : ''}
+              </p>
+            )
+          })()}
+        </div>
+      )}
+
+      {/* Modal — importar de XLS */}
+      {showImportModal && (
+        <ImportContratosModal
+          onImport={handleImportContratos}
+          onClose={() => setShowImportModal(false)}
+        />
       )}
 
       <ToastArea toasts={toasts}/>
