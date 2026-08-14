@@ -1646,28 +1646,26 @@ export default function Cobrancas() {
                         )}
 
                         {/* Linha 4 — Marcar Pago + status */}
-                        {c.status === 'Pago' ? (
-                          <span className="text-xs text-slate-300 w-full text-center">—</span>
-                        ) : (
-                          <div className="flex items-center gap-2 w-full justify-end">
+                        <div className="flex items-center gap-2 w-full justify-end flex-wrap">
+                          {c.status !== 'Pago' && (
                             <button onClick={() => updateStatus(c.id, 'Pago')}
                               className="text-xs text-emerald-600 font-semibold hover:underline whitespace-nowrap">
                               ✓ Marcar Pago
                             </button>
-                            {c.status === 'Pendente' && (
-                              <button onClick={() => updateStatus(c.id, 'Em Atraso')}
-                                className="text-xs text-red-500 font-semibold hover:underline whitespace-nowrap">
-                                Em Atraso
-                              </button>
-                            )}
-                            {c.status === 'Em Atraso' && (
-                              <button onClick={() => updateStatus(c.id, 'Pendente')}
-                                className="text-xs text-amber-600 font-semibold hover:underline whitespace-nowrap">
-                                Pendente
-                              </button>
-                            )}
-                          </div>
-                        )}
+                          )}
+                          {c.status === 'Pendente' && (
+                            <button onClick={() => updateStatus(c.id, 'Em Atraso')}
+                              className="text-xs text-red-500 font-semibold hover:underline whitespace-nowrap">
+                              Em Atraso
+                            </button>
+                          )}
+                          {c.status !== 'Pendente' && (
+                            <button onClick={() => updateStatus(c.id, 'Pendente')}
+                              className="text-xs text-amber-600 font-semibold hover:underline whitespace-nowrap">
+                              Voltar p/ pendente
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
                   </td>
