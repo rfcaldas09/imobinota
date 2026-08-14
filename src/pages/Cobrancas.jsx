@@ -979,8 +979,8 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
                   ? 'bg-indigo-50 border border-indigo-200 text-indigo-800'
                   : 'bg-amber-50 border border-amber-200 text-amber-800'}`}>
                 {preview.toCreate > 0
-                  ? <><strong>{preview.toCreate}</strong> cobrança{preview.toCreate !== 1 ? 's' : ''} serão geradas.
-                      {preview.skipped > 0 && <span className="text-indigo-500 ml-1">({preview.skipped} já emitidas — ignoradas)</span>}</>
+                  ? <><strong>{preview.toCreate}</strong> contrato{preview.toCreate !== 1 ? 's' : ''} serão gerados.
+                      {preview.skipped > 0 && <span className="text-indigo-500 ml-1">({preview.skipped} já emitidos — ignorados)</span>}</>
                   : <>⚠️ Todos os contratos já têm cobrança emitida para {mesLabel(mesRef)}.</>
                 }
               </div>
@@ -1267,7 +1267,7 @@ function AdicionarCobrancaModal({ contracts, user, onClose, onDone }) {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100">
-          <h2 className="text-base font-bold text-slate-900">Adicionar Cobrança</h2>
+          <h2 className="text-base font-bold text-slate-900">Adicionar Contrato para Cobrança</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
             <IcClose c="w-5 h-5"/>
           </button>
@@ -1485,9 +1485,9 @@ export default function Cobrancas() {
       {/* ── Header ─────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Cobranças</h1>
+          <h1 className="text-xl font-bold text-slate-900">Contratos</h1>
           <p className="text-sm text-slate-500 capitalize">
-            {loading ? 'Carregando…' : `${kpi.total} cobrança${kpi.total !== 1 ? 's' : ''} · ${currentMonth}`}
+            {loading ? 'Carregando…' : `${kpi.total} contrato${kpi.total !== 1 ? 's' : ''} · ${currentMonth}`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1502,9 +1502,9 @@ export default function Cobrancas() {
       {/* ── KPI Cards ──────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl p-5 text-white col-span-2 lg:col-span-1">
-          <p className="text-indigo-200 text-xs font-semibold uppercase tracking-wide mb-1">Total Emitido</p>
+          <p className="text-indigo-200 text-xs font-semibold uppercase tracking-wide mb-1">Total</p>
           <p className="text-2xl font-bold">{fmt(kpi.totalVal)}</p>
-          <p className="text-indigo-200 text-xs mt-1">{kpi.total} cobrança{kpi.total !== 1 ? 's' : ''}</p>
+          <p className="text-indigo-200 text-xs mt-1">{kpi.total} contrato{kpi.total !== 1 ? 's' : ''}</p>
         </div>
         {[
           { label:'✅ Pagos',      val: kpi.pagosVal,    count: kpi.pagos,     color:'emerald', text:'text-emerald-600' },
@@ -1514,7 +1514,7 @@ export default function Cobrancas() {
           <div key={label} className="bg-white rounded-2xl p-5 border border-slate-100">
             <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide mb-1">{label}</p>
             <p className={`text-xl font-bold ${text}`}>{fmt(val)}</p>
-            <p className="text-xs text-slate-400 mt-0.5">{count} cobrança{count !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{count} contrato{count !== 1 ? 's' : ''}</p>
             <div className="h-1.5 bg-slate-100 rounded-full mt-2 overflow-hidden">
               <div className={`h-full bg-${color}-500 rounded-full`}
                 style={{ width:`${kpi.total > 0 ? Math.round(count/kpi.total*100) : 0}%` }}/>
@@ -1536,7 +1536,7 @@ export default function Cobrancas() {
         <div className="flex items-center gap-2">
           <button onClick={() => setAddCob(true)}
             className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-semibold text-sm hover:bg-slate-50 shadow-sm whitespace-nowrap">
-            <IcPlus c="w-4 h-4"/> Adicionar Cobrança
+            <IcPlus c="w-4 h-4"/> Adicionar contrato para cobrança
           </button>
           <button onClick={() => isActive ? setShowBatch(true) : navigate('/plano')}
             title={!isActive ? 'Assine um plano para usar esta função' : ''}
@@ -1619,14 +1619,7 @@ export default function Cobrancas() {
                       <div className="w-4 h-4 border-2 border-slate-200 border-t-indigo-500 rounded-full animate-spin inline-block"/>
                     ) : (
                       <div className="flex flex-col items-end gap-1.5">
-                        {/* Linha 1 — Gerar Cobrança (desabilitado temporariamente) */}
-                        <button
-                          disabled
-                          title="Em breve"
-                          className="flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap w-full justify-center text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed opacity-50">
-                          <IcQR c="w-3 h-3"/>
-                          Gerar Cobrança
-                        </button>
+                        {/* Linha 1 — Gerar Cobrança (invisível) */}
 
                         {/* Linha 2 — Emitir NFS-e */}
                         <button
