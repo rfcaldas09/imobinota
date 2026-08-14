@@ -218,6 +218,8 @@ export default function Config() {
   const [testResult, setTestResult]   = useState(null)   // { ok, msg }
   const [certUploading, setCertUploading] = useState(false)
   const [certMsg, setCertMsg]   = useState(null)         // { ok, msg }
+  const [certSenhaOk, setCertSenhaOk] = useState(false)       // true se já existe senha salva no servidor
+  const [certEditingSenha, setCertEditingSenha] = useState(false) // true quando o usuário quer trocar a senha
   const certInputRef            = useRef(null)
   const certPasswordRef         = useRef(null)  // lê DOM diretamente (evita problema com paste + React state)
 
@@ -284,6 +286,8 @@ export default function Config() {
           certOk:       !!data?.nfse_cert_path,
           certNome:     data?.nfse_cert_path ? data.nfse_cert_path.split('/').pop() : '',
           certPassword: '',
+          // certSenhaOk é estado separado (fora de f) — atualizado abaixo
+
           // Fiscal
           regime:   data?.regime_tributario  || 'simples',
           aliquota: data?.aliquota_iss       || '',
@@ -316,6 +320,8 @@ export default function Config() {
           pixKeyType:        data?.pix_key_type          || 'cpf',
           subaccountCreated: data?.openpix_subaccount_created || false,
         }))
+        // Marca se já existe senha salva (sem expor o valor)
+        setCertSenhaOk(!!data?.nfse_cert_password_enc)
         setLoadingProfile(false)
       })
   }, [user])
@@ -342,6 +348,8 @@ export default function Config() {
           await salvarSenhaCert(certPwdValue, null, session?.access_token || '')
           set('certPassword', '')
           if (certPasswordRef.current) certPasswordRef.current.value = ''
+          setCertSenhaOk(true)
+          setCertEditingSenha(false)
         } catch (err) {
           setSaving(false)
           setSaved(false)
@@ -559,6 +567,7 @@ export default function Config() {
                   if (f.certPassword) {
                     const { data: { session } } = await supabase.auth.getSession()
                     await salvarSenhaCert(f.certPassword, path, session?.access_token || '')
+                    setCertSenhaOk(true)
                   }
 
                   set('certOk', true)
@@ -600,17 +609,49 @@ export default function Config() {
 
             {/* Senha do certificado */}
             <div className="mb-3">
-              <label className="text-xs font-medium text-slate-500 block mb-1">
-                Senha do certificado
-              </label>
-              <input
-                ref={certPasswordRef}
-                value={f.certPassword}
-                onChange={e => set('certPassword', e.target.value)}
-                type="password"
-                placeholder="Senha usada ao exportar o .pfx"
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
+              <label className="text-xs font-medium text-slate-500 block mb-1">Senha do certificado</label>
+
+              {certSenhaOk && !certEditingSenha ? (
+                /* Modo leitura — senha já configurada */
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value="••••••••"
+                    className="flex-1 px-3 py-2 text-sm border border-emerald-200 bg-emerald-50 text-emerald-700 rounded-lg cursor-default select-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { setCertEditingSenha(true); setTimeout(() => certPasswordRef.current?.focus(), 50) }}
+                    className="px-3 py-2 text-xs font-semibold text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 whitespace-nowrap"
+                  >
+                    Alterar
+                  </button>
+                </div>
+              ) : (
+                /* Modo edição */
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={certPasswordRef}
+                    value={f.certPassword}
+                    onChange={e => set('certPassword', e.target.value)}
+                    type="password"
+                    placeholder="Digite a nova senha do certificado"
+                    autoFocus={certEditingSenha}
+                    className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  {certSenhaOk && (
+                    <button
+                      type="button"
+                      onClick={() => { setCertEditingSenha(false); set('certPassword', '') }}
+                      className="px-3 py-2 text-xs font-semibold text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 whitespace-nowrap"
+                    >
+                      Cancelar
+                    </button>
+                  )}
+                </div>
+              )}
+
               <p className="text-xs text-slate-400 mt-1">
                 A senha é criptografada (AES-128) antes de ser salva. Nunca é exposta em texto simples.
               </p>

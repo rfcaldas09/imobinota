@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import Lc116Picker from '../components/Lc116Picker'
 import MonthPicker from '../components/MonthPicker'
+import * as XLSX from 'xlsx'
 
 // ── Ícones inline ──────────────────────────────────────────────────
 const ic = (d, cls = '') => (
@@ -17,6 +18,7 @@ const IcEdit    = ({ c='' }) => ic('<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 
 const IcDoc     = ({ c='' }) => ic('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>', c)
 const IcDownload= ({ c='' }) => ic('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>', c)
 const IcBan     = ({ c='' }) => ic('<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>', c)
+const IcUpload  = ({ c='' }) => ic('<polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>', c)
 
 // ── Helpers ────────────────────────────────────────────────────────
 const digits  = v => v.replace(/\D/g, '')
@@ -338,6 +340,284 @@ function TomadorModal({ initial, onSave, onClose }) {
   )
 }
 
+// ── Parser de planilha XLS → fila de emissão ──────────────────────
+const COMP_COLS = ['Competência','Competencia','Mês de referência','Mes de referencia','Mês','Mes','mesRef']
+
+function parseXlsRows(data, fallbackMesRef) {
+  return data.map((row, i) => {
+    const nome = String(
+      row['Nome completo da paciente'] ?? row['Nome'] ?? row['Tomador'] ?? row['Razão Social'] ?? ''
+    ).trim()
+
+    const cpfCnpj = String(
+      row['CPF da paciente'] ?? row['CPF'] ?? row['CNPJ'] ?? row['CPF/CNPJ'] ?? ''
+    ).trim()
+
+    const email = String(
+      row['Email para envio da nota fiscal (se houver)'] ?? row['Email'] ?? row['E-mail'] ?? ''
+    ).trim()
+
+    // Valor — aceita número ou string em formato BR
+    let valorNum = 0
+    const vRaw = row['Valor (R$)'] ?? row['Valor'] ?? row['Valor R$'] ?? row['valor'] ?? ''
+    if (typeof vRaw === 'number') {
+      valorNum = vRaw
+    } else {
+      const s = String(vRaw).replace(/[R$\s]/g, '')
+      valorNum = parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0
+    }
+
+    // Discriminação — concatena motivo + detalhe quando for "outro"
+    const motivo      = String(row['Motivo do pagamento:'] ?? row['Motivo do pagamento'] ?? row['Motivo'] ?? row['Discriminação'] ?? '').trim()
+    const outroDetalhe = String(row['Se o for outro, descreva aqui'] ?? row['Detalhe'] ?? '').trim()
+    let discriminacao = motivo
+    if (motivo.toLowerCase() === 'outro' && outroDetalhe) {
+      discriminacao = outroDetalhe
+    } else if (outroDetalhe && outroDetalhe !== motivo) {
+      discriminacao = [motivo, outroDetalhe].filter(Boolean).join(' - ')
+    }
+
+    // Competência — busca coluna dedicada; senão usa fallback
+    const compRaw = COMP_COLS.reduce((f, c) => f || row[c] || '', '')
+    let _mesRefFromSheet = null
+    if (compRaw) {
+      const s = String(compRaw).trim()
+      if (/^\d{4}-\d{2}$/.test(s)) {
+        _mesRefFromSheet = s
+      } else if (/^\d{2}\/\d{4}$/.test(s)) {
+        const [mm, yyyy] = s.split('/')
+        _mesRefFromSheet = `${yyyy}-${mm}`
+      }
+    }
+
+    return {
+      _id:              i,
+      _mesRefFromSheet,
+      nome,
+      cpfCnpj,
+      email,
+      valor:            valorNum > 0 ? valorNum.toFixed(2) : '',
+      discriminacao,
+      mesRef:           _mesRefFromSheet || fallbackMesRef,
+      codLc116:         '',
+      issRetido:        false,
+      ...PRESET_RET_DEFAULT,
+      tomaLogradouro: '', tomaNumero: '', tamaBairro: '', tamaCep: '', tamaCodMun: '', tamaMunNome: '',
+    }
+  }).filter(r => r.nome && parseFloat(r.valor) > 0)
+}
+
+// ── Modal: importar de planilha XLS ───────────────────────────────
+function ImportXlsModal({ onImport, onClose }) {
+  const [step, setStep]           = useState('upload')
+  const [defaultMes, setDefaultMes] = useState(nowMonth())
+  const [rows, setRows]           = useState([])
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [fileName, setFileName]   = useState('')
+  const [dragOver, setDragOver]   = useState(false)
+  const [parseErr, setParseErr]   = useState('')
+  const fileRef = useRef(null)
+
+  const processFile = file => {
+    if (!file) return
+    setParseErr('')
+    const reader = new FileReader()
+    reader.onload = e => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const data = XLSX.utils.sheet_to_json(ws, { defval: '' })
+        if (!data.length) { setParseErr('Planilha vazia ou sem dados.'); return }
+        const parsed = parseXlsRows(data, defaultMes)
+        if (!parsed.length) {
+          setParseErr('Nenhuma linha válida encontrada. Verifique se a planilha tem colunas "Nome" e "Valor".')
+          return
+        }
+        setRows(parsed)
+        setSelectedIds(new Set(parsed.map(r => r._id)))
+        setFileName(file.name)
+        setStep('preview')
+      } catch (err) { setParseErr('Erro ao ler arquivo: ' + err.message) }
+    }
+    reader.readAsArrayBuffer(file)
+  }
+
+  const allSelected  = rows.length > 0 && selectedIds.size === rows.length
+  const noneSelected = selectedIds.size === 0
+
+  const toggleAll = () =>
+    allSelected ? setSelectedIds(new Set()) : setSelectedIds(new Set(rows.map(r => r._id)))
+
+  const toggleRow = id => setSelectedIds(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
+  const handleImport = () => {
+    const toImport = rows
+      .filter(r => selectedIds.has(r._id))
+      .map(r => ({ ...r, mesRef: r._mesRefFromSheet || defaultMes }))
+    onImport(toImport)
+  }
+
+  // ── Upload step ───────────────────────────────────────────────
+  if (step === 'upload') return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+          <h2 className="text-base font-bold text-slate-800">Importar NFS-e de planilha</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><IcX c="w-5 h-5"/></button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          {/* Mês de competência padrão */}
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Mês de competência padrão</label>
+            <input type="month" value={defaultMes} onChange={e => setDefaultMes(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
+            <p className="text-xs text-slate-400 mt-1">Usado para linhas sem coluna "Competência" na planilha.</p>
+          </div>
+
+          {/* Drop zone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={e => { e.preventDefault(); setDragOver(false); processFile(e.dataTransfer.files[0]) }}
+            onClick={() => fileRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors select-none ${
+              dragOver ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
+            }`}>
+            <IcUpload c="w-8 h-8 mx-auto mb-3 text-slate-300"/>
+            <p className="text-sm font-medium text-slate-600">Arraste o arquivo aqui</p>
+            <p className="text-xs text-slate-400 mt-1">ou clique para selecionar</p>
+            <p className="text-xs text-slate-300 mt-2">.xlsx · .xls</p>
+          </div>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
+            onChange={e => processFile(e.target.files[0])}/>
+
+          {parseErr && (
+            <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{parseErr}</p>
+          )}
+        </div>
+
+        <div className="px-6 pb-6">
+          <button onClick={onClose}
+            className="w-full py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50">
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // ── Preview step ──────────────────────────────────────────────
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl my-auto">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+          <div>
+            <h2 className="text-base font-bold text-slate-800">Revisão da importação</h2>
+            <p className="text-xs text-slate-400 mt-0.5">{fileName}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><IcX c="w-5 h-5"/></button>
+        </div>
+
+        {/* Controls bar */}
+        <div className="px-6 py-3 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3 bg-slate-50">
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-medium text-slate-500">Competência padrão</label>
+            <input type="month" value={defaultMes} onChange={e => setDefaultMes(e.target.value)}
+              className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"/>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={toggleAll}
+              className="text-xs font-semibold text-indigo-600 hover:underline">
+              {allSelected ? 'Desmarcar todos' : 'Selecionar todos'}
+            </button>
+            <span className="text-xs font-semibold bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full">
+              {selectedIds.size} de {rows.length} selecionadas
+            </span>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="max-h-[50vh] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-white z-10 border-b border-slate-100">
+              <tr className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                <th className="px-4 py-2.5 w-10">
+                  <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-indigo-600"/>
+                </th>
+                <th className="px-3 py-2.5 text-left">Nome</th>
+                <th className="px-3 py-2.5 text-left">CPF</th>
+                <th className="px-3 py-2.5 text-left">Competência</th>
+                <th className="px-3 py-2.5 text-right">Valor</th>
+                <th className="px-3 py-2.5 text-left">Discriminação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => {
+                const checked     = selectedIds.has(row._id)
+                const mesDisplay  = row._mesRefFromSheet || defaultMes
+                return (
+                  <tr key={row._id} onClick={() => toggleRow(row._id)}
+                    className={`border-t border-slate-50 cursor-pointer transition-colors ${
+                      checked ? 'hover:bg-slate-50/50' : 'opacity-40 hover:opacity-60 bg-slate-50'
+                    }`}>
+                    <td className="px-4 py-2.5 text-center" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={checked} onChange={() => toggleRow(row._id)}
+                        className="accent-indigo-600"/>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <p className="font-medium text-slate-800 truncate max-w-[190px]">{row.nome}</p>
+                      {row.email && <p className="text-xs text-slate-400 truncate max-w-[190px]">{row.email}</p>}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{row.cpfCnpj || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-slate-600">
+                      {mesDisplay}
+                      {row._mesRefFromSheet && (
+                        <span className="ml-1 text-indigo-400 font-medium">(planilha)</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold text-slate-800 whitespace-nowrap">
+                      {fmtBRL(row.valor)}
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-slate-500 max-w-[160px]">
+                      <span className="truncate block" title={row.discriminacao}>
+                        {row.discriminacao || '—'}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Nota */}
+        <p className="text-xs text-slate-400 px-6 pt-4">
+          💡 Retenções federais padrão (IRRF, CSLL, COFINS, PIS) serão aplicadas a todas as linhas importadas. ISS não retido.
+        </p>
+
+        {/* Footer buttons */}
+        <div className="flex gap-2 px-6 py-5 border-t border-slate-100 mt-2">
+          <button onClick={() => setStep('upload')}
+            className="px-4 py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50">
+            ← Voltar
+          </button>
+          <button onClick={handleImport} disabled={noneSelected}
+            className="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed">
+            Importar selecionadas ({selectedIds.size})
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Painel de progresso da emissão ─────────────────────────────────
 function EmissaoProgress({ items, results, current, done }) {
   const [expanded, setExpanded] = useState(null)
@@ -400,9 +680,10 @@ export default function NfseAvulsa() {
   const lsKey = user ? `nfsa_pending_${user.id}` : null
 
   // Fila de tomadores pendentes (persiste em localStorage)
-  const [pending, setPending]     = useState([])
-  const [showModal, setShowModal] = useState(false)
-  const [editIdx, setEditIdx]     = useState(null)
+  const [pending, setPending]       = useState([])
+  const [showModal, setShowModal]   = useState(false)
+  const [editIdx, setEditIdx]       = useState(null)
+  const [showImportModal, setShowImportModal] = useState(false)
 
   // Estado de emissão em lote
   const [emitting, setEmitting]       = useState(false)
@@ -461,6 +742,12 @@ export default function NfseAvulsa() {
 
   const handleRemove = idx => {
     setPending(p => p.filter((_, i) => i !== idx))
+  }
+
+  // ── Importar linhas do XLS ────────────────────────────────────
+  const handleImportRows = rows => {
+    setPending(p => [...p, ...rows])
+    setShowImportModal(false)
   }
 
   const handleEdit = idx => {
@@ -729,6 +1016,12 @@ export default function NfseAvulsa() {
                 </button>
               )}
               <button
+                onClick={() => setShowImportModal(true)}
+                disabled={emitting}
+                className="flex items-center gap-1.5 border border-emerald-200 text-emerald-700 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-emerald-50 disabled:opacity-50">
+                <IcUpload c="w-3.5 h-3.5"/> Importar de XLS
+              </button>
+              <button
                 onClick={() => { setEditIdx(null); setShowModal(true) }}
                 disabled={emitting}
                 className="flex items-center gap-1.5 border border-indigo-200 text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-50 disabled:opacity-50">
@@ -892,12 +1185,20 @@ export default function NfseAvulsa() {
         )}
       </div>
 
-      {/* Modal */}
+      {/* Modal — adicionar/editar tomador */}
       {showModal && (
         <TomadorModal
           initial={editIdx !== null ? pending[editIdx] : null}
           onSave={handleSaveModal}
           onClose={() => { setShowModal(false); setEditIdx(null) }}
+        />
+      )}
+
+      {/* Modal — importar de XLS */}
+      {showImportModal && (
+        <ImportXlsModal
+          onImport={handleImportRows}
+          onClose={() => setShowImportModal(false)}
         />
       )}
     </div>
