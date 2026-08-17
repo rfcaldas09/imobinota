@@ -574,7 +574,7 @@ function buildDpsXml(cfg, cob, homologacao) {
                 + (parseFloat(ret.pPIS)    || 0)
                 + (parseFloat(ret.pINSS)   || 0)
     const _pTot = (_pISS + _pFed).toFixed(2)
-    totTribXml = `<totTrib><indTotTrib>1</indTotTrib><pTotTrib>${_pTot}</pTotTrib></totTrib>`
+    totTribXml = `<totTrib><pTotTrib>${_pTot}</pTotTrib></totTrib>`
   }
 
   // <piscofins>: sequência obrigatória: CST → pAliqPis → pAliqCofins → vPis → vCofins → tpRetPisCofins
