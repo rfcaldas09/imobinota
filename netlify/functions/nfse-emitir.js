@@ -537,15 +537,13 @@ function buildDpsXml(cfg, cob, homologacao) {
       `</regTrib>`
   }
 
-  // totTrib: Simples Nacional usa pTotTribSN; outros usam indTotTrib
-  // ME/EPP NÃO pode usar indTotTrib (erro E0712)
-  let totTribXml
-  if (isSimples) {
-    totTribXml = `<totTrib><pTotTribSN>${cfg.aliquota}</pTotTribSN></totTrib>`
-  } else {
-    // indTotTrib: 0=não informar carga tributária estimada (único valor válido para este caso)
-    totTribXml = `<totTrib><indTotTrib>0</indTotTrib></totTrib>`
-  }
+  // totTrib:
+  //   Simples Nacional (opSimpNac 2,3,4) → pTotTribSN com a alíquota do DAS
+  //   Não optante (opSimpNac 1, Lucro Presumido/Real) → NÃO enviar o bloco (E0713)
+  //   ME/EPP NÃO pode usar indTotTrib (E0712); Não-Simples NÃO pode usar nenhum campo (E0713)
+  const totTribXml = isSimples
+    ? `<totTrib><pTotTribSN>${cfg.aliquota}</pTotTribSN></totTrib>`
+    : ''
 
   // Retenções: tpRetISSQN e tributos federais retidos na fonte
   const ret = cob.retencoes || {}
