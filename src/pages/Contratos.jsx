@@ -76,8 +76,20 @@ const isExpiringSoon = (c) => {
   return diff >= 0 && diff <= 60
 }
 
+// Padrão nacional de retenções federais
+const NAT_RET_DEFAULT_CTR = { pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '' }
+
+// Constrói defaults de retenção a partir dos dados do perfil
+const mkRetDefaultsCtr = (profile) => ({
+  pIRRF:   profile?.ret_irrf   != null ? String(profile.ret_irrf).replace('.', ',')   : NAT_RET_DEFAULT_CTR.pIRRF,
+  pCSLL:   profile?.ret_csll   != null ? String(profile.ret_csll).replace('.', ',')   : NAT_RET_DEFAULT_CTR.pCSLL,
+  pCOFINS: profile?.ret_cofins != null ? String(profile.ret_cofins).replace('.', ',') : NAT_RET_DEFAULT_CTR.pCOFINS,
+  pPIS:    profile?.ret_pis    != null ? String(profile.ret_pis).replace('.', ',')    : NAT_RET_DEFAULT_CTR.pPIS,
+  pINSS:   profile?.ret_inss   != null ? String(profile.ret_inss).replace('.', ',')   : NAT_RET_DEFAULT_CTR.pINSS,
+})
+
 // ── Parser de planilha XLS → contratos ────────────────────────────
-function parseContratosXls(data) {
+function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
   return data.map((row, i) => {
     const nome = String(row['NOME COMPLETO'] || row['Nome'] || row['NOME'] || '').trim()
 
@@ -136,17 +148,13 @@ function parseContratosXls(data) {
       status:                 'Ativo',
       solicitarDiscriminacaoMensal: false,
       issRetido:              false,
-      pIRRF:                  1.50,
-      pCSLL:                  1.00,
-      pCOFINS:                3.00,
-      pPIS:                   0.65,
-      pINSS:                  null,
+      ...retDefaults,
     }
   }).filter(r => r.tenant && r.value > 0)
 }
 
 // ── Modal: importar contratos de planilha XLS ─────────────────────
-function ImportContratosModal({ onImport, onClose }) {
+function ImportContratosModal({ onImport, onClose, retDefaults = NAT_RET_DEFAULT_CTR }) {
   const [step, setStep]           = useState('upload')
   const [rows, setRows]           = useState([])
   const [selectedIds, setSelectedIds] = useState(new Set())
@@ -166,7 +174,7 @@ function ImportContratosModal({ onImport, onClose }) {
         const ws = wb.Sheets[wb.SheetNames[0]]
         const data = XLSX.utils.sheet_to_json(ws, { defval: '' })
         if (!data.length) { setParseErr('Planilha vazia ou sem dados.'); return }
-        const parsed = parseContratosXls(data)
+        const parsed = parseContratosXls(data, retDefaults)
         if (!parsed.length) {
           setParseErr('Nenhuma linha válida encontrada. Verifique se a planilha tem "NOME COMPLETO" e "VALOR".')
           return
@@ -372,15 +380,15 @@ function Row({ label, children }) {
 }
 
 // ── Formulário compartilhado (Novo / Editar) ──────────────────────
-function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor = 'bg-indigo-500', saving }) {
+function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor = 'bg-indigo-500', saving, retDefaults = NAT_RET_DEFAULT_CTR }) {
   const blank = {
     tenant: '', cpf: '', property: '', value: '', seguroFinanceiro: '0',
     seguroIncendio: '0', iptu: '0', dueDay: '10',
     email: '', phone: '', start: new Date().toISOString().slice(0,10),
     end: '', status: 'Ativo', codServicoLc116: '',
     discriminacaoServico: '', solicitarDiscriminacaoMensal: false,
-    // Retenções — federais pré-preenchidas com padrão para novos contratos
-    issRetido: false, pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '',
+    // Retenções — federais pré-preenchidas com defaults do perfil (ou padrão nacional)
+    issRetido: false, ...retDefaults,
   }
   const [f, setF] = useState({ ...blank, ...initial })
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
@@ -1076,6 +1084,17 @@ const mapRow = row => ({
 export default function Contratos() {
   const { user }  = useAuth()
   const { pixSet } = useOnboarding()
+
+  // Defaults de retenção do perfil do usuário
+  const [retDefaults, setRetDefaults] = useState(NAT_RET_DEFAULT_CTR)
+  useEffect(() => {
+    if (!user) return
+    supabase.from('profiles')
+      .select('ret_irrf, ret_csll, ret_cofins, ret_pis, ret_inss')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(({ data }) => { if (data) setRetDefaults(mkRetDefaultsCtr(data)) })
+  }, [user])
   const [showWizard, setShowWizard] = useState(false)
   const [contracts, setContracts] = useState([])
   const [loading, setLoading]     = useState(true)
@@ -1628,7 +1647,8 @@ export default function Contratos() {
       {adding && (
         <ContractForm title="Novo Contrato" saving={saving}
           saveLabel={<><IcPlus c="w-4 h-4"/> Adicionar</>}
-          onClose={() => setAdding(false)} onSave={handleAdd}/>
+          onClose={() => setAdding(false)} onSave={handleAdd}
+          retDefaults={retDefaults}/>
       )}
       {scanning && <ScanModal contract={scanning} onClose={() => setScanning(null)} onToast={toast}/>}
       {toDelete && (
@@ -1693,6 +1713,7 @@ export default function Contratos() {
         <ImportContratosModal
           onImport={handleImportContratos}
           onClose={() => setShowImportModal(false)}
+          retDefaults={retDefaults}
         />
       )}
 

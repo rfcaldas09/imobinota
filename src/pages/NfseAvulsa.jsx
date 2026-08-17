@@ -42,18 +42,29 @@ const maskCpfCnpj = raw => {
   return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`
 }
 
-// Defaults de retenções federais aplicados a novas notas
-const PRESET_RET_DEFAULT = { pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '' }
+// Padrão nacional — usado quando o perfil não tiver valor configurado
+const NAT_RET_DEFAULT = { pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '' }
 
-const BLANK_FORM = {
+// Constrói defaults de retenção a partir dos dados do perfil.
+// Se o campo do perfil for null/undefined → usa padrão nacional.
+// Se for 0 → respeita (sem retenção).
+const mkRetDefaults = (profile) => ({
+  pIRRF:   profile?.ret_irrf   != null ? String(profile.ret_irrf).replace('.', ',')   : NAT_RET_DEFAULT.pIRRF,
+  pCSLL:   profile?.ret_csll   != null ? String(profile.ret_csll).replace('.', ',')   : NAT_RET_DEFAULT.pCSLL,
+  pCOFINS: profile?.ret_cofins != null ? String(profile.ret_cofins).replace('.', ',') : NAT_RET_DEFAULT.pCOFINS,
+  pPIS:    profile?.ret_pis    != null ? String(profile.ret_pis).replace('.', ',')    : NAT_RET_DEFAULT.pPIS,
+  pINSS:   profile?.ret_inss   != null ? String(profile.ret_inss).replace('.', ',')   : NAT_RET_DEFAULT.pINSS,
+})
+
+const mkBlankForm = (retDefaults = NAT_RET_DEFAULT) => ({
   nome: '', cpfCnpj: '', email: '',
   valor: '', discriminacao: '', mesRef: nowMonth(), codLc116: '',
   // Endereço do tomador (obrigatório quando ISS é retido)
   tomaLogradouro: '', tomaNumero: '', tamaBairro: '', tamaCep: '', tamaCodMun: '', tamaMunNome: '',
-  // Retenções — federais já pré-preenchidas com valores padrão
+  // Retenções — federais pré-preenchidas com defaults do perfil (ou padrão nacional)
   issRetido: false,
-  ...PRESET_RET_DEFAULT,
-}
+  ...retDefaults,
+})
 
 const maskPct = v => {
   const cleaned = v.replace(/[^\d,]/g, '').replace(/,+/g, ',')
@@ -89,8 +100,8 @@ function StatusBadge({ status }) {
 const PRAZO_CANCEL_MS = 48 * 60 * 60 * 1000
 
 // ── Modal: adicionar/editar tomador ────────────────────────────────
-function TomadorModal({ initial, onSave, onClose }) {
-  const [f, setF]       = useState(initial || BLANK_FORM)
+function TomadorModal({ initial, onSave, onClose, retDefaults }) {
+  const [f, setF]       = useState(initial || mkBlankForm(retDefaults))
   const set = k => e   => setF(p => ({ ...p, [k]: e.target.value }))
   const setPct = k => e => setF(p => ({ ...p, [k]: maskPct(e.target.value) }))
   const [err, setErr]   = useState('')
@@ -344,7 +355,7 @@ function TomadorModal({ initial, onSave, onClose }) {
 // ── Parser de planilha XLS → fila de emissão ──────────────────────
 const COMP_COLS = ['Competência','Competencia','Mês de referência','Mes de referencia','Mês','Mes','mesRef']
 
-function parseXlsRows(data, fallbackMesRef) {
+function parseXlsRows(data, fallbackMesRef, retDefaults = NAT_RET_DEFAULT) {
   return data.map((row, i) => {
     const nome = String(
       row['Nome completo da paciente'] ?? row['Nome'] ?? row['Tomador'] ?? row['Razão Social'] ?? ''
@@ -402,14 +413,14 @@ function parseXlsRows(data, fallbackMesRef) {
       mesRef:           _mesRefFromSheet || fallbackMesRef,
       codLc116:         '',
       issRetido:        false,
-      ...PRESET_RET_DEFAULT,
+      ...retDefaults,
       tomaLogradouro: '', tomaNumero: '', tamaBairro: '', tamaCep: '', tamaCodMun: '', tamaMunNome: '',
     }
   }).filter(r => r.nome && parseFloat(r.valor) > 0)
 }
 
 // ── Modal: importar de planilha XLS ───────────────────────────────
-function ImportXlsModal({ onImport, onClose }) {
+function ImportXlsModal({ onImport, onClose, retDefaults = NAT_RET_DEFAULT }) {
   const [step, setStep]           = useState('upload')
   const [defaultMes, setDefaultMes] = useState(nowMonth())
   const [rows, setRows]           = useState([])
@@ -429,7 +440,7 @@ function ImportXlsModal({ onImport, onClose }) {
         const ws = wb.Sheets[wb.SheetNames[0]]
         const data = XLSX.utils.sheet_to_json(ws, { defval: '' })
         if (!data.length) { setParseErr('Planilha vazia ou sem dados.'); return }
-        const parsed = parseXlsRows(data, defaultMes)
+        const parsed = parseXlsRows(data, defaultMes, retDefaults)
         if (!parsed.length) {
           setParseErr('Nenhuma linha válida encontrada. Verifique se a planilha tem colunas "Nome" e "Valor".')
           return
@@ -679,6 +690,17 @@ function EmissaoProgress({ items, results, current, done }) {
 export default function NfseAvulsa() {
   const { user } = useAuth()
   const lsKey = user ? `nfsa_pending_${user.id}` : null
+
+  // Defaults de retenção do perfil do usuário
+  const [retDefaults, setRetDefaults] = useState(NAT_RET_DEFAULT)
+  useEffect(() => {
+    if (!user) return
+    supabase.from('profiles')
+      .select('ret_irrf, ret_csll, ret_cofins, ret_pis, ret_inss')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(({ data }) => { if (data) setRetDefaults(mkRetDefaults(data)) })
+  }, [user])
 
   // Fila de tomadores pendentes (persiste em localStorage)
   const [pending, setPending]       = useState([])
@@ -1230,6 +1252,7 @@ export default function NfseAvulsa() {
           initial={editIdx !== null ? pending[editIdx] : null}
           onSave={handleSaveModal}
           onClose={() => { setShowModal(false); setEditIdx(null) }}
+          retDefaults={retDefaults}
         />
       )}
 
@@ -1238,6 +1261,7 @@ export default function NfseAvulsa() {
         <ImportXlsModal
           onImport={handleImportRows}
           onClose={() => setShowImportModal(false)}
+          retDefaults={retDefaults}
         />
       )}
     </div>

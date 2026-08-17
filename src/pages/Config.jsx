@@ -291,6 +291,12 @@ export default function Config() {
           // Fiscal
           regime:   data?.regime_tributario  || 'simples',
           aliquota: data?.aliquota_iss       || '',
+          // Retenções federais padrão (null = não configurado → usa padrão nacional)
+          retIRRF:   data?.ret_irrf   != null ? String(data.ret_irrf).replace('.', ',')   : '',
+          retCSLL:   data?.ret_csll   != null ? String(data.ret_csll).replace('.', ',')   : '',
+          retCOFINS: data?.ret_cofins != null ? String(data.ret_cofins).replace('.', ',') : '',
+          retPIS:    data?.ret_pis    != null ? String(data.ret_pis).replace('.', ',')    : '',
+          retINSS:   data?.ret_inss   != null ? String(data.ret_inss).replace('.', ',')   : '',
           // NFS-e
           municipioIbge: data?.nfse_municipio_ibge  || '',
           municipioNome: data?.nfse_municipio_nome  || '',
@@ -358,9 +364,18 @@ export default function Config() {
         }
       }
     } else if (tab === 'fiscal') {
+      const parseRet = v => {
+        const n = parseFloat((v || '').replace(',', '.'))
+        return isNaN(n) ? null : n
+      }
       Object.assign(payload, {
         regime_tributario:  f.regime,
         aliquota_iss:       f.aliquota,
+        ret_irrf:   parseRet(f.retIRRF),
+        ret_csll:   parseRet(f.retCSLL),
+        ret_cofins: parseRet(f.retCOFINS),
+        ret_pis:    parseRet(f.retPIS),
+        ret_inss:   parseRet(f.retINSS),
         // NFS-e
         nfse_municipio_ibge: f.municipioIbge,
         nfse_municipio_nome: f.municipioNome,
@@ -703,6 +718,27 @@ export default function Config() {
                 <Inp value={f.aliquota} onChange={e => set('aliquota', maskAliquota(e.target.value))} placeholder="2,00"/>
                 <p className="text-xs text-slate-400 mt-1">Confirme com a prefeitura do seu município. Geralmente entre 2% e 5%.</p>
               </div>
+            </div>
+          </Section>
+
+          <Section title="🏛️ Retenções Federais Padrão">
+            <p className="text-xs text-slate-400 mb-3">
+              Valores aplicados automaticamente ao criar contratos e notas avulsas.
+              Deixe em branco para usar o padrão nacional. Para não reter, coloque <strong>0</strong>.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { key: 'retIRRF',   label: 'IRRF (%)',   placeholder: '1,50 (padrão nacional)' },
+                { key: 'retCSLL',   label: 'CSLL (%)',   placeholder: '1,00 (padrão nacional)' },
+                { key: 'retCOFINS', label: 'COFINS (%)', placeholder: '3,00 (padrão nacional)' },
+                { key: 'retPIS',    label: 'PIS (%)',    placeholder: '0,65 (padrão nacional)' },
+                { key: 'retINSS',   label: 'INSS (%)',   placeholder: 'vazio = sem retenção' },
+              ].map(({ key, label, placeholder }) => (
+                <div key={key}>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">{label}</label>
+                  <Inp value={f[key]} onChange={e => set(key, maskAliquota(e.target.value))} placeholder={placeholder}/>
+                </div>
+              ))}
             </div>
           </Section>
 
