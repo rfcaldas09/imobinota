@@ -270,7 +270,13 @@ function TomadorModal({ initial, onSave, onClose, retDefaults }) {
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">R$</span>
                 <input
                   value={f.valor}
-                  onChange={e => setF(p => ({ ...p, valor: maskBRL(e.target.value) }))}
+                  onChange={e => {
+                    // Extrai só dígitos do valor atual do input (evita acúmulo de dígitos
+                    // ao editar um campo já mascarado como "36.640,00")
+                    const raw = e.target.value.replace(/\D/g, '').slice(0, 9)
+                    setF(p => ({ ...p, valor: maskBRL(raw) }))
+                  }}
+                  onFocus={e => e.target.select()}
                   placeholder="0,00"
                   inputMode="numeric"
                   className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono text-right"/>
