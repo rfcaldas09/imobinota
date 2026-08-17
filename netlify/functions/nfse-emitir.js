@@ -474,7 +474,8 @@ function buildDpsXml(cfg, cob, homologacao) {
   const id = `DPS${ibge7}${tipoInsc}${insc14}${serie5}${nDpsStr}`
 
   // TSData exige YYYY-MM-DD — usa o primeiro dia do mês de competência
-  const dCompet = ((cob.mesRef || now.toISOString().slice(0, 7)) + '-01')
+  // Garante formato YYYY-MM (trunca se vier YYYY-MM-DD) antes de adicionar o dia
+  const dCompet = (cob.mesRef || now.toISOString().slice(0, 7)).slice(0, 7) + '-01'
 
   // Tomador: CPF (11 dígitos) ou CNPJ (14 dígitos) com validação dos dígitos verificadores
   const cpfTomador = digits(cob.cpf || '')
