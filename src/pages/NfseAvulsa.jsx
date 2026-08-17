@@ -23,7 +23,14 @@ const IcCode    = ({ c='' }) => ic('<polyline points="16 18 22 12 16 6"/><polyli
 
 // ── Helpers ────────────────────────────────────────────────────────
 const digits  = v => v.replace(/\D/g, '')
-const fmtBRL  = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+const fmtBRL  = v => {
+  const s = String(v || '')
+  // Suporta formato BR ("36.640,00") e inglês/inteiro ("36640.00", "36640")
+  const n = s.includes(',')
+    ? parseFloat(s.replace(/\./g, '').replace(',', '.'))
+    : parseFloat(s)
+  return (isNaN(n) ? 0 : n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
 const fmtDate = d => d ? new Date(d).toLocaleDateString('pt-BR') : '—'
 const nowMonth = () => new Date().toISOString().slice(0, 7)
 
@@ -1292,6 +1299,17 @@ export default function NfseAvulsa() {
                             : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>}
                         </button>
                       </div>
+                    )}
+                    {em.status === 'cancelada' && (
+                      <button
+                        onClick={() => handleDeleteErro(em)}
+                        disabled={deletingId === em.id}
+                        title="Excluir registro de nota cancelada"
+                        className="flex items-center justify-center w-7 h-7 rounded-lg border border-red-200 bg-red-50 text-red-500 hover:bg-red-100 transition-colors disabled:opacity-40">
+                        {deletingId === em.id
+                          ? <div className="w-3 h-3 border-2 border-red-400 border-t-transparent rounded-full animate-spin"/>
+                          : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>}
+                      </button>
                     )}
                     {em.status === 'emitida' && (() => {
                       const dentroDosPrazo = (new Date() - new Date(em.created_at)) < PRAZO_CANCEL_MS
