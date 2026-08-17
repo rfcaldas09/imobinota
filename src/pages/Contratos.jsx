@@ -387,6 +387,8 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
     email: '', phone: '', start: new Date().toISOString().slice(0,10),
     end: '', status: 'Ativo', codServicoLc116: '',
     discriminacaoServico: '', solicitarDiscriminacaoMensal: false,
+    // Endereço do tomador
+    tomaLogradouro: '', tomaNumero: '', tamaBairro: '', tamaCep: '', tamaCodMun: '', tamaMunNome: '',
     // Retenções — federais pré-preenchidas com defaults do perfil (ou padrão nacional)
     issRetido: false, ...retDefaults,
   }
@@ -399,6 +401,26 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
     return dec !== undefined ? `${(int||'').slice(0,3)},${dec.slice(0,2)}` : (int||'').slice(0,3)
   }
   const parsePctLocal = v => parseFloat((v||'').replace(',','.')) || 0
+
+  const [cepLoading, setCepLoading] = useState(false)
+  const buscarCep = async cep => {
+    const digits = cep.replace(/\D/g, '')
+    if (digits.length !== 8) return
+    setCepLoading(true)
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`)
+      const d = await r.json()
+      if (!d.erro) {
+        setF(p => ({
+          ...p,
+          tomaLogradouro: d.logradouro || p.tomaLogradouro,
+          tamaBairro:     d.bairro     || p.tamaBairro,
+          tamaCodMun:     d.ibge       || p.tamaCodMun,
+          tamaMunNome:    d.localidade || p.tamaMunNome,
+        }))
+      }
+    } catch { /* silencia */ } finally { setCepLoading(false) }
+  }
 
   const vServNum = parseFloat(f.value||0) || 0
   const calcRetV = pct => pct > 0 ? (vServNum * pct / 100) : 0
@@ -439,6 +461,13 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
       codServicoLc116:             f.codServicoLc116             || null,
       discriminacaoServico:        f.discriminacaoServico         || null,
       solicitarDiscriminacaoMensal: !!f.solicitarDiscriminacaoMensal,
+      // Endereço do tomador
+      tomaLogradouro: f.tomaLogradouro || '',
+      tomaNumero:     f.tomaNumero     || '',
+      tamaBairro:     f.tamaBairro     || '',
+      tamaCep:        f.tamaCep        || '',
+      tamaCodMun:     f.tamaCodMun     || '',
+      tamaMunNome:    f.tamaMunNome    || '',
       // Retenções
       issRetido:  !!f.issRetido,
       pIRRF:   parsePctLocal(f.pIRRF)   || null,
@@ -491,6 +520,50 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
               />
             </Row>
           </div>
+
+          {/* Endereço do tomador */}
+          {f.cpf.trim() && (
+            <div className="border border-slate-200 bg-slate-50 rounded-xl p-3 space-y-2">
+              <p className="text-xs font-semibold text-slate-600">Endereço do tomador (opcional — usado na NFS-e)</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">CEP</label>
+                  <div className="relative">
+                    <input value={f.tamaCep}
+                      onChange={e => {
+                        const v = e.target.value.replace(/\D/g,'').slice(0,8)
+                        set('tamaCep', v)
+                        if (v.length === 8) buscarCep(v)
+                      }}
+                      placeholder="00000000" maxLength={8}
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono pr-8 bg-white"/>
+                    {cepLoading && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">…</span>}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Município</label>
+                  <input value={f.tamaMunNome ? `${f.tamaMunNome} (${f.tamaCodMun})` : f.tamaCodMun}
+                    readOnly placeholder="Preenchido pelo CEP"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-100 text-slate-500 font-mono text-xs"/>
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Logradouro</label>
+                  <input value={f.tomaLogradouro} onChange={e => set('tomaLogradouro', e.target.value)} placeholder="Rua, Avenida..."
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"/>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Número</label>
+                  <input value={f.tomaNumero} onChange={e => set('tomaNumero', e.target.value)} placeholder="S/N"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"/>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Bairro</label>
+                  <input value={f.tamaBairro} onChange={e => set('tamaBairro', e.target.value)} placeholder="Bairro"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"/>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Referência */}
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Referência</p>
@@ -666,10 +739,11 @@ function DocModal({ type, contract: c, onClose, onToast }) {
   const now        = new Date()
   const dueStr     = `${String(c.dueDay).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`
 
-  // Estado do picker e da emissão (apenas para boleto)
+  // Estado do picker e da emissão
   const [mesRef, setMesRef]   = useState(() => new Date(now.getFullYear(), now.getMonth(), 1))
   const [emitindo, setEmitindo] = useState(false)
   const [emissao, setEmissao]   = useState(null) // null | 'created' | 'already' | 'error'
+  const [nfseResult, setNfseResult] = useState(null) // null | { ok, numero?, erro? }
 
   useEffect(() => {
     const handle = e => { if (e.key === 'Escape') onClose() }
@@ -686,6 +760,63 @@ function DocModal({ type, contract: c, onClose, onToast }) {
     if (res.already) { setEmissao('already'); return }
     setEmissao('created')
     onToast(`Cobrança de ${mesLabel(mesRef)} registrada para ${c.tenant}`, 'success')
+  }
+
+  const emitirNfse = async () => {
+    if (!user) return
+    setEmitindo(true)
+    setNfseResult(null)
+    try {
+      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
+      const mesRefStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
+      // Parse percentage strings from mapRow (may use comma as decimal separator)
+      const parsePct = v => parseFloat((v || '').toString().replace(',', '.')) || null
+      const cobData = {
+        tenant:          c.tenant,
+        cpf:             c.cpf || '',
+        email:           c.email || '',
+        totalValue:      c.value, // valor do serviço (sem IPTU/seguro para NFS-e)
+        mesRef:          mesRefStr,
+        discriminacao:   c.discriminacaoServico || null,
+        codServicoLc116: c.codServicoLc116 || null,
+        retencoes: {
+          tpRetISSQN: c.issRetido ? 2 : 1,
+          pIRRF:   parsePct(c.pIRRF),
+          pCSLL:   parsePct(c.pCSLL),
+          pCOFINS: parsePct(c.pCOFINS),
+          pPIS:    parsePct(c.pPIS),
+          pINSS:   parsePct(c.pINSS),
+        },
+        tomadorEnd: c.tamaCep && c.tamaCodMun ? {
+          logradouro: c.tomaLogradouro || '',
+          numero:     c.tomaNumero     || 'S/N',
+          bairro:     c.tamaBairro     || '',
+          cep:        c.tamaCep        || '',
+          codMun:     c.tamaCodMun     || '',
+        } : null,
+      }
+      const res = await fetch('/.netlify/functions/nfse-emitir', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
+        },
+        body: JSON.stringify({ userId: user.id, cobId: null, cobData, homologacao: false }),
+      })
+      const data = await res.json()
+      if (res.ok && data.ok) {
+        setNfseResult({ ok: true, numero: data.numeroNfse || data.numeroDps })
+        onToast(`NFS-e ${data.numeroNfse || data.numeroDps || ''} emitida para ${c.tenant}`, 'success')
+      } else {
+        setNfseResult({ ok: false, erro: data.error || 'Erro desconhecido' })
+        onToast('Erro ao emitir NFS-e', 'error')
+      }
+    } catch (e) {
+      setNfseResult({ ok: false, erro: e.message })
+      onToast('Erro ao emitir NFS-e', 'error')
+    } finally {
+      setEmitindo(false)
+    }
   }
 
   return (
@@ -766,10 +897,13 @@ function DocModal({ type, contract: c, onClose, onToast }) {
             </div>
           )}
 
-          {!isBoleto && (
-            <p className="text-center text-xs text-slate-400 italic mb-4">
-              🔧 Integração NFS-e Nacional em breve.
-            </p>
+          {!isBoleto && nfseResult && (
+            <div className={`mb-4 rounded-xl px-3 py-2.5 text-xs border ${nfseResult.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+              {nfseResult.ok
+                ? <>✅ NFS-e <strong>{nfseResult.numero}</strong> emitida com sucesso!</>
+                : <>❌ {nfseResult.erro}</>
+              }
+            </div>
           )}
 
           <div className="flex gap-3">
@@ -788,9 +922,15 @@ function DocModal({ type, contract: c, onClose, onToast }) {
                 }
               </button>
             ) : (
-              <button onClick={() => { onClose(); onToast('NFS-e em breve disponível', 'info') }}
-                className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 flex items-center justify-center gap-2">
-                📄 Emitir NFS-e
+              <button onClick={emitirNfse}
+                disabled={emitindo || nfseResult?.ok}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                {emitindo
+                  ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Emitindo…</>
+                  : nfseResult?.ok
+                  ? <><IcCheck c="w-4 h-4"/> NFS-e Emitida</>
+                  : <>📄 Emitir NFS-e</>
+                }
               </button>
             )}
           </div>
@@ -1076,6 +1216,12 @@ const mapRow = row => ({
   pCOFINS: row.pct_cofins != null ? String(row.pct_cofins).replace('.', ',') : '',
   pPIS:    row.pct_pis    != null ? String(row.pct_pis).replace('.', ',')    : '',
   pINSS:   row.pct_inss   != null ? String(row.pct_inss).replace('.', ',')   : '',
+  tomaLogradouro: row.toma_logradouro || '',
+  tomaNumero:     row.toma_numero     || '',
+  tamaBairro:     row.toma_bairro     || '',
+  tamaCep:        row.toma_cep        || '',
+  tamaCodMun:     row.toma_cod_mun    || '',
+  tamaMunNome:    row.toma_mun_nome   || '',
   totalValue:       (Number(row.valor_aluguel)||0) + (Number(row.seguro_financeiro)||0) +
                     (Number(row.seguro_incendio)||0) + (Number(row.iptu)||0),
 })
@@ -1173,6 +1319,12 @@ export default function Contratos() {
         pct_cofins:  data.pCOFINS || null,
         pct_pis:     data.pPIS    || null,
         pct_inss:    data.pINSS   || null,
+        toma_logradouro: data.tomaLogradouro || null,
+        toma_numero:     data.tomaNumero     || null,
+        toma_bairro:     data.tamaBairro     || null,
+        toma_cep:        data.tamaCep        || null,
+        toma_cod_mun:    data.tamaCodMun     || null,
+        toma_mun_nome:   data.tamaMunNome    || null,
       }).select().single()
       if (error) throw error
 
@@ -1310,6 +1462,12 @@ export default function Contratos() {
         pct_cofins:  data.pCOFINS || null,
         pct_pis:     data.pPIS    || null,
         pct_inss:    data.pINSS   || null,
+        toma_logradouro: data.tomaLogradouro || null,
+        toma_numero:     data.tomaNumero     || null,
+        toma_bairro:     data.tamaBairro     || null,
+        toma_cep:        data.tamaCep        || null,
+        toma_cod_mun:    data.tamaCodMun     || null,
+        toma_mun_nome:   data.tamaMunNome    || null,
         status:                        data.status,
       }).eq('id', data.id)
       if (error) throw error

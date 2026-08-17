@@ -74,8 +74,20 @@ const maskPct = v => {
 }
 
 const parsePct = v => parseFloat((v || '').replace(',', '.')) || 0
+
+// Remove pontos de milhar e converte vírgula decimal → número
+const parseBRL = v => parseFloat((v || '').replace(/\./g, '').replace(',', '.')) || 0
+
+// Mask BRL: converte dígitos puros em "36.640,00"
+const maskBRL = raw => {
+  const d = raw.replace(/\D/g, '').replace(/^0+/, '') || '0'
+  const cents = d.padStart(3, '0')
+  const reais = cents.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return `${reais},${cents.slice(-2)}`
+}
+
 const calcRet  = (valor, pct) => {
-  const v = parseFloat((valor || '').replace(',', '.')) || 0
+  const v = parseBRL(valor)
   return v > 0 && pct > 0 ? (v * pct / 100) : 0
 }
 const fmtPct   = v => v > 0 ? v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '—'
@@ -104,9 +116,10 @@ function TomadorModal({ initial, onSave, onClose, retDefaults }) {
   const [f, setF]       = useState(initial || mkBlankForm(retDefaults))
   const set = k => e   => setF(p => ({ ...p, [k]: e.target.value }))
   const setPct = k => e => setF(p => ({ ...p, [k]: maskPct(e.target.value) }))
-  const [err, setErr]   = useState('')
+  const [err, setErr]         = useState('')
+  const [warnedNoCpf, setWarnedNoCpf] = useState(false)
 
-  const valorNum = parseFloat((f.valor || '').replace(',', '.')) || 0
+  const valorNum = parseBRL(f.valor)
 
   // Calcula retenções em tempo real conforme valor digitado
   const retIRRF   = calcRet(f.valor, parsePct(f.pIRRF))
@@ -139,7 +152,7 @@ function TomadorModal({ initial, onSave, onClose, retDefaults }) {
 
   const handleSave = () => {
     if (!f.nome.trim())        { setErr('Informe o nome do tomador.'); return }
-    const v = parseFloat((f.valor || '').replace(',', '.'))
+    const v = parseBRL(f.valor)
     if (!v || v <= 0)          { setErr('Informe o valor do serviço.'); return }
     if (!f.mesRef)             { setErr('Informe a competência.'); return }
     if (f.issRetido && !f.cpfCnpj.trim()) {
@@ -150,7 +163,14 @@ function TomadorModal({ initial, onSave, onClose, retDefaults }) {
       setErr('Endereço do tomador (CEP, logradouro, bairro) é obrigatório quando o ISS é retido.')
       return
     }
+    // Aviso (não bloqueante) se CPF/CNPJ não preenchido: o tomador ficará sem identificação na nota
+    if (!f.cpfCnpj.trim() && !warnedNoCpf) {
+      setWarnedNoCpf(true)
+      setErr('⚠️ Sem CPF/CNPJ o tomador não será identificado na nota fiscal. Clique em Adicionar novamente para confirmar assim mesmo.')
+      return
+    }
     setErr('')
+    setWarnedNoCpf(false)
     onSave({ ...f, valor: String(v.toFixed(2)) })
   }
 
@@ -184,8 +204,8 @@ function TomadorModal({ initial, onSave, onClose, retDefaults }) {
                 CPF / CNPJ {f.issRetido ? <span className="text-red-500">*</span> : <span className="font-normal text-slate-400">(opcional)</span>}
               </label>
               <input value={f.cpfCnpj}
-                onChange={e => setF(p => ({ ...p, cpfCnpj: maskCpfCnpj(e.target.value) }))}
-                placeholder={f.issRetido ? 'Obrigatório quando ISS é retido' : 'Deixe em branco para não identificar'}
+                onChange={e => { setF(p => ({ ...p, cpfCnpj: maskCpfCnpj(e.target.value) })); setWarnedNoCpf(false); setErr('') }}
+                placeholder={f.issRetido ? 'Obrigatório quando ISS é retido' : 'Recomendado — aparece na nota fiscal'}
                 className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono ${f.issRetido && !f.cpfCnpj ? 'border-orange-300' : 'border-slate-200'}`}/>
             </div>
             <div>
@@ -246,10 +266,15 @@ function TomadorModal({ initial, onSave, onClose, retDefaults }) {
             </div>
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">Valor do serviço (R$) *</label>
-              <input value={f.valor}
-                onChange={e => setF(p => ({ ...p, valor: e.target.value.replace(/[^0-9,\.]/g, '') }))}
-                placeholder="0,00"
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono"/>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">R$</span>
+                <input
+                  value={f.valor}
+                  onChange={e => setF(p => ({ ...p, valor: maskBRL(e.target.value) }))}
+                  placeholder="0,00"
+                  inputMode="numeric"
+                  className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono text-right"/>
+              </div>
             </div>
             <div className="col-span-2">
               <label className="text-xs font-medium text-slate-500 block mb-1">Discriminação do serviço</label>
@@ -810,7 +835,7 @@ export default function NfseAvulsa() {
               tenant:          item.nome,
               cpf:             item.cpfCnpj,
               email:           item.email   || '',
-              totalValue:      item.valor,
+              totalValue:      parseBRL(item.valor),
               mesRef:          item.mesRef,
               discriminacao:   item.discriminacao || null,
               codServicoLc116: item.codLc116 || null,

@@ -508,11 +508,21 @@ function extrairCamposPdf(xml, cobData, profile) {
     prestadorTel:      profile?.telefone            || '',
     prestadorPais:     'BRASIL',
 
-    // Tomador — endereço = imovel do contrato (campo "property")
+    // Tomador — endereço: usa tomadorEnd (notas avulsas) ou property (contratos)
     // Inscrição municipal do tomador removida (sem fonte de dados disponível)
     tomadorNome:   cobData?.tenant   || '',
     tomadorCnpj:   cobData?.cpf      || '',
-    tomadorEnd:    cobData?.property || '',   // endereço do imóvel/serviço
+    tomadorEnd: (() => {
+      const te = cobData?.tomadorEnd
+      if (te && (te.logradouro || te.cep)) {
+        const parts = []
+        if (te.logradouro) parts.push(te.numero ? `${te.logradouro}, ${te.numero}` : te.logradouro)
+        if (te.bairro)     parts.push(te.bairro)
+        if (te.cep)        parts.push(String(te.cep).replace(/^(\d{5})(\d{3})$/, '$1-$2'))
+        if (parts.length)  return parts.join(' — ')
+      }
+      return cobData?.property || ''
+    })(),   // endereço do tomador (avulsa) ou imóvel (contrato)
     tomadorNumero: '',
     tomadorCompl:  '',
     tomadorBairro: '',

@@ -86,6 +86,19 @@ async function handle(event) {
   // Fallback: se não veio do join, usa tomador_nome salvo na emissão
   if (!cobData.tenant) cobData.tenant = em.tomador_nome || ''
 
+  // Overlay com dados do cob_data_json — essencial para notas avulsas (sem cobranca_id)
+  // onde cpf e tomadorEnd não são resgatáveis via join em cobrancas/inquilinos
+  if (em.cob_data_json) {
+    try {
+      const cd = typeof em.cob_data_json === 'string'
+        ? JSON.parse(em.cob_data_json)
+        : em.cob_data_json
+      if (!cobData.cpf   && cd.cpf)   cobData.cpf       = cd.cpf
+      if (!cobData.email && cd.email) cobData.email      = cd.email
+      if (cd.tomadorEnd)              cobData.tomadorEnd = cd.tomadorEnd
+    } catch (_) { /* JSON inválido — ignora */ }
+  }
+
   // Passa discriminação salva na emissão (tem prioridade sobre xInfComp do XML)
   if (em.discriminacao_servico) cobData.discriminacao = em.discriminacao_servico
 
