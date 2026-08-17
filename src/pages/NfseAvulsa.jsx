@@ -194,10 +194,12 @@ function TomadorModal({ initial, onSave, onClose, retDefaults }) {
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
             </div>
 
-            {/* Endereço do tomador — obrigatório quando ISS é retido */}
-            {f.issRetido && (
-              <div className="col-span-2 border border-orange-200 bg-orange-50 rounded-xl p-3 space-y-2">
-                <p className="text-xs font-semibold text-orange-700">Endereço do tomador <span className="text-red-500">*</span> — exigido quando ISS é retido</p>
+            {/* Endereço do tomador — obrigatório quando ISS é retido, opcional quando identificado */}
+            {(f.issRetido || f.cpfCnpj.trim()) && (
+              <div className={`col-span-2 border rounded-xl p-3 space-y-2 ${f.issRetido ? 'border-orange-200 bg-orange-50' : 'border-slate-200 bg-slate-50'}`}>
+                <p className={`text-xs font-semibold ${f.issRetido ? 'text-orange-700' : 'text-slate-600'}`}>
+                  Endereço do tomador {f.issRetido ? <><span className="text-red-500">*</span> — exigido quando ISS é retido</> : '(opcional)'}
+                </p>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-xs font-medium text-slate-500 block mb-1">CEP *</label>
@@ -820,7 +822,7 @@ export default function NfseAvulsa() {
                 pPIS:    parsePct(item.pPIS)    || null,
                 pINSS:   parsePct(item.pINSS)   || null,
               },
-              tomadorEnd: item.issRetido ? {
+              tomadorEnd: item.tamaCep && item.tamaCodMun ? {
                 logradouro: item.tomaLogradouro || '',
                 numero:     item.tomaNumero     || 'S/N',
                 bairro:     item.tamaBairro     || '',
@@ -1203,7 +1205,7 @@ export default function NfseAvulsa() {
                 <th className="px-4 py-2.5 text-left">Competência</th>
                 <th className="px-4 py-2.5 text-right">Valor</th>
                 <th className="px-4 py-2.5 text-center">Status</th>
-                <th className="px-4 py-2.5 text-left">NFS-e</th>
+                <th className="px-4 py-2.5 text-left w-40">NFS-e</th>
                 <th className="px-4 py-2.5 text-left">Data</th>
                 <th className="px-2 py-2.5"/>
               </tr>
@@ -1215,10 +1217,10 @@ export default function NfseAvulsa() {
                   <td className="px-4 py-2.5 text-slate-500">{em.competencia || '—'}</td>
                   <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{fmtBRL(em.valor_servico)}</td>
                   <td className="px-4 py-2.5 text-center"><StatusBadge status={em.status}/></td>
-                  <td className="px-4 py-2.5 text-xs font-mono text-slate-500">
+                  <td className="px-4 py-2.5 text-xs font-mono text-slate-500 w-40 max-w-[10rem]">
                     {em.numero_nfse || em.numero_dps || '—'}
                     {em.erro_msg && (
-                      <span className="block text-red-500 text-[11px] max-w-xs truncate" title={em.erro_msg}>
+                      <span className="block text-red-500 text-[11px] w-36 truncate" title={em.erro_msg}>
                         {em.erro_msg}
                       </span>
                     )}
