@@ -537,14 +537,6 @@ function buildDpsXml(cfg, cob, homologacao) {
       `</regTrib>`
   }
 
-  // totTrib:
-  //   Simples Nacional (opSimpNac 2,3,4) → pTotTribSN com a alíquota do DAS
-  //   Não optante (opSimpNac 1, Lucro Presumido/Real) → NÃO enviar o bloco (E0713)
-  //   ME/EPP NÃO pode usar indTotTrib (E0712); Não-Simples NÃO pode usar nenhum campo (E0713)
-  const totTribXml = isSimples
-    ? `<totTrib><pTotTribSN>${cfg.aliquota}</pTotTribSN></totTrib>`
-    : ''
-
   // Retenções: tpRetISSQN e tributos federais retidos na fonte
   const ret = cob.retencoes || {}
   const tpRetISSQN = ret.tpRetISSQN || 1   // 1=não retido, 2=retido pelo tomador
@@ -564,6 +556,26 @@ function buildDpsXml(cfg, cob, homologacao) {
 
   const hasPisCofins = vRetCOFINS || vRetPIS
   const hasRetFed    = vRetIRRF || vRetCSLL || vRetCOFINS || vRetPIS || vRetCP
+
+  // totTrib:
+  //   Simples Nacional (opSimpNac 2,3,4) → pTotTribSN com a alíquota do DAS
+  //   Não optante (opSimpNac 1, Lucro Presumido/Real) → indTotTrib=1 + pTotTrib calculado
+  //     (E0713 rejeitou indTotTrib=0; E1235 exige tribFed ou totTrib; informar Lei 12.741)
+  //   ME/EPP NÃO pode usar indTotTrib (E0712)
+  let totTribXml
+  if (isSimples) {
+    totTribXml = `<totTrib><pTotTribSN>${cfg.aliquota}</pTotTribSN></totTrib>`
+  } else {
+    // Carga tributária aproximada = ISS + federais retidos configurados (Lei 12.741)
+    const _pISS = parseFloat(cfg.aliquota) || 0
+    const _pFed = (parseFloat(ret.pIRRF)   || 0)
+                + (parseFloat(ret.pCSLL)   || 0)
+                + (parseFloat(ret.pCOFINS) || 0)
+                + (parseFloat(ret.pPIS)    || 0)
+                + (parseFloat(ret.pINSS)   || 0)
+    const _pTot = (_pISS + _pFed).toFixed(2)
+    totTribXml = `<totTrib><indTotTrib>1</indTotTrib><pTotTrib>${_pTot}</pTotTrib></totTrib>`
+  }
 
   // <piscofins>: sequência obrigatória: CST → pAliqPis → pAliqCofins → vPis → vCofins → tpRetPisCofins
   // CST 01 = Operação tributável (alíquota básica); tpRetPisCofins 1 = retido na fonte
