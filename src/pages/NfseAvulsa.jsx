@@ -1111,7 +1111,7 @@ export default function NfseAvulsa() {
       </div>
 
       {/* ── 4. Histórico ─────────────────────────────────────── */}
-      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+      <div className="bg-white border border-slate-100 rounded-2xl overflow-x-auto">
         <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
           <span className="text-sm font-semibold text-slate-700">Histórico de emissões avulsas</span>
           {loadingHistory && (
@@ -1130,7 +1130,7 @@ export default function NfseAvulsa() {
                 <th className="px-4 py-2.5 text-center">Status</th>
                 <th className="px-4 py-2.5 text-left">NFS-e</th>
                 <th className="px-4 py-2.5 text-left">Data</th>
-                <th className="px-4 py-2.5"/>
+                <th className="px-2 py-2.5"/>
               </tr>
             </thead>
             <tbody>
@@ -1149,7 +1149,7 @@ export default function NfseAvulsa() {
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-slate-400">{fmtDate(em.created_at)}</td>
-                  <td className="px-4 py-2.5">
+                  <td className="px-2 py-2.5 whitespace-nowrap">
                     {em.status === 'emitida' && (() => {
                       const dentroDosPrazo = (new Date() - new Date(em.created_at)) < PRAZO_CANCEL_MS
                       const confirmando    = cancelConfirmId === em.id
