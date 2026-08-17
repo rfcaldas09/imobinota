@@ -861,8 +861,22 @@ export default function NfseAvulsa() {
     loadHistory()
   }
 
-  // ── Reprocessar nota com erro ────────────────────────────────
+  // ── Reprocessar / deletar nota com erro ─────────────────────
   const [reprocessingId, setReprocessingId] = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
+
+  const handleDeleteErro = async (em) => {
+    if (!window.confirm(`Excluir registro de erro da nota "${em.tomador_nome}"? Esta ação não pode ser desfeita.`)) return
+    setDeletingId(em.id)
+    try {
+      await supabase.from('nfse_emissoes').delete().eq('id', em.id)
+      loadHistory()
+    } catch (e) {
+      alert('Erro ao excluir registro.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   const handleReprocess = async (em) => {
     if (!em.cob_data_json) {
@@ -1212,19 +1226,30 @@ export default function NfseAvulsa() {
                   <td className="px-4 py-2.5 text-xs text-slate-400">{fmtDate(em.created_at)}</td>
                   <td className="px-2 py-2.5 whitespace-nowrap">
                     {em.status === 'erro' && (
-                      <button
-                        onClick={() => handleReprocess(em)}
-                        disabled={reprocessingId === em.id}
-                        title={em.cob_data_json ? 'Tentar emitir novamente' : 'Dados originais não disponíveis'}
-                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors
-                          ${em.cob_data_json
-                            ? 'text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-100'
-                            : 'text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed opacity-50'}`}>
-                        {reprocessingId === em.id
-                          ? <div className="w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"/>
-                          : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>}
-                        Reprocessar
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleReprocess(em)}
+                          disabled={reprocessingId === em.id || deletingId === em.id}
+                          title={em.cob_data_json ? 'Tentar emitir novamente' : 'Dados originais não disponíveis'}
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors
+                            ${em.cob_data_json
+                              ? 'text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-100'
+                              : 'text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed opacity-50'}`}>
+                          {reprocessingId === em.id
+                            ? <div className="w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"/>
+                            : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>}
+                          Reprocessar
+                        </button>
+                        <button
+                          onClick={() => handleDeleteErro(em)}
+                          disabled={deletingId === em.id || reprocessingId === em.id}
+                          title="Excluir registro de erro"
+                          className="flex items-center justify-center w-7 h-7 rounded-lg border border-red-200 bg-red-50 text-red-500 hover:bg-red-100 transition-colors disabled:opacity-40">
+                          {deletingId === em.id
+                            ? <div className="w-3 h-3 border-2 border-red-400 border-t-transparent rounded-full animate-spin"/>
+                            : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>}
+                        </button>
+                      </div>
                     )}
                     {em.status === 'emitida' && (() => {
                       const dentroDosPrazo = (new Date() - new Date(em.created_at)) < PRAZO_CANCEL_MS

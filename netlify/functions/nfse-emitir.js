@@ -566,15 +566,17 @@ function buildDpsXml(cfg, cob, homologacao) {
   if (isSimples) {
     totTribXml = `<totTrib><pTotTribSN>${cfg.aliquota}</pTotTribSN></totTrib>`
   } else {
-    // Carga tributária aproximada = ISS + federais retidos configurados (Lei 12.741)
-    const _pISS = parseFloat(cfg.aliquota) || 0
-    const _pFed = (parseFloat(ret.pIRRF)   || 0)
-                + (parseFloat(ret.pCSLL)   || 0)
-                + (parseFloat(ret.pCOFINS) || 0)
-                + (parseFloat(ret.pPIS)    || 0)
-                + (parseFloat(ret.pINSS)   || 0)
-    const _pTot = (_pISS + _pFed).toFixed(2)
-    totTribXml = `<totTrib><pTotTribFed>${_pTot}</pTotTribFed></totTrib>`
+    // Não-Simples: totTrib → pTotTrib → pTotTribFed (soma das alíquotas federais retidas)
+    // Estrutura confirmada pelos erros do SEFIN:
+    //   E0713: indTotTrib e pTotTribSN proibidos para não-Simples
+    //   E1235 (pTotTrib sem filhos): pTotTrib é complexo, filho = pTotTribFed
+    //   E1235 (pTotTribFed filho direto de totTrib): deve ser aninhado em pTotTrib
+    const _pFed = ((parseFloat(ret.pIRRF)   || 0)
+                 + (parseFloat(ret.pCSLL)   || 0)
+                 + (parseFloat(ret.pCOFINS) || 0)
+                 + (parseFloat(ret.pPIS)    || 0)
+                 + (parseFloat(ret.pINSS)   || 0)).toFixed(2)
+    totTribXml = `<totTrib><pTotTrib><pTotTribFed>${_pFed}</pTotTribFed></pTotTrib></totTrib>`
   }
 
   // <piscofins>: sequência obrigatória: CST → pAliqPis → pAliqCofins → vPis → vCofins → tpRetPisCofins
