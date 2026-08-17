@@ -439,11 +439,13 @@ function extrairCamposPdf(xml, cobData, profile) {
   const valorIss        = tagFloat('vISSQN') || tagFloat('vISS') || +(baseCalculo * aliquota / 100).toFixed(2)
 
   // Impostos federais (do XML; zero se não retornado — comum no Simples)
-  const pis            = tagFloat('vPIS')
-  const cofins         = tagFloat('vCOFINS')
-  const inss           = tagFloat('vINSS')
-  const ir             = tagFloat('vIR') || tagFloat('vIRRF')
-  const csll           = tagFloat('vCSLL')
+  // Aceita tanto as tags do XML de retorno do SEFIN (vPIS, vCOFINS, vIRRF, vCSLL)
+  // quanto as tags da DPS que enviamos (vPis, vCofins, vRetIRRF, vRetCSLL)
+  const pis   = tagFloat('vPIS')   || tagFloat('vPis')   || tagFloat('vRetPIS')
+  const cofins = tagFloat('vCOFINS') || tagFloat('vCofins') || tagFloat('vRetCOFINS')
+  const inss   = tagFloat('vINSS')  || tagFloat('vInss')  || tagFloat('vRetCP')
+  const ir     = tagFloat('vIR')    || tagFloat('vIRRF')  || tagFloat('vRetIRRF')
+  const csll   = tagFloat('vCSLL')  || tagFloat('vRetCSLL')
   const outrasRetencoes = 0
 
   // Tributos aproximados (pTotTribSN = % para Simples; senão soma)

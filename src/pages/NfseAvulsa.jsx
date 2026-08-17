@@ -741,7 +741,7 @@ export default function NfseAvulsa() {
     setLoadingHistory(true)
     const { data } = await supabase
       .from('nfse_emissoes')
-      .select('id, numero_nfse, numero_dps, tomador_nome, valor_servico, competencia, status, created_at, erro_msg, chave_acesso')
+      .select('id, numero_nfse, numero_dps, tomador_nome, valor_servico, competencia, status, created_at, erro_msg, chave_acesso, cob_data_json')
       .eq('user_id', user.id)
       .is('cobranca_id', null)
       .order('created_at', { ascending: false })
@@ -859,6 +859,45 @@ export default function NfseAvulsa() {
     // Aguarda 1.5s para o Supabase propagar as linhas antes de recarregar o histórico
     await delay(1500)
     loadHistory()
+  }
+
+  // ── Reprocessar nota com erro ────────────────────────────────
+  const [reprocessingId, setReprocessingId] = useState(null)
+
+  const handleReprocess = async (em) => {
+    if (!em.cob_data_json) {
+      alert('Dados da emissão original não disponíveis. Esta nota foi emitida antes do suporte a reprocessamento.')
+      return
+    }
+    setReprocessingId(em.id)
+    try {
+      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
+      const res = await fetch('/.netlify/functions/nfse-emitir', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
+        },
+        body: JSON.stringify({
+          userId:     user.id,
+          cobId:      null,
+          cobData:    em.cob_data_json,
+          homologacao: false,
+        }),
+      })
+      const data = await res.json()
+      if (res.ok && data.ok) {
+        await new Promise(r => setTimeout(r, 1500))
+        loadHistory()
+      } else {
+        alert(`Erro ao reprocessar: ${data.error || 'Erro desconhecido'}`)
+        loadHistory()
+      }
+    } catch (e) {
+      alert(`Erro: ${e.message}`)
+    } finally {
+      setReprocessingId(null)
+    }
   }
 
   // ── Download PDF ─────────────────────────────────────────────
@@ -1172,6 +1211,21 @@ export default function NfseAvulsa() {
                   </td>
                   <td className="px-4 py-2.5 text-xs text-slate-400">{fmtDate(em.created_at)}</td>
                   <td className="px-2 py-2.5 whitespace-nowrap">
+                    {em.status === 'erro' && (
+                      <button
+                        onClick={() => handleReprocess(em)}
+                        disabled={reprocessingId === em.id}
+                        title={em.cob_data_json ? 'Tentar emitir novamente' : 'Dados originais não disponíveis'}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors
+                          ${em.cob_data_json
+                            ? 'text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-100'
+                            : 'text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed opacity-50'}`}>
+                        {reprocessingId === em.id
+                          ? <div className="w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"/>
+                          : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>}
+                        Reprocessar
+                      </button>
+                    )}
                     {em.status === 'emitida' && (() => {
                       const dentroDosPrazo = (new Date() - new Date(em.created_at)) < PRAZO_CANCEL_MS
                       const confirmando    = cancelConfirmId === em.id

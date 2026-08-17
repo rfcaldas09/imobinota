@@ -242,6 +242,7 @@ async function handle(event) {
       valor_servico: cobData.totalValue,
       tomador_nome: cobData.tenant || null,
       status: 'erro', erro_msg: userMessage,
+      cob_data_json: cobData,  // salva para permitir reprocessamento
     })
     return {
       statusCode: 400,
@@ -283,6 +284,7 @@ async function handle(event) {
     tomador_nome: cobData.tenant || null,
     status: 'emitida', xml_nfse: nfseXml || responseBody,
     discriminacao_servico: cobData.discriminacao || null,
+    cob_data_json: cobData,
   })
 
   // ── 10. Envia e-mail com PDF da NFS-e ─────────────────────────
