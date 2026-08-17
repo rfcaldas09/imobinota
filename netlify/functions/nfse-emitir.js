@@ -635,7 +635,7 @@ function buildDpsXml(cfg, cob, homologacao) {
 <cLocEmi>${ibge7}</cLocEmi>
 <prest>
 ${tipoInsc === '2' ? `<CNPJ>${cnpjDigits}</CNPJ>` : `<CPF>${cnpjDigits.slice(-11)}</CPF>`}
-${endPrestXml}${regTribXml}
+${cfg.inscMun ? `<IM>${cfg.inscMun}</IM>\n` : ''}${endPrestXml}${regTribXml}
 </prest>
 <toma>
 ${tomadorTag}
