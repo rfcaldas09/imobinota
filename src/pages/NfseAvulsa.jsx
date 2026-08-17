@@ -19,6 +19,7 @@ const IcDoc     = ({ c='' }) => ic('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 
 const IcDownload= ({ c='' }) => ic('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>', c)
 const IcBan     = ({ c='' }) => ic('<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>', c)
 const IcUpload  = ({ c='' }) => ic('<polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>', c)
+const IcCode    = ({ c='' }) => ic('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>', c)
 
 // ── Helpers ────────────────────────────────────────────────────────
 const digits  = v => v.replace(/\D/g, '')
@@ -888,13 +889,40 @@ export default function NfseAvulsa() {
       })
       const data = await res.json()
       if (!res.ok || !data.pdfBase64) throw new Error(data.error || 'Erro ao gerar PDF')
-      // Dispara download no browser
       const link = document.createElement('a')
       link.href = `data:application/pdf;base64,${data.pdfBase64}`
       link.download = data.filename || `nfse-${tomadorNome || emissaoId}.pdf`
       link.click()
     } catch (e) {
       alert(`Erro ao baixar PDF: ${e.message}`)
+    } finally {
+      setDownloadingId(null)
+    }
+  }
+
+  const handleDownloadXml = async (emissaoId, tomadorNome) => {
+    setDownloadingId(`xml-${emissaoId}`)
+    try {
+      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
+      const res = await fetch('/.netlify/functions/nfse-xml', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
+        },
+        body: JSON.stringify({ userId: user.id, emissaoId }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.xmlBase64) throw new Error(data.error || 'XML não disponível')
+      const bytes = Uint8Array.from(atob(data.xmlBase64), c => c.charCodeAt(0))
+      const blob  = new Blob([bytes], { type: 'application/xml' })
+      const link  = document.createElement('a')
+      link.href   = URL.createObjectURL(blob)
+      link.download = data.filename || `nfse-${tomadorNome || emissaoId}.xml`
+      link.click()
+      setTimeout(() => URL.revokeObjectURL(link.href), 5000)
+    } catch (e) {
+      alert(`Erro ao baixar XML: ${e.message}`)
     } finally {
       setDownloadingId(null)
     }
@@ -1131,12 +1159,23 @@ export default function NfseAvulsa() {
                           {/* Botão download PDF */}
                           <button
                             onClick={() => handleDownloadPdf(em.id, em.tomador_nome)}
-                            disabled={downloadingId === em.id || cancelando}
+                            disabled={!!downloadingId || cancelando}
                             title="Baixar PDF da NFS-e"
                             className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 transition-colors">
                             {downloadingId === em.id
                               ? <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"/>
                               : <IcDownload/>}
+                          </button>
+
+                          {/* Botão download XML */}
+                          <button
+                            onClick={() => handleDownloadXml(em.id, em.tomador_nome)}
+                            disabled={!!downloadingId || cancelando}
+                            title="Baixar XML da NFS-e"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 disabled:opacity-40 transition-colors">
+                            {downloadingId === `xml-${em.id}`
+                              ? <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"/>
+                              : <IcCode/>}
                           </button>
 
                           {/* Botão cancelar */}

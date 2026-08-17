@@ -613,6 +613,7 @@ function NfseViewModal({ cob, user, onClose }) {
   const [emissoes, setEmissoes] = useState([])
   const [loading, setLoading]   = useState(true)
   const [pdfLoading, setPdfLoading] = useState(null) // emissaoId em progresso
+  const [xmlLoading, setXmlLoading] = useState(null) // emissaoId em progresso (XML)
 
   useEffect(() => {
     const handle = e => { if (e.key === 'Escape') onClose() }
@@ -653,6 +654,31 @@ function NfseViewModal({ cob, user, onClose }) {
       alert(`Erro: ${err.message}`)
     } finally {
       setPdfLoading(null)
+    }
+  }
+
+  const verXml = async (em) => {
+    setXmlLoading(em.id)
+    try {
+      const res = await fetch('/.netlify/functions/nfse-xml', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, emissaoId: em.id }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) { alert(`Erro ao baixar XML: ${data.error}`); return }
+      const bytes = Uint8Array.from(atob(data.xmlBase64), c => c.charCodeAt(0))
+      const blob  = new Blob([bytes], { type: 'application/xml' })
+      const url   = URL.createObjectURL(blob)
+      const a     = document.createElement('a')
+      a.href      = url
+      a.download  = data.filename || `NFS-e.xml`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+    } catch (err) {
+      alert(`Erro: ${err.message}`)
+    } finally {
+      setXmlLoading(null)
     }
   }
 
@@ -720,17 +746,30 @@ function NfseViewModal({ cob, user, onClose }) {
                     )}
                   </div>
                   {em.status !== 'erro' && (
-                  <button
-                    onClick={() => verPdf(em)}
-                    disabled={pdfLoading === em.id}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-indigo-700 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors disabled:opacity-50">
-                    {pdfLoading === em.id ? (
-                      <div className="w-3.5 h-3.5 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin"/>
-                    ) : (
-                      <IcDownload c="w-3.5 h-3.5"/>
-                    )}
-                    Ver PDF
-                  </button>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => verPdf(em)}
+                      disabled={pdfLoading === em.id || !!xmlLoading}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-indigo-700 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors disabled:opacity-50">
+                      {pdfLoading === em.id ? (
+                        <div className="w-3.5 h-3.5 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin"/>
+                      ) : (
+                        <IcDownload c="w-3.5 h-3.5"/>
+                      )}
+                      PDF
+                    </button>
+                    <button
+                      onClick={() => verXml(em)}
+                      disabled={xmlLoading === em.id || !!pdfLoading}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors disabled:opacity-50">
+                      {xmlLoading === em.id ? (
+                        <div className="w-3.5 h-3.5 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin"/>
+                      ) : (
+                        <span className="font-mono font-bold text-[11px]">&lt;/&gt;</span>
+                      )}
+                      XML
+                    </button>
+                  </div>
                   )}
                 </div>
               ))}
