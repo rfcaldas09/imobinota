@@ -571,12 +571,20 @@ function buildDpsXml(cfg, cob, homologacao) {
     //   E0713: indTotTrib e pTotTribSN proibidos para não-Simples
     //   E1235 (pTotTrib sem filhos): pTotTrib é complexo, filho = pTotTribFed
     //   E1235 (pTotTribFed filho direto de totTrib): deve ser aninhado em pTotTrib
+    // pTotTrib: sequência obrigatória pTotTribFed → pTotTribEst → pTotTribMun
+    // revelada pelos erros E1235 do SEFIN um campo por vez
     const _pFed = ((parseFloat(ret.pIRRF)   || 0)
                  + (parseFloat(ret.pCSLL)   || 0)
                  + (parseFloat(ret.pCOFINS) || 0)
                  + (parseFloat(ret.pPIS)    || 0)
                  + (parseFloat(ret.pINSS)   || 0)).toFixed(2)
-    totTribXml = `<totTrib><pTotTrib><pTotTribFed>${_pFed}</pTotTribFed></pTotTrib></totTrib>`
+    const _pEst = '0.00'                          // serviços não têm tributo estadual
+    const _pMun = (parseFloat(cfg.aliquota) || 0).toFixed(2) // ISS
+    totTribXml = `<totTrib><pTotTrib>` +
+      `<pTotTribFed>${_pFed}</pTotTribFed>` +
+      `<pTotTribEst>${_pEst}</pTotTribEst>` +
+      `<pTotTribMun>${_pMun}</pTotTribMun>` +
+      `</pTotTrib></totTrib>`
   }
 
   // <piscofins>: sequência obrigatória: CST → pAliqPis → pAliqCofins → vPis → vCofins → tpRetPisCofins
