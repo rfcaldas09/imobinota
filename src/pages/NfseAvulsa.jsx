@@ -76,7 +76,15 @@ const maskPct = v => {
 const parsePct = v => parseFloat((v || '').replace(',', '.')) || 0
 
 // Remove pontos de milhar e converte vírgula decimal → número
-const parseBRL = v => parseFloat((v || '').replace(/\./g, '').replace(',', '.')) || 0
+// Suporta formato BR ("36.640,00") e formato inglês/inteiro ("36640.00" ou "36640")
+const parseBRL = v => {
+  const s = String(v || '').trim()
+  if (!s) return 0
+  // Formato BR: tem vírgula como separador decimal → remove pontos de milhar, converte vírgula
+  if (s.includes(',')) return parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0
+  // Formato inglês ou inteiro: sem vírgula → parseFloat direto (ponto é decimal, não milhar)
+  return parseFloat(s) || 0
+}
 
 // Mask BRL: converte dígitos puros em "36.640,00"
 const maskBRL = raw => {
@@ -171,7 +179,8 @@ function TomadorModal({ initial, onSave, onClose, retDefaults }) {
     }
     setErr('')
     setWarnedNoCpf(false)
-    onSave({ ...f, valor: String(v.toFixed(2)) })
+    // Salva como string mascarada BR ("36.640,00") para que parseBRL a leia corretamente depois
+    onSave({ ...f, valor: maskBRL(String(Math.round(v * 100))) })
   }
 
   const TAX_FIELDS = [
@@ -441,7 +450,7 @@ function parseXlsRows(data, fallbackMesRef, retDefaults = NAT_RET_DEFAULT) {
       nome,
       cpfCnpj,
       email,
-      valor:            valorNum > 0 ? valorNum.toFixed(2) : '',
+      valor:            valorNum > 0 ? maskBRL(String(Math.round(valorNum * 100))) : '',
       discriminacao,
       mesRef:           _mesRefFromSheet || fallbackMesRef,
       codLc116:         '',
