@@ -42,10 +42,21 @@ function refLabel(mesRef) {
 }
 
 // ── Calcula data de vencimento (YYYY-MM-DD) ──────────────────────
+// Se o mês não tiver o dia solicitado, usa o último dia do mês.
+// Se cair em sábado, avança para segunda-feira.
 function calcDueDate(mesRef, dueDay) {
   if (!mesRef || !dueDay) return null
-  const [year, month] = mesRef.split('-')
-  return `${year}-${month}-${String(dueDay).padStart(2, '0')}`
+  const [yearStr, monthStr] = mesRef.split('-')
+  const year  = parseInt(yearStr, 10)
+  const month = parseInt(monthStr, 10) // 1-based
+  // Último dia do mês: dia 0 do mês seguinte
+  const lastDay = new Date(year, month, 0).getDate()
+  const day = Math.min(Number(dueDay), lastDay)
+  const d = new Date(year, month - 1, day)
+  // Avança fim de semana para segunda-feira
+  if (d.getDay() === 6) d.setDate(d.getDate() + 2) // sábado → segunda
+  else if (d.getDay() === 0) d.setDate(d.getDate() + 1) // domingo → segunda
+  return d.toISOString().slice(0, 10)
 }
 
 // ── Calcula expiresIn (segundos) para o QR Code expirar na data de
@@ -1354,8 +1365,8 @@ function AdicionarCobrancaModal({ contracts, user, onClose, onDone }) {
             </div>
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">Dia de vencimento *</label>
-              <input type="number" min="1" max="28" value={f.dueDay} onChange={e => set('dueDay', e.target.value)}
-                className={inp} placeholder="1-28"/>
+              <input type="number" min="1" max="31" value={f.dueDay} onChange={e => set('dueDay', e.target.value)}
+                className={inp} placeholder="1-31"/>
             </div>
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">Seg. Financeiro (R$)</label>

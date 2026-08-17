@@ -108,7 +108,14 @@ function parseContratosXls(data) {
 
     const dueDay = parseInt(row['DIA VENC.'] || row['DIA VENCIMENTO'] || row['Dia Venc'] || 10) || 10
 
-    const discriminacaoServico = String(row['DADOS PGTO. (OBS.)'] || row['OBS'] || row['Observação'] || '').trim()
+    const discriminacaoServico = String(
+      row['Discriminação do serviço'] || row['Discriminação'] ||
+      row['DADOS PGTO. (OBS.)'] || row['OBS'] || row['Observação'] || ''
+    ).trim()
+
+    // LC 116 da planilha — extrai só o código (ex: "25.03 - ..." → "25.03")
+    const lc116Raw = String(row['Código serviço LC 116'] || row['LC 116'] || row['LC116'] || '').trim()
+    const codServicoLc116 = lc116Raw ? lc116Raw.split(' - ')[0].trim() : ''
 
     return {
       _id:                    i,
@@ -122,7 +129,7 @@ function parseContratosXls(data) {
       value,
       dueDay,
       discriminacaoServico,
-      codServicoLc116:        '',   // definido no modal
+      codServicoLc116,   // vem da planilha; fallback para o campo do modal no handleImport
       seguroFinanceiro:       0,
       seguroIncendio:         0,
       iptu:                   0,
@@ -185,7 +192,7 @@ function ImportContratosModal({ onImport, onClose }) {
   const handleImport = () => {
     const toImport = rows
       .filter(r => selectedIds.has(r._id))
-      .map(r => ({ ...r, codServicoLc116: lc116 || null }))
+      .map(r => ({ ...r, codServicoLc116: r.codServicoLc116 || lc116 || null }))
     onImport(toImport)
   }
 
@@ -205,9 +212,9 @@ function ImportContratosModal({ onImport, onClose }) {
             <Lc116Picker
               value={lc116}
               onChange={setLc116}
-              label="Código LC 116 (aplicado a todos os contratos importados)"
+              label="Código LC 116 padrão (usado quando a planilha não tiver preenchido)"
             />
-            <p className="text-xs text-slate-400 mt-1">Deixe em branco para usar o padrão configurado no perfil.</p>
+            <p className="text-xs text-slate-400 mt-1">Contratos com LC 116 preenchido na planilha usarão o valor da planilha.</p>
           </div>
 
           {/* Drop zone */}
@@ -522,7 +529,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
           {/* Vencimento e status */}
           <div className="grid grid-cols-2 gap-3">
             <Row label="Dia de Vencimento">
-              <FormInp value={f.dueDay} onChange={e => set('dueDay', e.target.value)} type="number" min="1" max="28"/>
+              <FormInp value={f.dueDay} onChange={e => set('dueDay', e.target.value)} type="number" min="1" max="31"/>
             </Row>
             <Row label="Status do contrato">
               <select value={f.status} onChange={e => set('status', e.target.value)}
@@ -1085,6 +1092,9 @@ export default function Contratos() {
   const [isRenewal, setIsRenewal]     = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [importProgress, setImportProgress]   = useState(null) // { running, done, items:[{nome,status,error}] }
+  const [checkedIds, setCheckedIds]           = useState(new Set()) // seleção para exclusão em massa
+  const [deletingBulk, setDeletingBulk]       = useState(false)
+  const [confirmBulk, setConfirmBulk]         = useState(false)
   const { toasts, toast }             = useToast()
 
   // ── Carregar contratos ─────────────────────────────────────────
@@ -1334,6 +1344,19 @@ export default function Contratos() {
     setDeleting(false)
   }
 
+  // ── Excluir em massa ───────────────────────────────────────────
+  const handleDeleteBulk = async () => {
+    if (checkedIds.size === 0) return
+    setDeletingBulk(true)
+    const ids = [...checkedIds]
+    const { error } = await supabase.from('contratos').delete().in('id', ids)
+    if (error) { toast('Erro ao excluir contratos', 'error') }
+    else { toast(`${ids.length} contrato${ids.length !== 1 ? 's' : ''} excluído${ids.length !== 1 ? 's' : ''}`, 'info'); load() }
+    setCheckedIds(new Set())
+    setConfirmBulk(false)
+    setDeletingBulk(false)
+  }
+
   // ── Filtros e paginação ────────────────────────────────────────
   const isPorVencer = filter === 'Por Vencer'
 
@@ -1408,6 +1431,25 @@ export default function Contratos() {
         </div>
       )}
 
+      {/* Barra de ações bulk */}
+      {checkedIds.size > 0 && (
+        <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-2xl px-5 py-3">
+          <span className="text-sm font-semibold text-red-700">
+            {checkedIds.size} contrato{checkedIds.size !== 1 ? 's' : ''} selecionado{checkedIds.size !== 1 ? 's' : ''}
+          </span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setCheckedIds(new Set())}
+              className="text-xs text-slate-500 font-semibold hover:underline px-3 py-1.5">
+              Cancelar
+            </button>
+            <button onClick={() => setConfirmBulk(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg transition-colors">
+              <IcTrash c="w-3.5 h-3.5"/> Excluir selecionados
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Tabela */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
         {loading ? (
@@ -1429,6 +1471,18 @@ export default function Contratos() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
+                <th className="px-4 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    checked={slice.length > 0 && slice.every(c => checkedIds.has(c.id))}
+                    onChange={e => {
+                      if (e.target.checked) setCheckedIds(prev => new Set([...prev, ...slice.map(c => c.id)]))
+                      else setCheckedIds(prev => { const next = new Set(prev); slice.forEach(c => next.delete(c.id)); return next })
+                    }}
+                    className="accent-red-600 w-4 h-4 cursor-pointer"
+                    title="Marcar/desmarcar todos da página"
+                  />
+                </th>
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Cliente</th>
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Referência</th>
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">
@@ -1448,6 +1502,18 @@ export default function Contratos() {
                 return (
                   <tr key={c.id} className="hover:bg-slate-50/60 transition-colors cursor-pointer"
                     onClick={() => { if (isPorVencer) { setEditing(c); setIsRenewal(true) } else { setSelected(c) } }}>
+                    <td className="px-4 py-3.5 w-10" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={checkedIds.has(c.id)}
+                        onChange={() => setCheckedIds(prev => {
+                          const next = new Set(prev)
+                          next.has(c.id) ? next.delete(c.id) : next.add(c.id)
+                          return next
+                        })}
+                        className="accent-red-600 w-4 h-4 cursor-pointer"
+                      />
+                    </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2.5">
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isPorVencer ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
@@ -1501,6 +1567,36 @@ export default function Contratos() {
           </div>
         )}
       </div>
+
+      {/* Modal confirmação exclusão em massa */}
+      {confirmBulk && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-xl">🗑️</div>
+              <div>
+                <p className="font-bold text-slate-900 text-sm">Excluir contratos</p>
+                <p className="text-xs text-slate-400">Esta ação não pode ser desfeita</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600">
+              Deseja excluir permanentemente <strong>{checkedIds.size} contrato{checkedIds.size !== 1 ? 's' : ''}</strong>?
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmBulk(false)} disabled={deletingBulk}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50 disabled:opacity-40">
+                Cancelar
+              </button>
+              <button onClick={handleDeleteBulk} disabled={deletingBulk}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 text-white font-semibold text-sm hover:bg-red-700 disabled:opacity-40 flex items-center justify-center gap-2">
+                {deletingBulk
+                  ? <div className="w-4 h-4 border-2 border-red-300 border-t-white rounded-full animate-spin"/>
+                  : <><IcTrash c="w-4 h-4"/> Excluir</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modais */}
       {selected && !editing && !scanning && (

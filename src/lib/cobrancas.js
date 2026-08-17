@@ -13,11 +13,21 @@ export const mesStr = date =>
 export const mesLabel = date =>
   `${MESES[date.getMonth()]}/${date.getFullYear()}`
 
-/** "2026-07-10" — data de vencimento real (dia dentro do mês de referência) */
+/** "2026-07-10" — data de vencimento real (dia dentro do mês de referência)
+ *  Se o mês não tiver o dia solicitado, usa o último dia do mês.
+ *  Se cair em sábado ou domingo, avança para segunda-feira. */
 const dataVenc = (mesRef, dueDay) => {
   if (!dueDay) return null
-  return new Date(mesRef.getFullYear(), mesRef.getMonth(), dueDay)
-    .toISOString().slice(0, 10)
+  const year  = mesRef.getFullYear()
+  const month = mesRef.getMonth() // 0-based
+  // Último dia do mês: dia 0 do mês seguinte (month+1, em 0-based = month+1)
+  const lastDay = new Date(year, month + 1, 0).getDate()
+  const day = Math.min(Number(dueDay), lastDay)
+  const d = new Date(year, month, day)
+  // Avança fim de semana para segunda-feira
+  if (d.getDay() === 6) d.setDate(d.getDate() + 2) // sábado → segunda
+  else if (d.getDay() === 0) d.setDate(d.getDate() + 1) // domingo → segunda
+  return d.toISOString().slice(0, 10)
 }
 
 /**
