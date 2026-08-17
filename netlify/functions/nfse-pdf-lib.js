@@ -297,6 +297,20 @@ function renderPage(doc, f, qrBuf) {
   vline(PR - 120, y, 13)
   y += 14; hline(y)
 
+  // Linha adicional: valor efetivo a receber (aparece apenas quando há PIS/COFINS retidos)
+  // O vLiq do SEFIN não desconta PIS+COFINS (retidos via DARF pelo tomador); esta linha
+  // mostra o valor real creditado ao prestador.
+  if (f.valorAReceber !== null && f.valorAReceber !== undefined) {
+    y += 3
+    const pisCofinsDed = +(f.valorLiquido - f.valorAReceber).toFixed(2)
+    t(`(−) PIS + COFINS retidos pelo tomador via DARF: ${fmtVal(pisCofinsDed)}`,
+      PL + 3, y, W - 130, { size: 6.5, color: '#555555' })
+    t('VALOR A RECEBER', PL + 255, y, W - 375, { bold: true, size: 9, align: 'right', color: DRK })
+    t(fmtVal(f.valorAReceber), PR - 115, y, 112, { bold: true, size: 9, align: 'right' })
+    vline(PR - 120, y, 13)
+    y += 14; hline(y)
+  }
+
   // ── IBS/CBS/NBS ───────────────────────────────────────────────
   y = secHdr('IBS/CBS/NBS', y)
   ry = y + 2
@@ -452,6 +466,9 @@ function extrairCamposPdf(xml, cobData, profile) {
   const pTotSN        = tagFloat('pTotTribSN')
   const valorTributos = pTotSN > 0 ? +(valorBruto * pTotSN / 100).toFixed(2) : (pis + cofins + inss + ir + csll)
   const valorLiquido  = tagFloat('vLiq') || +(valorBruto - valorIss - ir - inss).toFixed(2)
+  // Valor efetivamente recebido pelo prestador = vLiq − PIS − COFINS
+  // (retidos pelo tomador via DARF separado — não entram na fórmula vLiq do SEFIN)
+  const valorAReceber = (pis || cofins) ? +Math.max(0, valorLiquido - pis - cofins).toFixed(2) : null
 
   // IBS/CBS (reforma tributária — zeros quando não vigente)
   const cbs          = tagFloat('vCBS')
@@ -551,6 +568,7 @@ function extrairCamposPdf(xml, cobData, profile) {
     outrasRetencoes,
     valorTributos,
     valorLiquido,
+    valorAReceber,
 
     // IBS/CBS/NBS (reforma tributária — zeros quando não vigente)
     codigoNbs,
