@@ -279,7 +279,7 @@ async function handle(event) {
   const numeroNfse = extractXmlTag(nfseXml, 'nNFSe') || extractXmlTag(nfseXml, 'nNfse') || ''
 
   // ── 9. Grava emissão bem-sucedida ─────────────────────────────
-  await gravarEmissao(SUPABASE_URL, SERVICE_KEY, {
+  const emissaoId = await gravarEmissao(SUPABASE_URL, SERVICE_KEY, {
     user_id: userId, cobranca_id: cobId || null,
     numero_dps: novNumero, numero_nfse: numeroNfse,
     chave_acesso: chaveAcesso, competencia: cobData.mesRef,
@@ -314,6 +314,7 @@ async function handle(event) {
       chaveAcesso,
       idDps,
       xml:         nfseXml,
+      emissaoId,
     }),
   }
 }
@@ -805,6 +806,10 @@ async function gravarEmissao(supabaseUrl, serviceKey, row) {
       console.error(`[nfse-emitir] erro ao gravar emissão HTTP ${res.status}:`, body)
       throw new Error(`Falha ao gravar emissão no banco (HTTP ${res.status}): ${body}`)
     }
+    const json = await res.json().catch(() => null)
+    // Supabase retorna array com o registro inserido quando Prefer: return=representation
+    const inserted = Array.isArray(json) ? json[0] : json
+    return inserted?.id || null
   } catch (e) {
     console.error('[nfse-emitir] erro ao gravar emissão:', e?.message)
     throw e   // propaga para o caller ver no log e no erro retornado ao frontend

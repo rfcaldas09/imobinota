@@ -406,6 +406,46 @@ function NfseModal({ cob, user, onClose }) {
   const [homolog, setHomolog]   = useState(false)
   // Discriminação: pré-preenchida com o texto fixo do contrato (se houver)
   const [discriminacao, setDiscriminacao] = useState(cob.discriminacaoServico || '')
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const [xmlLoading, setXmlLoading] = useState(false)
+
+  const downloadPdf = async () => {
+    if (!result?.emissaoId) return
+    setPdfLoading(true)
+    try {
+      const res  = await fetch('/.netlify/functions/nfse-pdf', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, emissaoId: result.emissaoId }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) { alert(`Erro ao baixar PDF: ${data.error}`); return }
+      const bytes = Uint8Array.from(atob(data.pdfBase64), c => c.charCodeAt(0))
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+      const a = document.createElement('a'); a.href = url
+      a.download = data.filename || 'NFS-e.pdf'; a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+    } catch (e) { alert(`Erro: ${e.message}`) }
+    finally { setPdfLoading(false) }
+  }
+
+  const downloadXml = async () => {
+    if (!result?.emissaoId) return
+    setXmlLoading(true)
+    try {
+      const res  = await fetch('/.netlify/functions/nfse-xml', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, emissaoId: result.emissaoId }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) { alert(`Erro ao baixar XML: ${data.error}`); return }
+      const bytes = Uint8Array.from(atob(data.xmlBase64), c => c.charCodeAt(0))
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/xml' }))
+      const a = document.createElement('a'); a.href = url
+      a.download = data.filename || 'NFS-e.xml'; a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+    } catch (e) { alert(`Erro: ${e.message}`) }
+    finally { setXmlLoading(false) }
+  }
 
   useEffect(() => {
     const handle = e => { if (e.key === 'Escape' && state !== 'loading') onClose() }
@@ -624,6 +664,29 @@ function NfseModal({ cob, user, onClose }) {
             <div className="text-xs text-slate-400 text-center">
               DPS nº {result.numeroDps} · {refLabel(cob.mesRef)} · {fmt(cob.totalValue)}
             </div>
+
+            {result.emissaoId && (
+              <div className="flex gap-2">
+                <button
+                  onClick={downloadPdf}
+                  disabled={pdfLoading || xmlLoading}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-semibold text-indigo-700 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 transition-colors disabled:opacity-50">
+                  {pdfLoading
+                    ? <div className="w-4 h-4 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin"/>
+                    : <IcDownload c="w-4 h-4"/>}
+                  PDF
+                </button>
+                <button
+                  onClick={downloadXml}
+                  disabled={xmlLoading || pdfLoading}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-semibold text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors disabled:opacity-50">
+                  {xmlLoading
+                    ? <div className="w-4 h-4 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin"/>
+                    : <span className="font-mono font-bold text-xs">&lt;/&gt;</span>}
+                  XML
+                </button>
+              </div>
+            )}
 
             <button onClick={onClose} className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50">Fechar</button>
           </div>
@@ -2034,6 +2097,13 @@ export default function Cobrancas() {
                           </div>
                         )}
 
+                        {/* Editar valor (para desconto/ajuste pontual) */}
+                        <button
+                          onClick={() => openEditValor(c)}
+                          className="flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors w-full justify-center text-slate-600 border-slate-200 bg-slate-50 hover:bg-slate-100">
+                          ✏️ Editar valor
+                        </button>
+
                         {/* Logs de envio (antigo "Ver NFS-e") */}
                         {isActive && (
                           <button
@@ -2043,13 +2113,6 @@ export default function Cobrancas() {
                             Logs de envio
                           </button>
                         )}
-
-                        {/* Editar valor (para desconto/ajuste pontual) */}
-                        <button
-                          onClick={() => openEditValor(c)}
-                          className="flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors w-full justify-center text-slate-600 border-slate-200 bg-slate-50 hover:bg-slate-100">
-                          ✏️ Editar valor
-                        </button>
 
                         {/* Situação — em telas < xl (mobile) */}
                         <div className="flex flex-col items-end gap-0.5 xl:hidden mt-1">
