@@ -31,8 +31,10 @@ exports.handler = async (event) => {
 
   // Valida JWT e verifica se é admin
   const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
-  if (authErr || !user) return { statusCode: 401, headers, body: JSON.stringify({ error: 'Token inválido' }) }
-  if (user.email !== ADMIN_EMAIL) return { statusCode: 403, headers, body: JSON.stringify({ error: 'Acesso negado' }) }
+  if (authErr || !user) return { statusCode: 401, headers, body: JSON.stringify({ error: 'Token inválido', detail: authErr?.message }) }
+  if (user.email?.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    return { statusCode: 403, headers, body: JSON.stringify({ error: 'Acesso negado', got: user.email }) }
+  }
 
   // ── Busca todos os perfis ────────────────────────────────────
   const { data: profiles, error: profErr } = await supabase
