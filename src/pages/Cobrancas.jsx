@@ -110,8 +110,9 @@ const mapCob = (row, lastNfse = null) => {
     status:          row.status || 'Pendente',
     mesRef:          row.mes_referencia,
     emissao:         row.data_emissao,
-    nfseStatus:      lastNfse?.status   || null,
+    nfseStatus:      lastNfse?.status      || null,
     nfseNumero:      lastNfse?.numero_nfse || null,
+    nfseId:          lastNfse?.id          || null,
   }
 }
 
@@ -1596,10 +1597,73 @@ export default function Cobrancas() {
   const [pixKey, setPixKey]       = useState(null)
   const [boletoCob, setBoletoCob] = useState(null)
   const [nfseCob, setNfseCob]       = useState(null) // cobrança selecionada para NFS-e
-  const [nfseViewCob, setNfseViewCob] = useState(null) // cobrança para "Ver NFS-e"
+  const [nfseViewCob, setNfseViewCob] = useState(null) // cobrança para "Logs de envio"
   const [addCob, setAddCob]       = useState(false) // abrir modal de adicionar cobrança
   const [editValorCob, setEditValorCob] = useState(null) // cobrança com edição de valor aberta
   const [editValorInput, setEditValorInput] = useState('') // valor digitado (string formatada BRL)
+
+  // ── Ações inline de NFS-e (PDF / XML / Cancelar) na tabela ───────
+  const [inlinePdfId,        setInlinePdfId]        = useState(null) // cobId carregando PDF
+  const [inlineXmlId,        setInlineXmlId]        = useState(null) // cobId carregando XML
+  const [inlineCancelConfirm,setInlineCancelConfirm]= useState(null) // cobId aguardando confirm
+  const [inlineCancelling,   setInlineCancelling]   = useState(null) // cobId cancelando
+
+  const inlineDownloadPdf = async (c) => {
+    if (!c.nfseId) return
+    setInlinePdfId(c.id)
+    try {
+      const res  = await fetch('/.netlify/functions/nfse-pdf', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, emissaoId: c.nfseId }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) { alert(`Erro ao baixar PDF: ${data.error}`); return }
+      const bytes = Uint8Array.from(atob(data.pdfBase64), ch => ch.charCodeAt(0))
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+      const a = document.createElement('a'); a.href = url
+      a.download = data.filename || 'NFS-e.pdf'; a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+    } catch (e) { alert(`Erro: ${e.message}`) }
+    finally { setInlinePdfId(null) }
+  }
+
+  const inlineDownloadXml = async (c) => {
+    if (!c.nfseId) return
+    setInlineXmlId(c.id)
+    try {
+      const res  = await fetch('/.netlify/functions/nfse-xml', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, emissaoId: c.nfseId }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) { alert(`Erro ao baixar XML: ${data.error}`); return }
+      const bytes = Uint8Array.from(atob(data.xmlBase64), ch => ch.charCodeAt(0))
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/xml' }))
+      const a = document.createElement('a'); a.href = url
+      a.download = data.filename || 'NFS-e.xml'; a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+    } catch (e) { alert(`Erro: ${e.message}`) }
+    finally { setInlineXmlId(null) }
+  }
+
+  const inlineCancelar = async (c) => {
+    if (!c.nfseId) return
+    if (inlineCancelConfirm !== c.id) { setInlineCancelConfirm(c.id); return }
+    setInlineCancelConfirm(null)
+    setInlineCancelling(c.id)
+    try {
+      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
+      const res = await fetch('/.netlify/functions/nfse-cancelar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}) },
+        body: JSON.stringify({ userId: user.id, emissaoId: c.nfseId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao cancelar')
+      load()
+    } catch (e) { alert(`Erro ao cancelar NFS-e: ${e.message}`) }
+    finally { setInlineCancelling(null) }
+  }
 
   // Carrega chave PIX do perfil (ainda necessária para o BoletoPIXModal)
   useEffect(() => {
@@ -1892,27 +1956,91 @@ export default function Cobrancas() {
                       <div className="w-4 h-4 border-2 border-slate-200 border-t-indigo-500 rounded-full animate-spin inline-block"/>
                     ) : (
                       <div className="flex flex-col items-end gap-1.5">
-                        {/* Emitir NFS-e */}
-                        <button
-                          onClick={() => isActive ? setNfseCob(c) : null}
-                          disabled={!isActive}
-                          title={!isActive ? 'Assine um plano para emitir NFS-e' : ''}
-                          className={`flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors w-full justify-center ${
-                            isActive
-                              ? 'text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100'
-                              : 'text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed'
-                          }`}>
-                          <IcReceipt c="w-3 h-3"/>
-                          {isActive ? 'Emitir NFS-e' : '🔒 Emitir NFS-e'}
-                        </button>
 
-                        {/* Ver NFS-e */}
+                        {/* Emitir NFS-e — desabilitado se já tem nota emitida */}
+                        {(() => {
+                          const jaEmitida = c.nfseStatus === 'emitida'
+                          const disabled  = !isActive || jaEmitida
+                          const title     = !isActive ? 'Assine um plano para emitir NFS-e'
+                                          : jaEmitida ? 'Já existe NFS-e emitida para este mês'
+                                          : ''
+                          return (
+                            <button
+                              onClick={() => !disabled && setNfseCob(c)}
+                              disabled={disabled}
+                              title={title}
+                              className={`flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors w-full justify-center ${
+                                disabled
+                                  ? 'text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed opacity-50'
+                                  : 'text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100'
+                              }`}>
+                              <IcReceipt c="w-3 h-3"/>
+                              {!isActive ? '🔒 Emitir NFS-e' : 'Emitir NFS-e'}
+                            </button>
+                          )
+                        })()}
+
+                        {/* Botões inline PDF / XML / Cancelar — quando há NFS-e emitida */}
+                        {isActive && c.nfseStatus === 'emitida' && c.nfseId && (
+                          <div className="flex items-center gap-1 w-full">
+                            {/* PDF */}
+                            <button
+                              onClick={() => inlineDownloadPdf(c)}
+                              disabled={inlinePdfId === c.id || !!inlineXmlId || !!inlineCancelling}
+                              title="Baixar PDF"
+                              className="flex items-center gap-1 text-xs font-semibold text-indigo-700 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded-lg flex-1 justify-center whitespace-nowrap transition-colors disabled:opacity-50">
+                              {inlinePdfId === c.id
+                                ? <div className="w-3 h-3 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin"/>
+                                : <IcDownload c="w-3 h-3"/>}
+                              PDF
+                            </button>
+                            {/* XML */}
+                            <button
+                              onClick={() => inlineDownloadXml(c)}
+                              disabled={inlineXmlId === c.id || !!inlinePdfId || !!inlineCancelling}
+                              title="Baixar XML"
+                              className="flex items-center gap-1 text-xs font-semibold text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded-lg flex-1 justify-center whitespace-nowrap transition-colors disabled:opacity-50">
+                              {inlineXmlId === c.id
+                                ? <div className="w-3 h-3 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin"/>
+                                : <span className="font-mono font-bold text-[10px]">&lt;/&gt;</span>}
+                              XML
+                            </button>
+                            {/* Cancelar */}
+                            {inlineCancelConfirm === c.id ? (
+                              <div className="flex gap-0.5">
+                                <button
+                                  onClick={() => inlineCancelar(c)}
+                                  disabled={inlineCancelling === c.id}
+                                  className="text-[10px] font-bold text-white bg-red-600 hover:bg-red-700 px-1.5 py-1 rounded-lg whitespace-nowrap transition-colors disabled:opacity-50">
+                                  {inlineCancelling === c.id
+                                    ? <div className="w-3 h-3 border-2 border-red-300 border-t-white rounded-full animate-spin"/>
+                                    : 'OK?'}
+                                </button>
+                                <button
+                                  onClick={() => setInlineCancelConfirm(null)}
+                                  className="text-[10px] font-bold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 px-1.5 py-1 rounded-lg transition-colors">
+                                  Não
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => inlineCancelar(c)}
+                                disabled={!!inlinePdfId || !!inlineXmlId || !!inlineCancelling}
+                                title="Cancelar NFS-e"
+                                className="p-1 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40">
+                                🚫
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Logs de envio (antigo "Ver NFS-e") */}
                         {isActive && (
                           <button
                             onClick={() => setNfseViewCob(c)}
-                            className="flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors w-full justify-center text-indigo-700 border-indigo-200 bg-indigo-50 hover:bg-indigo-100">
+                            className="flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors w-full justify-center text-slate-500 border-slate-200 bg-slate-50 hover:bg-slate-100">
                             <IcEye c="w-3 h-3"/>
-                            Ver NFS-e
+                            Logs de envio
                           </button>
                         )}
 
