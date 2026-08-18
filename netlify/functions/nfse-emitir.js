@@ -225,10 +225,41 @@ async function handle(event) {
   const sefinUrl = homologacao ? SEFIN_URL_TEST : SEFIN_URL_PROD
   console.log('[nfse-emitir] enviando para SEFIN:', sefinUrl, '| homologacao:', homologacao)
 
-  const { status: httpStatus, body: responseBody } = await postWithMtls(
+  // Função auxiliar: verifica se o corpo de resposta contém um código de erro específico
+  const hasErrCode = (body, code) => {
+    try {
+      const j = JSON.parse(body)
+      return (j.erros || []).some(e => (e.Codigo || e.codigo || '').includes(code))
+    } catch { return false }
+  }
+
+  let { status: httpStatus, body: responseBody } = await postWithMtls(
     sefinUrl, dpsAssinada, certPem, forge.pki.privateKeyToPem(privateKey)
   )
   console.log('[nfse-emitir] SEFIN status:', httpStatus, '| body COMPLETO:', responseBody)
+
+  // ── Retry automático para erros de IM ───────────────────────────
+  // E0120: IM enviada mas o município não tem dados no CNC → reprocessa SEM IM
+  // E0116: IM exigida mas não enviada → reprocessa COM IM (do perfil)
+  if (httpStatus !== 201 && hasErrCode(responseBody, 'E0120') && config.inscMun) {
+    console.log('[nfse-emitir] E0120 detectado — município não aceita IM. Reprocessando sem IM...')
+    config.inscMun = null
+    const dpsRetry   = buildDpsXml(config, cobData, homologacao)
+    const signRetry  = signDps(dpsRetry, privateKey, certForge)
+    const retryRes   = await postWithMtls(sefinUrl, signRetry, certPem, forge.pki.privateKeyToPem(privateKey))
+    console.log('[nfse-emitir] retry sem IM — status:', retryRes.status, '| body:', retryRes.body)
+    httpStatus   = retryRes.status
+    responseBody = retryRes.body
+  } else if (httpStatus !== 201 && hasErrCode(responseBody, 'E0116') && !config.inscMun && p.inscricao_municipal) {
+    console.log('[nfse-emitir] E0116 detectado — município exige IM. Reprocessando com IM do perfil...')
+    config.inscMun = p.inscricao_municipal
+    const dpsRetry   = buildDpsXml(config, cobData, homologacao)
+    const signRetry  = signDps(dpsRetry, privateKey, certForge)
+    const retryRes   = await postWithMtls(sefinUrl, signRetry, certPem, forge.pki.privateKeyToPem(privateKey))
+    console.log('[nfse-emitir] retry com IM — status:', retryRes.status, '| body:', retryRes.body)
+    httpStatus   = retryRes.status
+    responseBody = retryRes.body
+  }
 
   // SEFIN retorna 201 para sucesso
   if (httpStatus !== 201) {
