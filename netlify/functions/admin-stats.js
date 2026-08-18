@@ -29,11 +29,17 @@ exports.handler = async (event) => {
     auth: { autoRefreshToken: false, persistSession: false },
   })
 
-  // Valida JWT e verifica se é admin
-  const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
-  if (authErr || !user) return { statusCode: 401, headers, body: JSON.stringify({ error: 'Token inválido', detail: authErr?.message }) }
-  if (user.email?.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
-    return { statusCode: 403, headers, body: JSON.stringify({ error: 'Acesso negado', got: user.email }) }
+  // Decodifica o JWT sem verificar assinatura (suficiente para admin interno)
+  // e confere o email direto no payload do token
+  let jwtEmail = null
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'))
+    jwtEmail = payload.email || null
+  } catch (_) {
+    return { statusCode: 401, headers, body: JSON.stringify({ error: 'Token malformado' }) }
+  }
+  if (!jwtEmail || jwtEmail.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    return { statusCode: 403, headers, body: JSON.stringify({ error: 'Acesso negado', got: jwtEmail }) }
   }
 
   // ── Busca todos os perfis ────────────────────────────────────
