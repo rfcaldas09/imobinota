@@ -173,7 +173,7 @@ async function handle(event) {
 
   const config = {
     cnpj:          digits(p.cnpj),
-    inscMun:       p.inscricao_municipal,
+    // inscMun omitido intencionalmente: campo <IM> causa erro E0120 em municípios sem dados no CNC NFS-e
     razaoSocial:   p.company_name || 'Prestador',
     municipioIbge: p.nfse_municipio_ibge,
     serie:         serieRaw,
