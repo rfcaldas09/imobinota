@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import JSZip from 'jszip'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -1728,6 +1729,67 @@ export default function Cobrancas() {
     finally { setInlineCancelling(null) }
   }
 
+  // ── Download ZIP com todos os PDF + XML do mês ────────────────────
+  const [zipLoading, setZipLoading] = useState(false)
+  const [zipProgress, setZipProgress] = useState({ done: 0, total: 0 })
+
+  const downloadZipMes = async () => {
+    // Pega emissões do mês com status 'emitida'
+    const ref = mesStr(mesRef)
+    const cobIds = cobrancas.filter(c => c.nfseStatus === 'emitida' && c.nfseId).map(c => c.nfseId)
+    if (!cobIds.length) { alert('Nenhuma NFS-e emitida neste mês.'); return }
+
+    setZipLoading(true)
+    setZipProgress({ done: 0, total: cobIds.length * 2 }) // PDF + XML por emissão
+
+    const zip = new JSZip()
+    const pdfFolder = zip.folder('PDF')
+    const xmlFolder = zip.folder('XML')
+
+    let done = 0
+    const cobsEmitidas = cobrancas.filter(c => c.nfseStatus === 'emitida' && c.nfseId)
+
+    for (const c of cobsEmitidas) {
+      // PDF
+      try {
+        const res  = await fetch('/.netlify/functions/nfse-pdf', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, emissaoId: c.nfseId }),
+        })
+        const data = await res.json()
+        if (res.ok && data.pdfBase64) {
+          const bytes = Uint8Array.from(atob(data.pdfBase64), ch => ch.charCodeAt(0))
+          pdfFolder.file(data.filename || `NFS-e_${c.nfseNumero || c.id}.pdf`, bytes)
+        }
+      } catch { /* ignora falha individual */ }
+      done++; setZipProgress({ done, total: cobIds.length * 2 })
+
+      // XML
+      try {
+        const res  = await fetch('/.netlify/functions/nfse-xml', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id, emissaoId: c.nfseId }),
+        })
+        const data = await res.json()
+        if (res.ok && data.xmlBase64) {
+          const bytes = Uint8Array.from(atob(data.xmlBase64), ch => ch.charCodeAt(0))
+          xmlFolder.file(data.filename || `NFS-e_${c.nfseNumero || c.id}.xml`, bytes)
+        }
+      } catch { /* ignora falha individual */ }
+      done++; setZipProgress({ done, total: cobIds.length * 2 })
+    }
+
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `NFS-e_${ref.replace('-', '_')}.zip`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 10000)
+
+    setZipLoading(false)
+  }
+
   // Carrega chave PIX do perfil (ainda necessária para o BoletoPIXModal)
   useEffect(() => {
     if (!user) return
@@ -1921,6 +1983,28 @@ export default function Cobrancas() {
           </button>
         </div>
       </div>
+
+      {/* ── Linha de download em massa ─────────────────────── */}
+      {isActive && cobrancas.some(c => c.nfseStatus === 'emitida' && c.nfseId) && (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={downloadZipMes}
+            disabled={zipLoading}
+            className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-semibold text-sm hover:bg-slate-50 shadow-sm whitespace-nowrap disabled:opacity-60 disabled:cursor-wait">
+            {zipLoading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-slate-300 border-t-indigo-500 rounded-full animate-spin"/>
+                Gerando ZIP… {zipProgress.done}/{zipProgress.total}
+              </>
+            ) : (
+              <>
+                <IcDownload c="w-4 h-4"/>
+                Baixar todos os PDF e XML do mês ({cobrancas.filter(c => c.nfseStatus === 'emitida' && c.nfseId).length} notas)
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* ── Tabela ─────────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
