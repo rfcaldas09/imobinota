@@ -171,14 +171,24 @@ async function handle(event) {
   console.log('[nfse-emitir] cTribNac:', cTribNacResolved,
     '| fonte:', cTribNacFromContract ? 'contrato' : cTribNacFromProfile ? 'perfil' : 'default')
 
+  // Município emissor: per-nota sobrepõe perfil (prestador pode emitir de municípios diferentes)
+  const municipioIbgeResolved = (cobData.prestMunicipioIbge && String(cobData.prestMunicipioIbge).trim())
+    ? String(cobData.prestMunicipioIbge).trim()
+    : p.nfse_municipio_ibge
+
+  // IM do prestador: per-nota sobrepõe perfil.
+  //   null/undefined em cobData → usa perfil (backward compat com notas antigas reprocessadas)
+  //   string vazia em cobData → IM omitida (município não aceita IM: E0120)
+  //   string não-vazia em cobData → IM enviada (município exige IM: E0116 se ausente)
+  const inscMunResolved = (cobData.prestInscricaoMunicipal !== undefined && cobData.prestInscricaoMunicipal !== null)
+    ? (cobData.prestInscricaoMunicipal || null)
+    : (p.inscricao_municipal || null)
+
   const config = {
     cnpj:          digits(p.cnpj),
-    // inscMun: enviado somente se preenchido em Configurações → Empresa.
-    // Municípios sem dados no CNC NFS-e rejeitam o campo com E0120 → usuário deixa vazio.
-    // Municípios que exigem IM rejeitam a ausência com E0116 → usuário preenche.
-    inscMun:       p.inscricao_municipal || null,
+    inscMun:       inscMunResolved,
     razaoSocial:   p.company_name || 'Prestador',
-    municipioIbge: p.nfse_municipio_ibge,
+    municipioIbge: municipioIbgeResolved,
     serie:         serieRaw,
     numero:        novNumero,
     // cTribNac: código de tributação nacional (6 dígitos) — resolvido por prioridade acima
@@ -692,7 +702,7 @@ ${infoComplXml}
 <tribMun>
 <tribISSQN>1</tribISSQN>
 <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
-${(!isSimples || tpRetISSQN === 2) ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</tribMun>
+${tpRetISSQN === 2 ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</tribMun>
 ${hasRetFed ? `<tribFed>\n${tribFedInnerXml}</tribFed>\n` : ''}${totTribXml}
 </trib>
 </valores>

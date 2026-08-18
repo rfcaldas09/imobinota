@@ -67,7 +67,7 @@ const mkRetDefaults = (profile) => ({
   pINSS:   profile?.ret_inss   != null ? String(profile.ret_inss).replace('.', ',')   : NAT_RET_DEFAULT.pINSS,
 })
 
-const mkBlankForm = (retDefaults = NAT_RET_DEFAULT, reformaDefaults = {}) => ({
+const mkBlankForm = (retDefaults = NAT_RET_DEFAULT, reformaDefaults = {}, nfseDefaults = {}) => ({
   nome: '', cpfCnpj: '', email: '',
   valor: '', discriminacao: '', mesRef: nowMonth(), codLc116: '',
   // Endereço do tomador (obrigatório quando ISS é retido)
@@ -75,6 +75,9 @@ const mkBlankForm = (retDefaults = NAT_RET_DEFAULT, reformaDefaults = {}) => ({
   // Retenções — federais pré-preenchidas com defaults do perfil (ou padrão nacional)
   issRetido: false,
   ...retDefaults,
+  // NFS-e por nota: município emissor e IM do prestador (pré-preenchidos com valores do perfil)
+  prestMunicipioIbge:      nfseDefaults.municipioIbge      || '',
+  prestInscricaoMunicipal: nfseDefaults.inscricaoMunicipal || '',
   // Reforma Tributária (IBS/CBS) — informativos, pré-preenchidos com defaults do perfil
   nbs:        reformaDefaults.nbs        || '',
   cst:        reformaDefaults.cst        || '',
@@ -136,8 +139,8 @@ function StatusBadge({ status }) {
 const PRAZO_CANCEL_MS = 48 * 60 * 60 * 1000
 
 // ── Modal: adicionar/editar tomador ────────────────────────────────
-function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, reformaDefaults = {} }) {
-  const [f, setF]       = useState(initial || mkBlankForm(retDefaults, reformaDefaults))
+function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, reformaDefaults = {}, nfseDefaults = {} }) {
+  const [f, setF]       = useState(initial || mkBlankForm(retDefaults, reformaDefaults, nfseDefaults))
   const set = k => e   => setF(p => ({ ...p, [k]: e.target.value }))
   const setPct = k => e => setF(p => ({ ...p, [k]: maskPct(e.target.value) }))
   const [err, setErr]         = useState('')
@@ -402,6 +405,41 @@ function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, 
                 </div>
               </div>
             )}
+          </div>
+
+          {/* ── Município emissor e IM do prestador (por nota) ── */}
+          <div className="border border-indigo-200 bg-indigo-50 rounded-xl px-4 py-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-indigo-700">🏙️ Município e Inscrição Municipal do Prestador</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-slate-500 block mb-1">Código IBGE (7 dígitos)</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={7}
+                  value={f.prestMunicipioIbge}
+                  onChange={e => setF(p => ({ ...p, prestMunicipioIbge: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
+                  placeholder="ex: 8105005"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 block mb-1">Inscrição Municipal (IM)</label>
+                <input
+                  type="text"
+                  value={f.prestInscricaoMunicipal}
+                  onChange={e => setF(p => ({ ...p, prestInscricaoMunicipal: e.target.value }))}
+                  placeholder="Deixe vazio se não exigido"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-indigo-600 leading-snug">
+              Pré-preenchido com os valores do perfil. Altere por nota se o serviço for emitido em outro município.
+              Deixe a IM vazia se o município não exigir (evita erro E0120).
+            </p>
           </div>
 
           {/* ── Reforma Tributária (IBS/CBS) — informativos ── */}
@@ -816,10 +854,11 @@ export default function NfseAvulsa() {
   const [retDefaults, setRetDefaults] = useState(NAT_RET_DEFAULT)
   const [issAliquota, setIssAliquota] = useState(0) // alíquota ISS próprio do perfil (%)
   const [reformaDefaults, setReformaDefaults] = useState({}) // NBS/CST/cIndOp/cClassTrib do perfil
+  const [nfseDefaults, setNfseDefaults] = useState({}) // município e IM do prestador (defaults por nota)
   useEffect(() => {
     if (!user) return
     supabase.from('profiles')
-      .select('ret_irrf, ret_csll, ret_cofins, ret_pis, ret_inss, aliquota_iss, nfse_nbs, nfse_cst, nfse_cindop, nfse_cclasstrib')
+      .select('ret_irrf, ret_csll, ret_cofins, ret_pis, ret_inss, aliquota_iss, nfse_nbs, nfse_cst, nfse_cindop, nfse_cclasstrib, nfse_municipio_ibge, inscricao_municipal')
       .eq('id', user.id)
       .maybeSingle()
       .then(({ data }) => {
@@ -831,6 +870,10 @@ export default function NfseAvulsa() {
             cst:        data.nfse_cst        || '',
             cindop:     data.nfse_cindop     || '',
             cclasstrib: data.nfse_cclasstrib || '',
+          })
+          setNfseDefaults({
+            municipioIbge:      data.nfse_municipio_ibge   || '',
+            inscricaoMunicipal: data.inscricao_municipal   || '',
           })
         }
       })
@@ -961,6 +1004,9 @@ export default function NfseAvulsa() {
                 cep:        item.tamaCep        || '',
                 codMun:     item.tamaCodMun     || '',
               } : null,
+              // Por nota: município emissor e IM do prestador (sobrepõem o perfil se preenchidos)
+              prestMunicipioIbge:      item.prestMunicipioIbge      || null,
+              prestInscricaoMunicipal: item.prestInscricaoMunicipal ?? null,
             },
             homologacao: false,
           }),
@@ -1557,6 +1603,7 @@ export default function NfseAvulsa() {
           retDefaults={retDefaults}
           issAliquota={issAliquota}
           reformaDefaults={reformaDefaults}
+          nfseDefaults={nfseDefaults}
         />
       )}
 
