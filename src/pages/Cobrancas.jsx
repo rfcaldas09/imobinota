@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useSubscription } from '../contexts/SubscriptionContext'
 import { emitirCobrancas, emitirUmaCobranca, mesLabel, mesStr, MESES } from '../lib/cobrancas'
 import MonthPicker from '../components/MonthPicker'
-import OnboardingWizard, { OnboardingBanner } from '../components/OnboardingWizard'
+import OnboardingWizard, { OnboardingBanner, useOnboarding } from '../components/OnboardingWizard'
 
 const ic = (d, cls='') => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -1413,7 +1413,7 @@ export default function Cobrancas() {
   const { user }    = useAuth()
   const { isActive } = useSubscription()
   const navigate    = useNavigate()
-  const [showWizard, setShowWizard] = useState(false)
+  const { certSet, loading: onboardingLoading } = useOnboarding()
   const [mesRef, setMesRef]       = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1))
   const [cobrancas, setCobrancas] = useState([])
   const [contracts, setContracts] = useState([])
@@ -1427,7 +1427,7 @@ export default function Cobrancas() {
   const [nfseViewCob, setNfseViewCob] = useState(null) // cobrança para "Ver NFS-e"
   const [addCob, setAddCob]       = useState(false) // abrir modal de adicionar cobrança
 
-  // Carrega chave PIX do perfil
+  // Carrega chave PIX do perfil (ainda necessária para o BoletoPIXModal)
   useEffect(() => {
     if (!user) return
     supabase.from('profiles').select('pix_key_recebimento').eq('id', user.id).single()
@@ -1529,8 +1529,7 @@ export default function Cobrancas() {
   return (
     <div className="p-6 space-y-5 max-w-6xl mx-auto">
       {/* Banner de onboarding — visível se chave PIX ainda não configurada */}
-      {!pixKey && <OnboardingBanner onOpen={() => setShowWizard(true)} />}
-      {showWizard && <OnboardingWizard onComplete={() => { setShowWizard(false); supabase.from('profiles').select('pix_key_recebimento').eq('id', user.id).single().then(({ data }) => setPixKey(data?.pix_key_recebimento || null)) }} />}
+      {!onboardingLoading && !certSet && <OnboardingBanner />}
 
       {/* ── Header ─────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

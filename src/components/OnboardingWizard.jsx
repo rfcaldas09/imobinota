@@ -284,16 +284,16 @@ O uso da plataforma implica a concordância integral com todas as disposições 
 // ─────────────────────────────────────────────────────────────────────────────
 export function useOnboarding() {
   const { user } = useAuth()
-  const [state, setState] = useState({ loading: true, wizardOpen: false, pixSet: false, termsOnly: false })
+  const [state, setState] = useState({ loading: true, wizardOpen: false, certSet: false, termsOnly: false })
 
   const check = useCallback(async () => {
-    if (!user) { setState({ loading: false, wizardOpen: false, pixSet: false, termsOnly: false }); return }
+    if (!user) { setState({ loading: false, wizardOpen: false, certSet: false, termsOnly: false }); return }
     const { data } = await supabase
       .from('profiles')
-      .select('pix_key_recebimento, company_name, cnpj, onboarding_done, termos_aceite_at')
+      .select('nfse_cert_path, company_name, cnpj, onboarding_done, termos_aceite_at')
       .eq('id', user.id)
       .maybeSingle()
-    const pixSet           = !!data?.pix_key_recebimento
+    const certSet          = !!data?.nfse_cert_path
     const profileComplete  = !!(data?.company_name && data?.cnpj)
     const dismissed        = !!data?.onboarding_done
     const termsAccepted    = !!data?.termos_aceite_at
@@ -302,18 +302,20 @@ export function useOnboarding() {
       await supabase.from('profiles').update({ onboarding_done: true }).eq('id', user.id)
     }
     const needsOnboarding = !dismissed && !profileComplete
-    const wizardOpen      = needsOnboarding || !termsAccepted
-    // termsOnly: usuário já concluiu onboarding mas ainda não aceitou os termos
-    const termsOnly       = !needsOnboarding && !termsAccepted
-    setState({ loading: false, wizardOpen, pixSet, termsOnly })
+    // Wizard só abre para usuários não-dismissed. Usuários com onboarding_done=true
+    // (inclusive os que foram auto-dismissed acima) nunca veem o modal novamente.
+    const wizardOpen      = !dismissed && (!profileComplete || !termsAccepted)
+    // termsOnly: usuário ainda não completou o cadastro mas precisa aceitar os termos
+    const termsOnly       = !needsOnboarding && !termsAccepted && !dismissed
+    setState({ loading: false, wizardOpen, certSet, termsOnly })
   }, [user])
 
   useEffect(() => { check() }, [check])
 
   const openWizard  = () => setState(s => ({ ...s, wizardOpen: true }))
-  const closeWizard = async (pixConfigured = false) => {
+  const closeWizard = async () => {
     if (user) await supabase.from('profiles').update({ onboarding_done: true }).eq('id', user.id)
-    setState(s => ({ ...s, wizardOpen: false, pixSet: pixConfigured || s.pixSet }))
+    setState(s => ({ ...s, wizardOpen: false }))
   }
 
   return { ...state, openWizard, closeWizard }
@@ -322,19 +324,20 @@ export function useOnboarding() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Banner compacto
 // ─────────────────────────────────────────────────────────────────────────────
-export function OnboardingBanner({ onOpen }) {
+export function OnboardingBanner() {
+  const navigate = useNavigate()
   return (
     <div className="bg-amber-50 border border-amber-300 border-l-4 border-l-amber-500 rounded-2xl px-5 py-4 flex items-center gap-4 mb-5">
       <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-xl shrink-0">⚠️</div>
       <div className="flex-1 min-w-0">
-        <p className="font-bold text-amber-900 text-sm">Configure sua conta para emitir NFS-e</p>
+        <p className="font-bold text-amber-900 text-sm">Certificado Digital A1 não configurado</p>
         <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
-          Para emitir notas fiscais e gerar cobranças automaticamente, complete o cadastro básico em menos de 3 minutos.
+          Faça o upload do seu certificado .pfx em <strong>Configurações → Empresa</strong> para habilitar a emissão de NFS-e.
         </p>
       </div>
-      <button onClick={onOpen}
+      <button onClick={() => navigate('/config')}
         className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors whitespace-nowrap shadow-sm">
-        Configurar agora →
+        Ir para Configurações →
       </button>
     </div>
   )

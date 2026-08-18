@@ -1229,7 +1229,7 @@ const mapRow = row => ({
 // ── Página principal ───────────────────────────────────────────────
 export default function Contratos() {
   const { user }  = useAuth()
-  const { pixSet } = useOnboarding()
+  const { certSet, loading: onboardingLoading } = useOnboarding()
 
   // Defaults de retenção do perfil do usuário
   const [retDefaults, setRetDefaults] = useState(NAT_RET_DEFAULT_CTR)
@@ -1556,8 +1556,7 @@ export default function Contratos() {
   return (
     <div className="p-6 space-y-5 max-w-7xl mx-auto">
       {/* Banner de onboarding — visível se chave PIX ainda não configurada */}
-      {!pixSet && <OnboardingBanner onOpen={() => setShowWizard(true)} />}
-      {showWizard && <OnboardingWizard onComplete={() => setShowWizard(false)} />}
+      {!onboardingLoading && !certSet && <OnboardingBanner />}
 
       {/* Header */}
       <div className="flex items-center justify-between">
