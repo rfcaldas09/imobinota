@@ -6,6 +6,7 @@ import { useNfseReadiness } from '../contexts/NfseReadinessContext'
 import { LC116 } from '../lib/lc116'
 import { MUNICIPIOS_SUL } from '../lib/municipios'
 import { CST_OPTIONS, CINDOP_OPTIONS } from '../lib/reforma-tributaria'
+import { CCLASSTRIB_OPTIONS } from '../lib/lc116-reforma'
 import { getReformaByLc116 } from '../lib/lc116-reforma'
 import NbsPicker from '../components/NbsPicker'
 
@@ -937,18 +938,18 @@ export default function Config() {
                   {/* cClassTrib */}
                   <div>
                     <label className="text-xs font-medium text-slate-500 block mb-1">
-                      cClassTrib — Classificação Tributária (6 dígitos)
+                      cClassTrib — Classificação Tributária
                     </label>
-                    <input
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-mono placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                    <select
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
                       value={f.cclasstrib}
-                      onChange={e => set('cclasstrib', e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      placeholder="Ex: 800100"
-                      maxLength={6}
-                    />
-                    <p className="text-xs text-slate-400 mt-1">
-                      6 dígitos — os 2 primeiros correspondem ao CST. Consulte o Anexo VIII da CGNFS-e.
-                    </p>
+                      onChange={e => set('cclasstrib', e.target.value)}
+                    >
+                      <option value="">— Selecione a Classificação Tributária —</option>
+                      {CCLASSTRIB_OPTIONS.map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>

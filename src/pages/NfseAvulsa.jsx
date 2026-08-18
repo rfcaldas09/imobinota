@@ -5,7 +5,7 @@ import Lc116Picker from '../components/Lc116Picker'
 import MonthPicker from '../components/MonthPicker'
 import * as XLSX from 'xlsx'
 import { CST_OPTIONS, CINDOP_OPTIONS } from '../lib/reforma-tributaria'
-import { getReformaByLc116 } from '../lib/lc116-reforma'
+import { getReformaByLc116, CCLASSTRIB_OPTIONS } from '../lib/lc116-reforma'
 import NbsPicker from '../components/NbsPicker'
 
 // ── Ícones inline ──────────────────────────────────────────────────
@@ -440,14 +440,17 @@ function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, 
             </div>
             {/* cClassTrib */}
             <div>
-              <label className="text-xs font-medium text-slate-500 block mb-1">cClassTrib — Classificação Tributária (6 dígitos)</label>
-              <input
+              <label className="text-xs font-medium text-slate-500 block mb-1">cClassTrib — Classificação Tributária</label>
+              <select
                 value={f.cclasstrib}
-                onChange={e => setF(p => ({ ...p, cclasstrib: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
-                placeholder="Ex: 800100"
-                maxLength={6}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white font-mono"
-              />
+                onChange={e => setF(p => ({ ...p, cclasstrib: e.target.value }))}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white"
+              >
+                <option value="">— Selecione a Classificação Tributária —</option>
+                {CCLASSTRIB_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
             </div>
           </div>
 

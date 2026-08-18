@@ -220,4 +220,11 @@ export function getReformaByLc116(lc116) {
   return REFORMA_MAP[lc116] ?? null
 }
 
+// Lista única de cClassTrib para uso em dropdowns
+const _seen = new Set()
+export const CCLASSTRIB_OPTIONS = Object.values(REFORMA_MAP)
+  .filter(v => v.cclasstrib && !_seen.has(v.cclasstrib) && _seen.add(v.cclasstrib))
+  .map(v => ({ value: v.cclasstrib, label: `${v.cclasstrib} — ${v.cclasstrib_nome}` }))
+  .sort((a, b) => a.value.localeCompare(b.value))
+
 export default REFORMA_MAP
