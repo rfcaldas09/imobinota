@@ -794,6 +794,12 @@ function NfseViewModal({ cob, user, onClose }) {
                         {em.chave_acesso.slice(0, 30)}…
                       </p>
                     )}
+                    {em.status === 'erro' && em.erro_msg && (
+                      <div className="mt-1.5 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                        <p className="text-[11px] font-semibold text-red-600 mb-0.5">Detalhes do erro:</p>
+                        <p className="text-xs text-red-700 whitespace-pre-wrap break-words select-all">{em.erro_msg}</p>
+                      </div>
+                    )}
                   </div>
                   {em.status !== 'erro' && (
                   <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -888,12 +894,34 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
     if (!user || !contracts.length) return
     setPreview(null)
     const ref = mesStr(mesRef)
-    supabase.from('cobrancas').select('contrato_id')
+
+    // Busca cobrancas do mês e, para cada uma, a última NFS-e emitida
+    supabase.from('cobrancas').select('id, contrato_id')
       .eq('user_id', user.id).eq('mes_referencia', ref)
-      .then(({ data }) => {
-        const ids = new Set((data || []).map(e => e.contrato_id))
-        const pendingContracts = contracts.filter(c => !ids.has(c.id))
-        setPreview({ toCreate: pendingContracts.length, skipped: contracts.length - pendingContracts.length, pendingContracts })
+      .then(async ({ data: cobs }) => {
+        const cobsByContrato = {}
+        for (const c of (cobs || [])) cobsByContrato[c.contrato_id] = c.id
+
+        // Verifica quais cobrancas têm NFS-e com sucesso (não apenas erro)
+        const cobIds = Object.values(cobsByContrato)
+        let okCobIds = new Set()
+        if (cobIds.length) {
+          const { data: emissoes } = await supabase
+            .from('nfse_emissoes')
+            .select('cobranca_id, status')
+            .in('cobranca_id', cobIds)
+            .in('status', ['emitida', 'cancelada'])
+          for (const em of (emissoes || [])) okCobIds.add(em.cobranca_id)
+        }
+
+        // Pendente = sem cobrança OU cobrança sem NFS-e de sucesso (só erro)
+        const pendingContracts = contracts.filter(c => {
+          const cobId = cobsByContrato[c.id]
+          if (!cobId) return true          // sem cobrança → pendente
+          return !okCobIds.has(cobId)      // cobrança existe mas só tem erro → pendente
+        })
+        const skipped = contracts.length - pendingContracts.length
+        setPreview({ toCreate: pendingContracts.length, skipped, pendingContracts })
       })
   }, [mesRef, user, contracts])
 
@@ -1736,11 +1764,6 @@ export default function Cobrancas() {
       {/* ── Filtros + Ações ────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <MonthPicker value={mesRef} onChange={v => { setMesRef(v); setFilter('Todos') }}/>
-          <button onClick={load} disabled={loading} title="Atualizar"
-            className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40">
-            <IcRefresh c={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}/>
-          </button>
           <div className="flex bg-white border border-slate-200 rounded-xl p-1 gap-1">
             {FILTERS.map(f => (
               <button key={f} onClick={() => setFilter(f)}
@@ -1749,6 +1772,11 @@ export default function Cobrancas() {
               </button>
             ))}
           </div>
+          <MonthPicker value={mesRef} onChange={v => { setMesRef(v); setFilter('Todos') }}/>
+          <button onClick={load} disabled={loading} title="Atualizar"
+            className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40">
+            <IcRefresh c={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}/>
+          </button>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setAddCob(true)}
