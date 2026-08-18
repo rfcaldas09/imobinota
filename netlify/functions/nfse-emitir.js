@@ -90,7 +90,10 @@ async function handle(event) {
   if (!p.inscricao_municipal) return { statusCode: 400, body: JSON.stringify({ error: 'Inscrição Municipal não configurada em Configurações → Empresa' }) }
   if (!p.nfse_municipio_ibge) return { statusCode: 400, body: JSON.stringify({ error: 'Código IBGE do município não configurado em Configurações → Fiscal' }) }
   if (!p.nfse_cert_path) return { statusCode: 400, body: JSON.stringify({ error: 'Certificado digital A1 não enviado em Configurações → Empresa' }) }
-  if (!p.aliquota_iss) return { statusCode: 400, body: JSON.stringify({ error: 'Alíquota ISS não configurada em Configurações → Fiscal' }) }
+  // Simples Nacional/MEI: alíquota ISS só é exigida quando ISS é retido pelo tomador (tpRetISSQN=2)
+  // Para tpRetISSQN=1, pAliq não deve ser enviado (E0625), então a alíquota é opcional
+  const _isSimplesPrestador = ['simples', 'mei'].includes((p.regime_tributario || '').toLowerCase())
+  if (!_isSimplesPrestador && !p.aliquota_iss) return { statusCode: 400, body: JSON.stringify({ error: 'Alíquota ISS não configurada em Configurações → Fiscal' }) }
 
   // ── 2. Incrementa número da DPS ───────────────────────────────
   const novNumero = (p.nfse_ultimo_numero || 0) + 1
@@ -681,7 +684,7 @@ ${infoComplXml}
 <tribMun>
 <tribISSQN>1</tribISSQN>
 <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
-${(isSimples || tpRetISSQN === 2) ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</tribMun>
+${(!isSimples || tpRetISSQN === 2) ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</tribMun>
 ${hasRetFed ? `<tribFed>\n${tribFedInnerXml}</tribFed>\n` : ''}${totTribXml}
 </trib>
 </valores>
