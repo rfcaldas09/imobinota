@@ -509,7 +509,10 @@ function buildDpsXml(cfg, cob, homologacao) {
   // Discriminação do serviço:
   // Usa o texto informado pelo usuário (fixo no contrato ou capturado mensalmente).
   // Se não informado, não envia nada — o campo xInfComp fica omitido.
-  const discrim = cob.discriminacao ? String(cob.discriminacao).trim() : ''
+  // TSDescInfCompl não permite \n ou \r (Pattern constraint) — substitui quebras de linha por espaço.
+  const discrim = cob.discriminacao
+    ? String(cob.discriminacao).replace(/[\r\n]+/g, ' ').trim()
+    : ''
 
   // vServ: DEVE ser string com 2 casas decimais (XSD TSDec15V2)
   const vServ = Number(cob.totalValue).toFixed(2)
