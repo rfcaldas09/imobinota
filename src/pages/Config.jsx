@@ -568,7 +568,12 @@ export default function Config() {
                 setCertMsg(null)
                 try {
                   // 1. Sobe o arquivo para Supabase Storage: certificados-nfse/{userId}/{filename}
-                  const path = `${user.id}/${Date.now()}_${file.name}`
+                  // Sanitiza o nome: remove acentos, substitui espaços e caracteres especiais
+                  const safeName = file.name
+                    .normalize('NFD').replace(/[̀-ͯ]/g, '') // remove acentos
+                    .replace(/[^a-zA-Z0-9._-]/g, '_')                // troca o resto por _
+                    .replace(/_+/g, '_')                              // colapsa múltiplos _
+                  const path = `${user.id}/${Date.now()}_${safeName}`
                   const { error } = await supabase.storage
                     .from('certificados-nfse')
                     .upload(path, file, { upsert: true, contentType: 'application/x-pkcs12' })
