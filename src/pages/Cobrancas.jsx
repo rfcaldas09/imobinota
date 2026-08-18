@@ -100,6 +100,12 @@ const mapCob = (row, lastNfse = null) => {
     pCOFINS: Number(row.contratos?.pct_cofins) || null,
     pPIS:    Number(row.contratos?.pct_pis)    || null,
     pINSS:   Number(row.contratos?.pct_inss)   || null,
+    tomaLogradouro: row.contratos?.toma_logradouro || '',
+    tomaNumero:     row.contratos?.toma_numero     || '',
+    tamaBairro:     row.contratos?.toma_bairro     || '',
+    tamaCep:        row.contratos?.toma_cep        || '',
+    tamaCodMun:     row.contratos?.toma_cod_mun    || '',
+    tamaMunNome:    row.contratos?.toma_mun_nome   || '',
     dueDay:          row.dia_vencimento,
     status:          row.status || 'Pendente',
     mesRef:          row.mes_referencia,
@@ -430,6 +436,13 @@ function NfseModal({ cob, user, onClose }) {
             iptu:             cob.iptu,
             codServicoLc116:  cob.codServicoLc116 || null,
             discriminacao:    discriminacao        || null,
+            tomadorEnd: {
+              logradouro: cob.tomaLogradouro || '',
+              numero:     cob.tomaNumero     || 'S/N',
+              bairro:     cob.tamaBairro     || '',
+              cep:        cob.tamaCep        || '',
+              codMun:     cob.tamaCodMun     || '',
+            },
             retencoes: {
               tpRetISSQN: cob.issRetido ? 2 : 1,
               pIRRF:   cob.pIRRF   || null,
@@ -857,7 +870,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
     const ref = mesStr(mesRef)
     const { data: cobsDoMes } = await supabase
       .from('cobrancas')
-      .select('id, valor_total, mes_referencia, contrato_id, contratos(imovel, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, seguro_financeiro, seguro_incendio, iptu, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss), inquilinos(nome, cpf, email)')
+      .select('id, valor_total, mes_referencia, contrato_id, contratos(imovel, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, seguro_financeiro, seguro_incendio, iptu, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss, toma_logradouro, toma_numero, toma_bairro, toma_cep, toma_cod_mun, toma_mun_nome), inquilinos(nome, cpf, email)')
       .eq('user_id', user.id)
       .eq('mes_referencia', ref)
       .in('contrato_id', activeContracts.map(c => c.id))
@@ -876,6 +889,17 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
       codServicoLc116:             cob.contratos?.cod_servico_lc116             || null,
       discriminacaoServico:        cob.contratos?.discriminacao_servico         || '',
       solicitarDiscriminacaoMensal: !!cob.contratos?.solicitar_discriminacao_mensal,
+      issRetido:  !!cob.contratos?.iss_retido,
+      pIRRF:   cob.contratos?.pct_irrf   || null,
+      pCSLL:   cob.contratos?.pct_csll   || null,
+      pCOFINS: cob.contratos?.pct_cofins || null,
+      pPIS:    cob.contratos?.pct_pis    || null,
+      pINSS:   cob.contratos?.pct_inss   || null,
+      tomaLogradouro: cob.contratos?.toma_logradouro || '',
+      tomaNumero:     cob.contratos?.toma_numero     || '',
+      tamaBairro:     cob.contratos?.toma_bairro     || '',
+      tamaCep:        cob.contratos?.toma_cep        || '',
+      tamaCodMun:     cob.contratos?.toma_cod_mun    || '',
       mesRef:          cob.mes_referencia,
     }))
   }
@@ -955,6 +979,13 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
               iptu:             cob.iptu,
               codServicoLc116:  cob.codServicoLc116 || null,
               discriminacao,
+              tomadorEnd: {
+                logradouro: cob.tomaLogradouro || '',
+                numero:     cob.tomaNumero     || 'S/N',
+                bairro:     cob.tamaBairro     || '',
+                cep:        cob.tamaCep        || '',
+                codMun:     cob.tamaCodMun     || '',
+              },
               retencoes: {
                 tpRetISSQN: cob.issRetido ? 2 : 1,
                 pIRRF:   cob.pIRRF   || null,
@@ -1426,6 +1457,8 @@ export default function Cobrancas() {
   const [nfseCob, setNfseCob]       = useState(null) // cobrança selecionada para NFS-e
   const [nfseViewCob, setNfseViewCob] = useState(null) // cobrança para "Ver NFS-e"
   const [addCob, setAddCob]       = useState(false) // abrir modal de adicionar cobrança
+  const [editValorCob, setEditValorCob] = useState(null) // cobrança com edição de valor aberta
+  const [editValorInput, setEditValorInput] = useState('') // valor digitado (string formatada BRL)
 
   // Carrega chave PIX do perfil (ainda necessária para o BoletoPIXModal)
   useEffect(() => {
@@ -1443,7 +1476,7 @@ export default function Cobrancas() {
     // Query principal — sem join nfse_emissoes (exige FK formal no banco)
     const { data, error } = await supabase
       .from('cobrancas')
-      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss), inquilinos(nome, cpf, email)')
+      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss, toma_logradouro, toma_numero, toma_bairro, toma_cep, toma_cod_mun, toma_mun_nome), inquilinos(nome, cpf, email)')
       .eq('user_id', user.id)
       .eq('mes_referencia', ref)
       .order('created_at', { ascending: false })
@@ -1524,6 +1557,30 @@ export default function Cobrancas() {
     setUpdatingId(null)
   }
 
+  // ── Editar valor de uma cobrança específica (não altera o contrato) ──
+  const openEditValor = (c) => {
+    setEditValorCob(c)
+    setEditValorInput(String(c.totalValue).replace('.', ','))
+  }
+  const saveEditValor = async () => {
+    if (!editValorCob) return
+    const raw = editValorInput.replace(/\./g, '').replace(',', '.')
+    const novoTotal = parseFloat(raw)
+    if (isNaN(novoTotal) || novoTotal <= 0) return
+    const extras = Number(editValorCob.seguroFinanceiro) + Number(editValorCob.seguroIncendio) + Number(editValorCob.iptu)
+    const novoAluguel = Math.max(0, novoTotal - extras)
+    setUpdatingId(editValorCob.id)
+    await supabase.from('cobrancas').update({
+      valor_total:   novoTotal,
+      valor_aluguel: novoAluguel,
+    }).eq('id', editValorCob.id)
+    setCobrancas(prev => prev.map(c =>
+      c.id === editValorCob.id ? { ...c, totalValue: novoTotal, value: novoAluguel } : c
+    ))
+    setUpdatingId(null)
+    setEditValorCob(null)
+  }
+
   const currentMonth = `${MESES[mesRef.getMonth()]} / ${mesRef.getFullYear()}`
 
   return (
@@ -1594,7 +1651,7 @@ export default function Cobrancas() {
                 ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700 shadow-indigo-200'
                 : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
             }`}>
-            {isActive ? <IcZap c="w-4 h-4"/> : '🔒'} Gerar e Enviar Tudo
+            {isActive ? <IcZap c="w-4 h-4"/> : '🔒'} Gerar e enviar notas do mês
           </button>
         </div>
       </div>
@@ -1630,6 +1687,7 @@ export default function Cobrancas() {
                 <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden lg:table-cell">Venc.</th>
                 <th className="text-right px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Valor</th>
                 <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Status</th>
+                <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden xl:table-cell">Situação</th>
                 <th className="px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide text-right">Ações</th>
               </tr>
             </thead>
@@ -1663,14 +1721,39 @@ export default function Cobrancas() {
                       ) : null}
                     </div>
                   </td>
+                  {/* Coluna Situação — botões de status (visível em telas xl+) */}
+                  <td className="px-3 py-3.5 hidden xl:table-cell">
+                    {updatingId === c.id ? null : (
+                      <div className="flex flex-col items-center gap-1">
+                        {c.status !== 'Pago' && (
+                          <button onClick={() => updateStatus(c.id, 'Pago')}
+                            className="text-xs text-emerald-600 font-semibold hover:underline whitespace-nowrap">
+                            ✓ Marcar Pago
+                          </button>
+                        )}
+                        {c.status === 'Pendente' && (
+                          <button onClick={() => updateStatus(c.id, 'Em Atraso')}
+                            className="text-xs text-red-500 font-semibold hover:underline whitespace-nowrap">
+                            Em Atraso
+                          </button>
+                        )}
+                        {c.status !== 'Pendente' && (
+                          <button onClick={() => updateStatus(c.id, 'Pendente')}
+                            className="text-xs text-amber-600 font-semibold hover:underline whitespace-nowrap">
+                            Voltar p/ pendente
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </td>
+
+                  {/* Coluna Ações — NFS-e + Editar valor */}
                   <td className="px-5 py-3.5 text-right">
                     {updatingId === c.id ? (
                       <div className="w-4 h-4 border-2 border-slate-200 border-t-indigo-500 rounded-full animate-spin inline-block"/>
                     ) : (
                       <div className="flex flex-col items-end gap-1.5">
-                        {/* Linha 1 — Gerar Cobrança (invisível) */}
-
-                        {/* Linha 2 — Emitir NFS-e */}
+                        {/* Emitir NFS-e */}
                         <button
                           onClick={() => isActive ? setNfseCob(c) : null}
                           disabled={!isActive}
@@ -1684,7 +1767,7 @@ export default function Cobrancas() {
                           {isActive ? 'Emitir NFS-e' : '🔒 Emitir NFS-e'}
                         </button>
 
-                        {/* Linha 3 — Ver NFS-e (histórico / PDF) */}
+                        {/* Ver NFS-e */}
                         {isActive && (
                           <button
                             onClick={() => setNfseViewCob(c)}
@@ -1694,8 +1777,15 @@ export default function Cobrancas() {
                           </button>
                         )}
 
-                        {/* Linha 4 — Marcar Pago + status */}
-                        <div className="flex items-center gap-2 w-full justify-end flex-wrap">
+                        {/* Editar valor (para desconto/ajuste pontual) */}
+                        <button
+                          onClick={() => openEditValor(c)}
+                          className="flex items-center gap-1 text-xs font-semibold border px-2.5 py-1 rounded-lg whitespace-nowrap transition-colors w-full justify-center text-slate-600 border-slate-200 bg-slate-50 hover:bg-slate-100">
+                          ✏️ Editar valor
+                        </button>
+
+                        {/* Situação — em telas < xl (mobile) */}
+                        <div className="flex flex-col items-end gap-0.5 xl:hidden mt-1">
                           {c.status !== 'Pago' && (
                             <button onClick={() => updateStatus(c.id, 'Pago')}
                               className="text-xs text-emerald-600 font-semibold hover:underline whitespace-nowrap">
@@ -1727,7 +1817,55 @@ export default function Cobrancas() {
 
       {/* ── Modais ─────────────────────────────────────────── */}
 
-      {/* ── Modais ─────────────────────────────────────────── */}
+      {/* Modal — Editar valor da cobrança (ajuste pontual / desconto) */}
+      {editValorCob && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-bold text-slate-900 text-sm">Editar valor do mês</p>
+                <p className="text-xs text-slate-400 mt-0.5">{editValorCob.tenant} · {refLabel(editValorCob.mesRef)}</p>
+              </div>
+              <button onClick={() => setEditValorCob(null)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">
+                <IcClose c="w-4 h-4"/>
+              </button>
+            </div>
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Altera apenas esta cobrança — o contrato original não será modificado.
+            </p>
+            <div>
+              <label className="text-xs font-semibold text-slate-500 block mb-1">Novo valor total (R$)</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">R$</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={editValorInput}
+                  onChange={e => setEditValorInput(e.target.value.replace(/[^\d,]/g, ''))}
+                  onFocus={e => e.target.select()}
+                  className="w-full pl-9 pr-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-right"
+                />
+              </div>
+              {editValorCob && (Number(editValorCob.seguroFinanceiro) > 0 || Number(editValorCob.seguroIncendio) > 0 || Number(editValorCob.iptu) > 0) && (
+                <p className="text-[11px] text-slate-400 mt-1.5">
+                  Extras incluídos: {fmt(Number(editValorCob.seguroFinanceiro) + Number(editValorCob.seguroIncendio) + Number(editValorCob.iptu))} (seguro/IPTU)
+                </p>
+              )}
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => setEditValorCob(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50">
+                Cancelar
+              </button>
+              <button onClick={saveEditValor}
+                className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm hover:bg-indigo-700">
+                Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showBatch && (
         <BatchModal
           contracts={contracts}

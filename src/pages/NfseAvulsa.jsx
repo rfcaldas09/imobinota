@@ -5,6 +5,7 @@ import Lc116Picker from '../components/Lc116Picker'
 import MonthPicker from '../components/MonthPicker'
 import * as XLSX from 'xlsx'
 import { CST_OPTIONS, CINDOP_OPTIONS } from '../lib/reforma-tributaria'
+import { getReformaByLc116 } from '../lib/lc116-reforma'
 import NbsPicker from '../components/NbsPicker'
 
 // ── Ícones inline ──────────────────────────────────────────────────
@@ -315,7 +316,14 @@ function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, 
             <div className="col-span-2">
               <Lc116Picker
                 value={f.codLc116}
-                onChange={v => setF(p => ({ ...p, codLc116: v }))}
+                onChange={v => {
+                  const r = getReformaByLc116(v)
+                  setF(p => ({
+                    ...p,
+                    codLc116: v,
+                    ...(r ? { nbs: r.nbs, cindop: r.indop, cclasstrib: r.cclasstrib } : {}),
+                  }))
+                }}
                 label="Código LC 116 (opcional)"
               />
             </div>

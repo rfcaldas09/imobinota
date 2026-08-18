@@ -6,6 +6,7 @@ import { useNfseReadiness } from '../contexts/NfseReadinessContext'
 import { LC116 } from '../lib/lc116'
 import { MUNICIPIOS_SUL } from '../lib/municipios'
 import { CST_OPTIONS, CINDOP_OPTIONS } from '../lib/reforma-tributaria'
+import { getReformaByLc116 } from '../lib/lc116-reforma'
 import NbsPicker from '../components/NbsPicker'
 
 // ── Salva senha do certificado via função server-side (criptografa com NFSE_CERT_KEY) ─
@@ -819,7 +820,14 @@ export default function Config() {
               </div>
 
               {/* Código serviço LC 116 — dropdown pesquisável */}
-              <Lc116Picker value={f.codigoServico} onChange={v => set('codigoServico', v)} />
+              <Lc116Picker value={f.codigoServico} onChange={v => {
+                const r = getReformaByLc116(v)
+                setF(p => ({
+                  ...p,
+                  codigoServico: v,
+                  ...(r ? { nbs: r.nbs, cindop: r.indop, cclasstrib: r.cclasstrib } : {}),
+                }))
+              }} />
 
               {/* Descrição do serviço (xDescServ na NFS-e) */}
               <Row
