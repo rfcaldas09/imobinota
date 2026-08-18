@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import Lc116Picker from '../components/Lc116Picker'
 import MonthPicker from '../components/MonthPicker'
 import * as XLSX from 'xlsx'
+import { CST_OPTIONS, CINDOP_OPTIONS } from '../lib/reforma-tributaria'
 
 // ── Ícones inline ──────────────────────────────────────────────────
 const ic = (d, cls = '') => (
@@ -63,7 +64,7 @@ const mkRetDefaults = (profile) => ({
   pINSS:   profile?.ret_inss   != null ? String(profile.ret_inss).replace('.', ',')   : NAT_RET_DEFAULT.pINSS,
 })
 
-const mkBlankForm = (retDefaults = NAT_RET_DEFAULT) => ({
+const mkBlankForm = (retDefaults = NAT_RET_DEFAULT, reformaDefaults = {}) => ({
   nome: '', cpfCnpj: '', email: '',
   valor: '', discriminacao: '', mesRef: nowMonth(), codLc116: '',
   // Endereço do tomador (obrigatório quando ISS é retido)
@@ -71,6 +72,11 @@ const mkBlankForm = (retDefaults = NAT_RET_DEFAULT) => ({
   // Retenções — federais pré-preenchidas com defaults do perfil (ou padrão nacional)
   issRetido: false,
   ...retDefaults,
+  // Reforma Tributária (IBS/CBS) — informativos, pré-preenchidos com defaults do perfil
+  nbs:        reformaDefaults.nbs        || '',
+  cst:        reformaDefaults.cst        || '',
+  cindop:     reformaDefaults.cindop     || '',
+  cclasstrib: reformaDefaults.cclasstrib || '',
 })
 
 const maskPct = v => {
@@ -127,8 +133,8 @@ function StatusBadge({ status }) {
 const PRAZO_CANCEL_MS = 48 * 60 * 60 * 1000
 
 // ── Modal: adicionar/editar tomador ────────────────────────────────
-function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0 }) {
-  const [f, setF]       = useState(initial || mkBlankForm(retDefaults))
+function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, reformaDefaults = {} }) {
+  const [f, setF]       = useState(initial || mkBlankForm(retDefaults, reformaDefaults))
   const set = k => e   => setF(p => ({ ...p, [k]: e.target.value }))
   const setPct = k => e => setF(p => ({ ...p, [k]: maskPct(e.target.value) }))
   const [err, setErr]         = useState('')
@@ -386,6 +392,64 @@ function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0 }
                 </div>
               </div>
             )}
+          </div>
+
+          {/* ── Reforma Tributária (IBS/CBS) — informativos ── */}
+          <div className="border border-violet-200 bg-violet-50 rounded-xl px-4 py-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-violet-700">🏛️ Reforma Tributária — IBS/CBS</span>
+              <span className="text-xs text-violet-500">Informativo — não enviado no XML</span>
+            </div>
+            {/* NBS */}
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">NBS — Nomenclatura Brasileira de Serviços</label>
+              <input
+                value={f.nbs}
+                onChange={e => setF(p => ({ ...p, nbs: e.target.value.replace(/\D/g, '').slice(0, 9) }))}
+                placeholder="Ex: 101010100"
+                maxLength={9}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white font-mono"
+              />
+            </div>
+            {/* CST */}
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">CST — Código de Situação Tributária</label>
+              <select
+                value={f.cst}
+                onChange={e => setF(p => ({ ...p, cst: e.target.value }))}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white"
+              >
+                <option value="">— Selecione o CST —</option>
+                {CST_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            {/* cIndOp */}
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">cIndOp — Indicador de Operação</label>
+              <select
+                value={f.cindop}
+                onChange={e => setF(p => ({ ...p, cindop: e.target.value }))}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white"
+              >
+                <option value="">— Selecione o Indicador de Operação —</option>
+                {CINDOP_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            {/* cClassTrib */}
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">cClassTrib — Classificação Tributária (6 dígitos)</label>
+              <input
+                value={f.cclasstrib}
+                onChange={e => setF(p => ({ ...p, cclasstrib: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                placeholder="Ex: 800100"
+                maxLength={6}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white font-mono"
+              />
+            </div>
           </div>
 
           {err && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{err}</p>}
@@ -748,16 +812,23 @@ export default function NfseAvulsa() {
   // Defaults de retenção do perfil do usuário
   const [retDefaults, setRetDefaults] = useState(NAT_RET_DEFAULT)
   const [issAliquota, setIssAliquota] = useState(0) // alíquota ISS próprio do perfil (%)
+  const [reformaDefaults, setReformaDefaults] = useState({}) // NBS/CST/cIndOp/cClassTrib do perfil
   useEffect(() => {
     if (!user) return
     supabase.from('profiles')
-      .select('ret_irrf, ret_csll, ret_cofins, ret_pis, ret_inss, aliquota_iss')
+      .select('ret_irrf, ret_csll, ret_cofins, ret_pis, ret_inss, aliquota_iss, nfse_nbs, nfse_cst, nfse_cindop, nfse_cclasstrib')
       .eq('id', user.id)
       .maybeSingle()
       .then(({ data }) => {
         if (data) {
           setRetDefaults(mkRetDefaults(data))
           setIssAliquota(parseFloat(data.aliquota_iss || 0) || 0)
+          setReformaDefaults({
+            nbs:        data.nfse_nbs        || '',
+            cst:        data.nfse_cst        || '',
+            cindop:     data.nfse_cindop     || '',
+            cclasstrib: data.nfse_cclasstrib || '',
+          })
         }
       })
   }, [user])
@@ -1404,6 +1475,7 @@ export default function NfseAvulsa() {
           onClose={() => { setShowModal(false); setEditIdx(null) }}
           retDefaults={retDefaults}
           issAliquota={issAliquota}
+          reformaDefaults={reformaDefaults}
         />
       )}
 

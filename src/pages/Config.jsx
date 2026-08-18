@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useNfseReadiness } from '../contexts/NfseReadinessContext'
 import { LC116 } from '../lib/lc116'
 import { MUNICIPIOS_SUL } from '../lib/municipios'
+import { CST_OPTIONS, CINDOP_OPTIONS } from '../lib/reforma-tributaria'
 
 // ── Salva senha do certificado via função server-side (criptografa com NFSE_CERT_KEY) ─
 async function salvarSenhaCert(password, certPath, jwt) {
@@ -302,6 +303,11 @@ export default function Config() {
           municipioNome: data?.nfse_municipio_nome  || '',
           codigoServico: data?.nfse_codigo_servico  || '6.04',
           descServico:   data?.nfse_desc_servico    || '',
+          // Reforma Tributária (IBS/CBS) — informativos
+          nbs:        data?.nfse_nbs        || '',
+          cst:        data?.nfse_cst        || '',
+          cindop:     data?.nfse_cindop     || '',
+          cclasstrib: data?.nfse_cclasstrib || '',
           logradouro:    data?.nfse_logradouro      || '',
           numeroEnd:     data?.nfse_numero_end      || '',
           bairro:        data?.nfse_bairro          || '',
@@ -387,6 +393,11 @@ export default function Config() {
         nfse_bairro:         f.bairro,
         nfse_cep:            f.cep,
         nfse_ultimo_numero:  Math.max(0, parseInt(f.numeroInicial || '1', 10) - 1),
+        // Reforma Tributária (IBS/CBS) — informativos
+        nfse_nbs:        f.nbs        || null,
+        nfse_cst:        f.cst        || null,
+        nfse_cindop:     f.cindop     || null,
+        nfse_cclasstrib: f.cclasstrib || null,
       })
     } else if (tab === 'email') {
       Object.assign(payload, {
@@ -863,6 +874,94 @@ export default function Config() {
                 <p className="text-xs text-slate-400 mt-1">
                   A próxima NFS-e emitida receberá este número. Altere apenas se precisar continuar a sequência de outro sistema.
                 </p>
+              </div>
+
+              {/* ─── Reforma Tributária (IBS/CBS) ─────────────────────────── */}
+              <div className="border-t border-slate-200 pt-4 mt-2">
+                <div className="flex items-start gap-2 mb-3">
+                  <span className="inline-flex items-center gap-1.5 bg-violet-100 text-violet-800 text-xs font-semibold px-2.5 py-1 rounded-full">
+                    🏛️ Reforma Tributária — IBS/CBS
+                  </span>
+                  <span className="text-xs text-slate-400 mt-0.5">
+                    Campos informativos — não enviados no XML ainda
+                  </span>
+                </div>
+                <p className="text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-md px-3 py-2 mb-3">
+                  Obrigatório para <strong>Lucro Real/Presumido</strong> a partir de 03/08/2026 e para <strong>Simples Nacional</strong> a partir de 01/01/2027. Configure agora para facilitar a ativação. Estes valores serão usados como padrão nas notas emitidas.
+                </p>
+
+                <div className="space-y-3">
+                  {/* NBS */}
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">
+                      NBS — Nomenclatura Brasileira de Serviços
+                    </label>
+                    <input
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-mono placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                      value={f.nbs}
+                      onChange={e => set('nbs', e.target.value.replace(/\D/g, '').slice(0, 9))}
+                      placeholder="Ex: 101010100"
+                      maxLength={9}
+                    />
+                    <p className="text-xs text-slate-400 mt-1">
+                      Código de 9 dígitos. Consulte a tabela em{' '}
+                      <a href="https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/legislacao/documentos-e-arquivos/nbs-2023.xlsx"
+                        target="_blank" rel="noreferrer"
+                        className="text-violet-600 underline">NBS oficial (Receita Federal)</a>.
+                    </p>
+                  </div>
+
+                  {/* CST */}
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">
+                      CST — Código de Situação Tributária (IBS/CBS)
+                    </label>
+                    <select
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
+                      value={f.cst}
+                      onChange={e => set('cst', e.target.value)}
+                    >
+                      <option value="">— Selecione o CST —</option>
+                      {CST_OPTIONS.map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* cIndOp */}
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">
+                      cIndOp — Indicador de Operação
+                    </label>
+                    <select
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
+                      value={f.cindop}
+                      onChange={e => set('cindop', e.target.value)}
+                    >
+                      <option value="">— Selecione o Indicador de Operação —</option>
+                      {CINDOP_OPTIONS.map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* cClassTrib */}
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">
+                      cClassTrib — Classificação Tributária (6 dígitos)
+                    </label>
+                    <input
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-mono placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                      value={f.cclasstrib}
+                      onChange={e => set('cclasstrib', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="Ex: 800100"
+                      maxLength={6}
+                    />
+                    <p className="text-xs text-slate-400 mt-1">
+                      6 dígitos — os 2 primeiros correspondem ao CST. Consulte o Anexo VIII da CGNFS-e.
+                    </p>
+                  </div>
+                </div>
               </div>
 
             </div>
