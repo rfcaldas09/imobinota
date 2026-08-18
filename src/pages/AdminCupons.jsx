@@ -194,16 +194,21 @@ function TabUsuarios() {
   const [usuarios, setUsuarios]     = useState([])
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState('')
-  const [errosModal, setErrosModal] = useState(null) // { company, erros[] }
+  const [errosModal, setErrosModal] = useState(null)
   const [busca, setBusca]           = useState('')
+  const [filtroAtivo, setFiltroAtivo] = useState('ativos') // 'ativos' | 'inativos' | 'todos'
+  const [toggling, setToggling]     = useState(null) // id do usuário sendo alterado
+
+  const getToken = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    return session?.access_token
+  }
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token
+      const token = await getToken()
       if (!token) throw new Error('Sessão expirada')
-
       const res = await fetch('/.netlify/functions/admin-stats', {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -219,21 +224,43 @@ function TabUsuarios() {
 
   useEffect(() => { load() }, [load])
 
-  const totalEmitido = usuarios.reduce((a, u) => a + (u.total_emitido || 0), 0)
-  const totalAvOk    = usuarios.reduce((a, u) => a + (u.avulsa_ok || 0), 0)
-  const totalRecOk   = usuarios.reduce((a, u) => a + (u.rec_ok || 0), 0)
-  const totalErro    = usuarios.reduce((a, u) => a + (u.avulsa_erro || 0) + (u.rec_erro || 0), 0)
-  const totalCert    = usuarios.filter(u => u.cert_ok).length
+  const handleToggleAtivo = async (u) => {
+    setToggling(u.id)
+    try {
+      const token = await getToken()
+      const res = await fetch('/.netlify/functions/admin-stats', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId: u.id, admin_ativo: !u.admin_ativo }),
+      })
+      if (!res.ok) throw new Error('Erro ao atualizar')
+      setUsuarios(prev => prev.map(x => x.id === u.id ? { ...x, admin_ativo: !u.admin_ativo } : x))
+    } catch (e) {
+      alert(e.message)
+    } finally {
+      setToggling(null)
+    }
+  }
 
+  // Filtra por ativo/inativo/busca
+  const ativos = usuarios.filter(u => u.admin_ativo !== false)
   const filtrados = usuarios.filter(u => {
+    const ativoOk = filtroAtivo === 'todos'
+      ? true
+      : filtroAtivo === 'ativos'
+        ? u.admin_ativo !== false
+        : u.admin_ativo === false
+    if (!ativoOk) return false
     if (!busca) return true
     const q = busca.toLowerCase()
-    return (
-      u.company?.toLowerCase().includes(q) ||
-      u.email?.toLowerCase().includes(q) ||
-      u.cnpj?.includes(q)
-    )
+    return u.company?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q) || u.cnpj?.includes(q)
   })
+
+  // KPIs só contam usuários ativos
+  const totalEmitido = ativos.reduce((a, u) => a + (u.total_emitido || 0), 0)
+  const totalAvOk    = ativos.reduce((a, u) => a + (u.avulsa_ok || 0), 0)
+  const totalRecOk   = ativos.reduce((a, u) => a + (u.rec_ok || 0), 0)
+  const totalCert    = ativos.filter(u => u.cert_ok).length
 
   const planoLabel = (p) => {
     if (!p) return <span className="text-xs text-slate-400">—</span>
@@ -252,14 +279,14 @@ function TabUsuarios() {
   return (
     <div className="space-y-5">
 
-      {/* KPIs */}
+      {/* KPIs — apenas usuários ativos */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
-          { label: 'Usuários',       value: usuarios.length,       color: 'text-slate-900' },
-          { label: 'Com cert. A1',   value: totalCert,             color: 'text-emerald-700' },
-          { label: 'Avulsas OK',     value: totalAvOk,             color: 'text-indigo-700' },
-          { label: 'Recorrentes OK', value: totalRecOk,            color: 'text-violet-700' },
-          { label: 'Total emitido',  value: fmtBRL(totalEmitido),  color: 'text-slate-900' },
+          { label: 'Usuários ativos', value: ativos.length,        color: 'text-slate-900' },
+          { label: 'Com cert. A1',    value: totalCert,            color: 'text-emerald-700' },
+          { label: 'Avulsas OK',      value: totalAvOk,            color: 'text-indigo-700' },
+          { label: 'Recorrentes OK',  value: totalRecOk,           color: 'text-violet-700' },
+          { label: 'Total emitido',   value: fmtBRL(totalEmitido), color: 'text-slate-900' },
         ].map(k => (
           <div key={k.label} className="bg-white border border-slate-200 rounded-2xl p-4">
             <p className="text-xs text-slate-500 mb-1">{k.label}</p>
@@ -268,11 +295,28 @@ function TabUsuarios() {
         ))}
       </div>
 
-      {/* Busca */}
-      <div className="flex items-center gap-3">
+      {/* Filtros + busca */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* Filtro ativo/inativo */}
+        <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+          {[
+            { id: 'ativos',   label: 'Ativos' },
+            { id: 'inativos', label: 'Inativos' },
+            { id: 'todos',    label: 'Todos' },
+          ].map(f => (
+            <button key={f.id} onClick={() => setFiltroAtivo(f.id)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                filtroAtivo === f.id
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
         <input type="text" value={busca} onChange={e => setBusca(e.target.value)}
           placeholder="Buscar por empresa, e-mail ou CNPJ…"
-          className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"/>
+          className="flex-1 min-w-[200px] px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"/>
         <button onClick={load}
           className="px-4 py-2 text-sm font-semibold bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors text-slate-700">
           ↻ Atualizar
@@ -303,11 +347,12 @@ function TabUsuarios() {
                 <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Recorr. ✅</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Total emitido</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Cadastro</th>
+                <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {filtrados.map(u => (
-                <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                <tr key={u.id} className={`hover:bg-slate-50 transition-colors ${u.admin_ativo === false ? 'opacity-50' : ''}`}>
                   <td className="px-4 py-3">
                     <p className="font-semibold text-slate-800 leading-tight">{u.company}</p>
                     <p className="text-xs text-slate-400 mt-0.5">{u.email}</p>
@@ -343,6 +388,19 @@ function TabUsuarios() {
                     {u.total_emitido > 0 ? fmtBRL(u.total_emitido) : <span className="text-slate-400">—</span>}
                   </td>
                   <td className="px-4 py-3 text-right text-slate-400 text-xs">{fmtDate(u.created_at)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => handleToggleAtivo(u)}
+                      disabled={toggling === u.id}
+                      title={u.admin_ativo !== false ? 'Ocultar usuário' : 'Reativar usuário'}
+                      className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors disabled:opacity-40 ${
+                        u.admin_ativo !== false
+                          ? 'bg-slate-100 text-slate-500 hover:bg-red-50 hover:text-red-600'
+                          : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                      }`}>
+                      {toggling === u.id ? '…' : u.admin_ativo !== false ? 'Ocultar' : 'Reativar'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
