@@ -127,7 +127,7 @@ function StatusBadge({ status }) {
 const PRAZO_CANCEL_MS = 48 * 60 * 60 * 1000
 
 // ── Modal: adicionar/editar tomador ────────────────────────────────
-function TomadorModal({ initial, onSave, onClose, retDefaults }) {
+function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0 }) {
   const [f, setF]       = useState(initial || mkBlankForm(retDefaults))
   const set = k => e   => setF(p => ({ ...p, [k]: e.target.value }))
   const setPct = k => e => setF(p => ({ ...p, [k]: maskPct(e.target.value) }))
@@ -369,12 +369,17 @@ function TomadorModal({ initial, onSave, onClose, retDefaults }) {
                     <span className="font-semibold">− {fmtBRL(totalRet)}</span>
                   </div>
                 )}
-                {f.issRetido && (
+                {f.issRetido ? (
                   <div className="flex justify-between text-orange-600">
                     <span>ISS retido pelo tomador</span>
-                    <span className="font-semibold">retido na fonte</span>
+                    <span className="font-semibold">− {fmtBRL(valorNum * (issAliquota / 100))}</span>
                   </div>
-                )}
+                ) : issAliquota > 0 && valorNum > 0 ? (
+                  <div className="flex justify-between text-blue-600">
+                    <span>ISS próprio ({String(issAliquota).replace('.', ',')}%) — recolhido pelo prestador</span>
+                    <span className="font-semibold">{fmtBRL(valorNum * (issAliquota / 100))}</span>
+                  </div>
+                ) : null}
                 <div className="flex justify-between text-slate-900 font-bold border-t border-slate-200 pt-1 mt-1">
                   <span>Valor líquido estimado</span>
                   <span>{fmtBRL(liquido)}</span>
@@ -742,13 +747,19 @@ export default function NfseAvulsa() {
 
   // Defaults de retenção do perfil do usuário
   const [retDefaults, setRetDefaults] = useState(NAT_RET_DEFAULT)
+  const [issAliquota, setIssAliquota] = useState(0) // alíquota ISS próprio do perfil (%)
   useEffect(() => {
     if (!user) return
     supabase.from('profiles')
-      .select('ret_irrf, ret_csll, ret_cofins, ret_pis, ret_inss')
+      .select('ret_irrf, ret_csll, ret_cofins, ret_pis, ret_inss, aliquota_iss')
       .eq('id', user.id)
       .maybeSingle()
-      .then(({ data }) => { if (data) setRetDefaults(mkRetDefaults(data)) })
+      .then(({ data }) => {
+        if (data) {
+          setRetDefaults(mkRetDefaults(data))
+          setIssAliquota(parseFloat(data.aliquota_iss || 0) || 0)
+        }
+      })
   }, [user])
 
   // Fila de tomadores pendentes (persiste em localStorage)
@@ -1392,6 +1403,7 @@ export default function NfseAvulsa() {
           onSave={handleSaveModal}
           onClose={() => { setShowModal(false); setEditIdx(null) }}
           retDefaults={retDefaults}
+          issAliquota={issAliquota}
         />
       )}
 
