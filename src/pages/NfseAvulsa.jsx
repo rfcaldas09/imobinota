@@ -5,6 +5,7 @@ import Lc116Picker from '../components/Lc116Picker'
 import MonthPicker from '../components/MonthPicker'
 import * as XLSX from 'xlsx'
 import { CST_OPTIONS, CINDOP_OPTIONS } from '../lib/reforma-tributaria'
+import NbsPicker from '../components/NbsPicker'
 
 // ── Ícones inline ──────────────────────────────────────────────────
 const ic = (d, cls = '') => (
@@ -400,16 +401,7 @@ function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, 
               <span className="text-xs font-semibold text-violet-700">🏛️ Reforma Tributária — IBS/CBS</span>
             </div>
             {/* NBS */}
-            <div>
-              <label className="text-xs font-medium text-slate-500 block mb-1">NBS — Nomenclatura Brasileira de Serviços</label>
-              <input
-                value={f.nbs}
-                onChange={e => setF(p => ({ ...p, nbs: e.target.value.replace(/\D/g, '').slice(0, 9) }))}
-                placeholder="Ex: 101010100"
-                maxLength={9}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white font-mono"
-              />
-            </div>
+            <NbsPicker value={f.nbs} onChange={v => setF(p => ({ ...p, nbs: v }))} />
             {/* CST */}
             <div>
               <label className="text-xs font-medium text-slate-500 block mb-1">CST — Código de Situação Tributária</label>

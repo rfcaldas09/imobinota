@@ -6,6 +6,7 @@ import { useNfseReadiness } from '../contexts/NfseReadinessContext'
 import { LC116 } from '../lib/lc116'
 import { MUNICIPIOS_SUL } from '../lib/municipios'
 import { CST_OPTIONS, CINDOP_OPTIONS } from '../lib/reforma-tributaria'
+import NbsPicker from '../components/NbsPicker'
 
 // ── Salva senha do certificado via função server-side (criptografa com NFSE_CERT_KEY) ─
 async function salvarSenhaCert(password, certPath, jwt) {
@@ -889,24 +890,7 @@ export default function Config() {
 
                 <div className="space-y-3">
                   {/* NBS */}
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 block mb-1">
-                      NBS — Nomenclatura Brasileira de Serviços
-                    </label>
-                    <input
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-mono placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-violet-400"
-                      value={f.nbs}
-                      onChange={e => set('nbs', e.target.value.replace(/\D/g, '').slice(0, 9))}
-                      placeholder="Ex: 101010100"
-                      maxLength={9}
-                    />
-                    <p className="text-xs text-slate-400 mt-1">
-                      Código de 9 dígitos. Consulte a tabela em{' '}
-                      <a href="https://www.gov.br/mdic/pt-br/images/REPOSITORIO/scs/decos/NBS/Anexoa_Ia_NBSa_2.0a_coma_alteraa_esa_6.12.18.pdf"
-                        target="_blank" rel="noreferrer"
-                        className="text-violet-600 underline">NBS oficial (Receita Federal)</a>.
-                    </p>
-                  </div>
+                  <NbsPicker value={f.nbs} onChange={v => set('nbs', v)} />
 
                   {/* CST */}
                   <div>

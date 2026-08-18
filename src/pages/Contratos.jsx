@@ -449,7 +449,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
                      (parseFloat(f.seguroIncendio)||0) + (parseFloat(f.iptu)||0)
 
   const handle = () => {
-    if (!f.tenant || !f.property || !f.value) return
+    if (!f.tenant || !f.value) return
     onSave({
       ...f,
       value:            parseFloat(f.value)||0,
@@ -567,8 +567,8 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
 
           {/* Referência */}
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Referência</p>
-          <Row label="Referência *">
-            <FormInp value={f.property} onChange={e => set('property', e.target.value)} placeholder="Ex: Consulta, Contrato 001 ou Apto 201"/>
+          <Row label="Referência">
+            <FormInp value={f.property} onChange={e => set('property', e.target.value)} placeholder=""/>
           </Row>
           <div className="grid grid-cols-2 gap-3">
             <Row label="Início do Contrato">
@@ -722,7 +722,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
             className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">
             Cancelar
           </button>
-          <button onClick={handle} disabled={!f.tenant || !f.property || !f.value || saving}
+          <button onClick={handle} disabled={!f.tenant || !f.value || saving}
             className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
             {saving ? 'Salvando…' : saveLabel}
           </button>
