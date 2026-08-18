@@ -636,8 +636,10 @@ function NfseModal({ cob, user, onClose }) {
 function NfseViewModal({ cob, user, onClose }) {
   const [emissoes, setEmissoes] = useState([])
   const [loading, setLoading]   = useState(true)
-  const [pdfLoading, setPdfLoading] = useState(null) // emissaoId em progresso
-  const [xmlLoading, setXmlLoading] = useState(null) // emissaoId em progresso (XML)
+  const [pdfLoading, setPdfLoading] = useState(null)
+  const [xmlLoading, setXmlLoading] = useState(null)
+  const [cancelConfirmId, setCancelConfirmId] = useState(null)
+  const [cancellingId,    setCancellingId]    = useState(null)
 
   useEffect(() => {
     const handle = e => { if (e.key === 'Escape') onClose() }
@@ -645,7 +647,8 @@ function NfseViewModal({ cob, user, onClose }) {
     return () => document.removeEventListener('keydown', handle)
   }, [onClose])
 
-  useEffect(() => {
+  const loadEmissoes = () => {
+    setLoading(true)
     supabase
       .from('nfse_emissoes')
       .select('*')
@@ -653,7 +656,30 @@ function NfseViewModal({ cob, user, onClose }) {
       .eq('cobranca_id', cob.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => { setEmissoes(data || []); setLoading(false) })
-  }, [cob.id, user.id])
+  }
+
+  useEffect(() => { loadEmissoes() }, [cob.id, user.id])
+
+  const handleCancelar = async (em) => {
+    if (cancelConfirmId !== em.id) { setCancelConfirmId(em.id); return }
+    setCancelConfirmId(null)
+    setCancellingId(em.id)
+    try {
+      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
+      const res = await fetch('/.netlify/functions/nfse-cancelar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}) },
+        body: JSON.stringify({ userId: user.id, emissaoId: em.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao cancelar')
+      loadEmissoes()
+    } catch (e) {
+      alert(`Erro ao cancelar NFS-e: ${e.message}`)
+    } finally {
+      setCancellingId(null)
+    }
+  }
 
   const verPdf = async (em) => {
     setPdfLoading(em.id)
@@ -773,7 +799,7 @@ function NfseViewModal({ cob, user, onClose }) {
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     <button
                       onClick={() => verPdf(em)}
-                      disabled={pdfLoading === em.id || !!xmlLoading}
+                      disabled={pdfLoading === em.id || !!xmlLoading || !!cancellingId}
                       className="flex items-center gap-1.5 text-xs font-semibold text-indigo-700 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors disabled:opacity-50">
                       {pdfLoading === em.id ? (
                         <div className="w-3.5 h-3.5 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin"/>
@@ -784,7 +810,7 @@ function NfseViewModal({ cob, user, onClose }) {
                     </button>
                     <button
                       onClick={() => verXml(em)}
-                      disabled={xmlLoading === em.id || !!pdfLoading}
+                      disabled={xmlLoading === em.id || !!pdfLoading || !!cancellingId}
                       className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors disabled:opacity-50">
                       {xmlLoading === em.id ? (
                         <div className="w-3.5 h-3.5 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin"/>
@@ -793,6 +819,33 @@ function NfseViewModal({ cob, user, onClose }) {
                       )}
                       XML
                     </button>
+                    {em.status !== 'cancelada' && (
+                      cancelConfirmId === em.id ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => handleCancelar(em)}
+                            disabled={cancellingId === em.id}
+                            className="text-xs font-semibold text-white bg-red-600 hover:bg-red-700 px-2.5 py-1.5 rounded-lg whitespace-nowrap transition-colors disabled:opacity-50">
+                            {cancellingId === em.id
+                              ? <div className="w-3.5 h-3.5 border-2 border-red-300 border-t-white rounded-full animate-spin"/>
+                              : 'Confirmar'}
+                          </button>
+                          <button
+                            onClick={() => setCancelConfirmId(null)}
+                            className="text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 px-2.5 py-1.5 rounded-lg whitespace-nowrap transition-colors">
+                            Não
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleCancelar(em)}
+                          disabled={!!pdfLoading || !!xmlLoading || !!cancellingId}
+                          title="Cancelar NFS-e"
+                          className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40">
+                          🚫
+                        </button>
+                      )
+                    )}
                   </div>
                   )}
                 </div>
@@ -951,9 +1004,8 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
 
     for (let i = 0; i < fila.length; i++) {
       const cob = fila[i]
-      const firstName = cob.tenant.split(' ')[0]
 
-      setLogs(l => [...l.slice(-80), { name: firstName, status: 'pending' }])
+      setLogs(l => [...l, { id: cob.id, name: cob.tenant, property: cob.property, status: 'pending' }])
 
       // Discriminação: do map (mensal capturado no passo anterior) ou fixo do contrato
       const discriminacao = discMapLocal[cob.id] || cob.discriminacaoServico || null
@@ -1001,18 +1053,14 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
         if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`)
 
         ok++
-        setLogs(l => {
-          const next = [...l]; const idx = next.findLastIndex(e => e.name === firstName && e.status === 'pending')
-          if (idx >= 0) next[idx] = { name: firstName, status: 'ok', numero: data.numeroNfse || '' }
-          return next
-        })
+        setLogs(l => l.map(e => e.id === cob.id && e.status === 'pending'
+          ? { ...e, status: 'ok', numero: data.numeroNfse || '' }
+          : e))
       } catch (err) {
         fails++
-        setLogs(l => {
-          const next = [...l]; const idx = next.findLastIndex(e => e.name === firstName && e.status === 'pending')
-          if (idx >= 0) next[idx] = { name: firstName, status: 'error', msg: err.message.slice(0, 80) }
-          return next
-        })
+        setLogs(l => l.map(e => e.id === cob.id && e.status === 'pending'
+          ? { ...e, status: 'error', msg: err.message }
+          : e))
       }
 
       setProgress(i + 1)
@@ -1191,67 +1239,132 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
         )}
 
         {step === 'running' && (
-          <div className="p-6">
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
+          <div className="p-6 flex flex-col" style={{ maxHeight: '90vh' }}>
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center flex-shrink-0">
                 <div className="w-5 h-5 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin"/>
               </div>
               <div>
-                <p className="font-bold text-slate-900">Emitindo NFS-e — {mesLabel(mesRef)}…</p>
-                <p className="text-sm text-slate-400">Não feche esta janela · {progress} de {preview?.toCreate ?? '…'}</p>
+                <p className="font-bold text-slate-900">Emitindo NFS-e — {mesLabel(mesRef)}</p>
+                <p className="text-xs text-slate-400">Não feche esta janela · {progress} de {total}</p>
               </div>
             </div>
+            {/* Barra de progresso */}
             <div className="mb-4">
-              <div className="flex justify-between text-sm mb-1.5">
-                <span className="text-slate-600">{progress} <span className="text-slate-400">de {preview?.toCreate ?? '…'}</span></span>
+              <div className="flex justify-between text-xs mb-1.5">
+                <span className="text-slate-500">{progress} <span className="text-slate-400">de {total}</span></span>
                 <span className="font-bold text-indigo-600">{pct}%</span>
               </div>
-              <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
                 <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-300" style={{ width:`${pct}%` }}/>
               </div>
             </div>
-            <div className="bg-slate-950 rounded-xl p-3 h-52 overflow-y-auto font-mono text-xs space-y-0.5">
-              {logs.slice(-40).map((l, i) => (
-                l.status === 'ok' ? (
-                  <div key={i} className="text-emerald-400">
-                    ✓ NFS-e{l.numero ? ` nº ${l.numero}` : ''} emitida — {l.name}
+            {/* Lista de contratos */}
+            <div className="overflow-y-auto flex-1 space-y-1.5 pr-0.5" style={{ maxHeight: '52vh' }}>
+              {logs.map((l, i) => (
+                <div key={i} className={`flex items-start gap-3 px-3.5 py-2.5 rounded-xl border text-sm ${
+                  l.status === 'ok'      ? 'bg-emerald-50 border-emerald-200' :
+                  l.status === 'error'   ? 'bg-red-50 border-red-200' :
+                                           'bg-slate-50 border-slate-200'
+                }`}>
+                  <div className="flex-shrink-0 mt-0.5">
+                    {l.status === 'ok'    && <span className="text-emerald-600 font-bold">✓</span>}
+                    {l.status === 'error' && <span className="text-red-500 font-bold">✗</span>}
+                    {l.status === 'pending' && <div className="w-4 h-4 border-2 border-slate-300 border-t-indigo-500 rounded-full animate-spin"/>}
                   </div>
-                ) : l.status === 'error' ? (
-                  <div key={i} className="text-red-400">
-                    ✗ Erro — {l.name}: {l.msg}
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-semibold truncate ${
+                      l.status === 'ok' ? 'text-emerald-800' :
+                      l.status === 'error' ? 'text-red-800' : 'text-slate-700'
+                    }`}>{l.name}</p>
+                    {l.status === 'ok' && (
+                      <p className="text-xs text-emerald-600 mt-0.5">
+                        NFS-e{l.numero ? ` nº ${l.numero}` : ''} emitida com sucesso
+                      </p>
+                    )}
+                    {l.status === 'error' && (
+                      <p className="text-xs text-red-600 mt-0.5 break-words">{l.msg}</p>
+                    )}
+                    {l.status === 'pending' && (
+                      <p className="text-xs text-slate-400 mt-0.5">Emitindo…</p>
+                    )}
                   </div>
-                ) : (
-                  <div key={i} className="text-slate-400">
-                    ⏳ Emitindo NFS-e para {l.name}…
-                  </div>
-                )
+                </div>
               ))}
             </div>
           </div>
         )}
 
         {step === 'done' && (
-          <div className="p-7 text-center">
-            <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-4xl">✅</div>
-            <h2 className="text-xl font-bold text-slate-900 mb-1">Processamento Concluído!</h2>
-            <p className="text-slate-400 text-sm mb-5 capitalize">{mesLabel(mesRef)}</p>
+          <div className="p-6 flex flex-col" style={{ maxHeight: '90vh' }}>
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-xl ${
+                result?.fails > 0 && result?.created === 0 ? 'bg-red-100' :
+                result?.fails > 0 ? 'bg-amber-100' : 'bg-emerald-100'
+              }`}>
+                {result?.fails > 0 && result?.created === 0 ? '❌' : result?.fails > 0 ? '⚠️' : '✅'}
+              </div>
+              <div>
+                <p className="font-bold text-slate-900">
+                  {result?.fails > 0 && result?.created === 0 ? 'Falha na emissão'
+                    : result?.fails > 0 ? 'Concluído com falhas'
+                    : 'Emissão concluída!'}
+                </p>
+                <p className="text-xs text-slate-400 capitalize">{mesLabel(mesRef)}</p>
+              </div>
+            </div>
+
+            {/* KPIs */}
             {result?.error ? (
-              <p className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-3 mb-5">{result.error}</p>
+              <p className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-3 mb-4">{result.error}</p>
             ) : (
-              <div className="grid grid-cols-3 gap-3 mb-5">
-                {[
-                  { v: result?.created ?? 0, l: action === 'nfse' ? 'NFS-e emitidas' : 'Geradas', bg:'bg-emerald-50', c:'text-emerald-700' },
-                  { v: result?.skipped ?? 0, l:'Ignoradas', bg:'bg-slate-50',   c:'text-slate-600'   },
-                  { v: result?.fails   ?? 0, l:'Falhas',    bg:'bg-red-50',     c:'text-red-600'     },
-                ].map(({ v, l, bg, c }) => (
-                  <div key={l} className={`${bg} rounded-xl py-3`}>
-                    <p className={`text-2xl font-bold ${c}`}>{v}</p>
-                    <p className={`text-xs ${c} opacity-70 mt-0.5`}>{l}</p>
+              <div className="grid grid-cols-2 gap-2.5 mb-4">
+                <div className="bg-emerald-50 rounded-xl py-3 text-center">
+                  <p className="text-2xl font-bold text-emerald-700">{result?.created ?? 0}</p>
+                  <p className="text-xs text-emerald-600 mt-0.5">NFS-e emitidas</p>
+                </div>
+                <div className="bg-red-50 rounded-xl py-3 text-center">
+                  <p className="text-2xl font-bold text-red-600">{result?.fails ?? 0}</p>
+                  <p className="text-xs text-red-500 mt-0.5">Falhas</p>
+                </div>
+              </div>
+            )}
+
+            {/* Detalhes por contrato */}
+            {logs.length > 0 && (
+              <div className="overflow-y-auto flex-1 space-y-1.5 pr-0.5 mb-4" style={{ maxHeight: '44vh' }}>
+                {logs.map((l, i) => (
+                  <div key={i} className={`flex items-start gap-3 px-3.5 py-2.5 rounded-xl border text-sm ${
+                    l.status === 'ok'    ? 'bg-emerald-50 border-emerald-200' :
+                    l.status === 'error' ? 'bg-red-50 border-red-200' :
+                                          'bg-slate-50 border-slate-200'
+                  }`}>
+                    <span className="flex-shrink-0 mt-0.5 font-bold">
+                      {l.status === 'ok' ? '✓' : '✗'}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className={`font-semibold truncate ${
+                        l.status === 'ok' ? 'text-emerald-800' : 'text-red-800'
+                      }`}>{l.name}</p>
+                      {l.status === 'ok' && (
+                        <p className="text-xs text-emerald-600 mt-0.5">
+                          NFS-e{l.numero ? ` nº ${l.numero}` : ''} emitida com sucesso
+                        </p>
+                      )}
+                      {l.status === 'error' && (
+                        <p className="text-xs text-red-600 mt-0.5 break-words">{l.msg}</p>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
             )}
-            <button onClick={onClose} className="w-full py-3 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700">Fechar</button>
+
+            <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 text-sm">
+              Fechar
+            </button>
           </div>
         )}
       </div>
@@ -1589,20 +1702,11 @@ export default function Cobrancas() {
       {!onboardingLoading && !certSet && <OnboardingBanner />}
 
       {/* ── Header ─────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">Contratos</h1>
-          <p className="text-sm text-slate-500 capitalize">
-            {loading ? 'Carregando…' : `${kpi.total} contrato${kpi.total !== 1 ? 's' : ''} · ${currentMonth}`}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <MonthPicker value={mesRef} onChange={v => { setMesRef(v); setFilter('Todos') }}/>
-          <button onClick={load} disabled={loading} title="Atualizar"
-            className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40">
-            <IcRefresh c={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}/>
-          </button>
-        </div>
+      <div>
+        <h1 className="text-xl font-bold text-slate-900">Contratos</h1>
+        <p className="text-sm text-slate-500 capitalize">
+          {loading ? 'Carregando…' : `${kpi.total} contrato${kpi.total !== 1 ? 's' : ''} · ${currentMonth}`}
+        </p>
       </div>
 
       {/* ── KPI Cards ──────────────────────────────────────── */}
@@ -1631,13 +1735,20 @@ export default function Cobrancas() {
 
       {/* ── Filtros + Ações ────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3">
-        <div className="flex bg-white border border-slate-200 rounded-xl p-1 gap-1">
-          {FILTERS.map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${filter === f ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
-              {f}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <MonthPicker value={mesRef} onChange={v => { setMesRef(v); setFilter('Todos') }}/>
+          <button onClick={load} disabled={loading} title="Atualizar"
+            className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40">
+            <IcRefresh c={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}/>
+          </button>
+          <div className="flex bg-white border border-slate-200 rounded-xl p-1 gap-1">
+            {FILTERS.map(f => (
+              <button key={f} onClick={() => setFilter(f)}
+                className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${filter === f ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+                {f}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setAddCob(true)}
@@ -1683,7 +1794,7 @@ export default function Cobrancas() {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Cliente</th>
-                <th className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden md:table-cell">Referência</th>
+                <th className="text-left px-3 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden md:table-cell w-40">Referência</th>
                 <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden lg:table-cell">Venc.</th>
                 <th className="text-right px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Valor</th>
                 <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Status</th>
@@ -1702,7 +1813,7 @@ export default function Cobrancas() {
                       <p className="font-medium text-slate-800">{c.tenant}</p>
                     </div>
                   </td>
-                  <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell max-w-xs truncate">{c.property}</td>
+                  <td className="px-3 py-3.5 text-slate-500 hidden md:table-cell w-40 max-w-[10rem] truncate overflow-hidden">{c.property}</td>
                   <td className="px-5 py-3.5 text-center text-slate-500 hidden lg:table-cell">
                     {c.dueDay ? `Dia ${c.dueDay}` : '—'}
                   </td>
@@ -1872,8 +1983,8 @@ export default function Cobrancas() {
           user={user}
           pixKey={pixKey}
           mesRef={mesRef}
-          onClose={() => setShowBatch(false)}
-          onDone={() => { setShowBatch(false); load() }}
+          onClose={() => { setShowBatch(false); load() }}
+          onDone={() => load()}
         />
       )}
       {boletoCob && (
