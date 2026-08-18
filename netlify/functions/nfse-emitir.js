@@ -87,7 +87,8 @@ async function handle(event) {
 
   // Validações de config
   if (!p.cnpj) return { statusCode: 400, body: JSON.stringify({ error: 'CNPJ/CPF do prestador não configurado em Configurações → Empresa' }) }
-  if (!p.inscricao_municipal) return { statusCode: 400, body: JSON.stringify({ error: 'Inscrição Municipal não configurada em Configurações → Empresa' }) }
+  // inscricao_municipal é opcional: alguns municípios não têm dados complementares no CNC NFS-e
+  // (erro E0120 quando o campo IM é enviado para esses municípios). O XML já o omite quando vazio.
   if (!p.nfse_municipio_ibge) return { statusCode: 400, body: JSON.stringify({ error: 'Código IBGE do município não configurado em Configurações → Fiscal' }) }
   if (!p.nfse_cert_path) return { statusCode: 400, body: JSON.stringify({ error: 'Certificado digital A1 não enviado em Configurações → Empresa' }) }
   // Simples Nacional/MEI: alíquota ISS só é exigida quando ISS é retido pelo tomador (tpRetISSQN=2)

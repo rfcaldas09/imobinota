@@ -6,7 +6,7 @@ import { useAuth } from './AuthContext'
 export const NFSE_CHECKS = [
   { field: 'company_name',        label: 'Razão Social',              tab: 'empresa' },
   { field: 'cnpj',                label: 'CNPJ / CPF',                tab: 'empresa' },
-  { field: 'inscricao_municipal', label: 'Inscrição Municipal',       tab: 'empresa' },
+  // inscricao_municipal é opcional — municípios sem dados no CNC NFS-e rejeitam o campo IM (E0120)
   // Certificado: campo especial — checado separadamente via certOk
   { field: '__cert',              label: 'Certificado Digital A1',    tab: 'empresa' },
   { field: 'nfse_municipio_ibge', label: 'Município de prestação',   tab: 'fiscal'  },
