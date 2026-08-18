@@ -15,11 +15,29 @@ export function SubscriptionProvider({ children }) {
   const load = useCallback(async () => {
     if (!user) { setSub(null); setLoading(false); return }
     setLoading(true)
-    const { data } = await supabase
+
+    const { data, error } = await supabase
       .from('profiles')
       .select('plano_tipo, plano_fim')
       .eq('id', user.id)
       .maybeSingle()
+
+    // Se retornou null mas o usuário está autenticado, pode ser JWT expirado.
+    // Força refresh de sessão e tenta novamente uma vez.
+    if (!data && !error) {
+      const { error: refreshError } = await supabase.auth.refreshSession()
+      if (!refreshError) {
+        const { data: retried } = await supabase
+          .from('profiles')
+          .select('plano_tipo, plano_fim')
+          .eq('id', user.id)
+          .maybeSingle()
+        setSub(retried)
+        setLoading(false)
+        return
+      }
+    }
+
     setSub(data)
     setLoading(false)
   }, [user?.id])  // depende só do ID — novo objeto com mesmo ID não re-busca

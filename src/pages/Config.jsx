@@ -882,9 +882,6 @@ export default function Config() {
                   <span className="inline-flex items-center gap-1.5 bg-violet-100 text-violet-800 text-xs font-semibold px-2.5 py-1 rounded-full">
                     🏛️ Reforma Tributária — IBS/CBS
                   </span>
-                  <span className="text-xs text-slate-400 mt-0.5">
-                    Campos informativos — não enviados no XML ainda
-                  </span>
                 </div>
                 <p className="text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-md px-3 py-2 mb-3">
                   Obrigatório para <strong>Lucro Real/Presumido</strong> a partir de 03/08/2026 e para <strong>Simples Nacional</strong> a partir de 01/01/2027. Configure agora para facilitar a ativação. Estes valores serão usados como padrão nas notas emitidas.
@@ -905,7 +902,7 @@ export default function Config() {
                     />
                     <p className="text-xs text-slate-400 mt-1">
                       Código de 9 dígitos. Consulte a tabela em{' '}
-                      <a href="https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/legislacao/documentos-e-arquivos/nbs-2023.xlsx"
+                      <a href="https://www.gov.br/mdic/pt-br/images/REPOSITORIO/scs/decos/NBS/Anexoa_Ia_NBSa_2.0a_coma_alteraa_esa_6.12.18.pdf"
                         target="_blank" rel="noreferrer"
                         className="text-violet-600 underline">NBS oficial (Receita Federal)</a>.
                     </p>

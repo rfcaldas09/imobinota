@@ -398,7 +398,6 @@ function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, 
           <div className="border border-violet-200 bg-violet-50 rounded-xl px-4 py-3 space-y-3">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-violet-700">🏛️ Reforma Tributária — IBS/CBS</span>
-              <span className="text-xs text-violet-500">Informativo — não enviado no XML</span>
             </div>
             {/* NBS */}
             <div>
