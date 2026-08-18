@@ -19,6 +19,42 @@ function Inp({ value, onChange, type='text', placeholder }) {
   )
 }
 
+// ── Input de senha com olho ─────────────────────────────────────────
+function PasswordInp({ value, onChange, placeholder = '••••••••' }) {
+  const [show, setShow] = useState(false)
+  return (
+    <div className="relative">
+      <input
+        type={show ? 'text' : 'password'}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className="w-full px-3.5 py-2.5 pr-10 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-all bg-white"
+      />
+      <button
+        type="button"
+        onClick={() => setShow(s => !s)}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+        tabIndex={-1}
+        aria-label={show ? 'Ocultar senha' : 'Mostrar senha'}
+      >
+        {show ? (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+            <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+            <line x1="1" y1="1" x2="23" y2="23"/>
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        )}
+      </button>
+    </div>
+  )
+}
+
 // ── Login / Signup card inline ──────────────────────────────────────
 function AccessCard() {
   const { signIn, signUp } = useAuth()
@@ -42,7 +78,7 @@ function AccessCard() {
   }
 
   const handleSignup = async () => {
-    if (!form.email || !form.password || !form.company) { setError('Preencha todos os campos obrigatórios.'); return }
+    if (!form.firstName || !form.lastName || !form.company || !form.email || !form.whatsapp || !form.password) { setError('Preencha todos os campos obrigatórios.'); return }
     setLoading(true); setError('')
     try {
       const { error: err } = await signUp(form.email, form.password, {
@@ -83,7 +119,7 @@ function AccessCard() {
                 <label className="text-xs font-semibold text-slate-500">Senha</label>
                 <a href="#" className="text-xs text-indigo-600 hover:underline">Esqueceu?</a>
               </div>
-              <Inp value={form.password} onChange={set('password')} type="password" placeholder="••••••••"/>
+              <PasswordInp value={form.password} onChange={set('password')}/>
             </div>
           </div>
           {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-4">{error}</p>}
@@ -103,11 +139,11 @@ function AccessCard() {
           <div className="space-y-3 mb-5">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-semibold text-slate-500 block mb-1">Nome</label>
+                <label className="text-xs font-semibold text-slate-500 block mb-1">Nome *</label>
                 <Inp value={form.firstName} onChange={set('firstName')} placeholder="João"/>
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-500 block mb-1">Sobrenome</label>
+                <label className="text-xs font-semibold text-slate-500 block mb-1">Sobrenome *</label>
                 <Inp value={form.lastName} onChange={set('lastName')} placeholder="Silva"/>
               </div>
             </div>
@@ -116,16 +152,16 @@ function AccessCard() {
               <Inp value={form.company} onChange={set('company')} placeholder="Minha Empresa Ltda"/>
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-500 block mb-1">E-mail</label>
-              <Inp value={form.email} onChange={set('email')} type="email" placeholder="seu@email.com.br"/>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-500 block mb-1">WhatsApp</label>
+              <label className="text-xs font-semibold text-slate-500 block mb-1">WhatsApp *</label>
               <Inp value={form.whatsapp} onChange={set('whatsapp')} type="tel" placeholder="(47) 9 9999-9999"/>
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-500 block mb-1">Senha</label>
-              <Inp value={form.password} onChange={set('password')} type="password" placeholder="••••••••"/>
+              <label className="text-xs font-semibold text-slate-500 block mb-1">E-mail *</label>
+              <Inp value={form.email} onChange={set('email')} type="email" placeholder="seu@email.com.br"/>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-500 block mb-1">Senha *</label>
+              <PasswordInp value={form.password} onChange={set('password')}/>
             </div>
           </div>
           {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-3">{error}</p>}
