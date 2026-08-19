@@ -139,6 +139,20 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
     const cepRaw = String(r['CEP'] || '').replace(/\D/g, '').padStart(8, '0')
     const tamaCep = cepRaw.replace(/^0+$/, '') // descarta se for todo zeros (campo vazio)
 
+    // ── Dados do imóvel (modo contabilidade — locação imobiliária) ──
+    const parseCep8 = v => { const d = String(v||'').replace(/\D/g,'').padStart(8,'0'); return d.replace(/^0+$/,'') }
+    const imovelCib             = String(r['CIB'] || r['CIB IMÓVEL'] || '').trim().toUpperCase() || null
+    const imovelInscricaoFiscal = String(r['INSCRIÇÃO FISCAL'] || r['INSCRICAO FISCAL'] || r['INSCRIÇÃO IMOBILIÁRIA'] || r['INSCRICAO IMOBILIARIA'] || '').trim() || null
+    const imovelFinalidade      = String(r['FINALIDADE'] || r['FINALIDADE IMÓVEL'] || '').toLowerCase().includes('comercial') ? 'comercial' : 'residencial'
+    const imovelCep             = parseCep8(r['CEP IMÓVEL'] || r['CEP IMOVEL'])
+    const imovelLogradouro      = String(r['LOGRADOURO IMÓVEL'] || r['LOGRADOURO IMOVEL'] || r['ENDEREÇO IMÓVEL'] || r['ENDERECO IMOVEL'] || '').trim() || null
+    const imovelNumero          = String(r['NÚMERO IMÓVEL'] || r['NUMERO IMOVEL'] || r['NRO IMÓVEL'] || r['NRO IMOVEL'] || '').trim() || null
+    const imovelComplemento     = String(r['COMPLEMENTO IMÓVEL'] || r['COMPLEMENTO IMOVEL'] || '').trim() || null
+    const imovelBairro          = String(r['BAIRRO IMÓVEL'] || r['BAIRRO IMOVEL'] || '').trim() || null
+    const imovelCodMun          = String(r['CÓD. MUNICÍPIO IMÓVEL'] || r['COD MUNICIPIO IMOVEL'] || r['IBGE IMÓVEL'] || r['IBGE IMOVEL'] || '').replace(/\D/g,'').slice(0,7) || null
+    const imovelMunNome         = String(r['MUNICÍPIO IMÓVEL'] || r['MUNICIPIO IMOVEL'] || '').trim() || null
+    const codNbs                = String(r['NBS'] || r['CÓD. NBS'] || r['COD NBS'] || '').trim() || null
+
     return {
       _id:                    i,
       tenant:                 nome,
@@ -161,6 +175,10 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
       status:                 'Ativo',
       solicitarDiscriminacaoMensal: false,
       issRetido:              false,
+      // Imóvel (contabilidade)
+      imovelCib, imovelInscricaoFiscal, imovelFinalidade,
+      imovelCep, imovelLogradouro, imovelNumero, imovelComplemento,
+      imovelBairro, imovelCodMun, imovelMunNome, codNbs,
       ...retDefaults,
     }
   }).filter(r => r.tenant && r.value > 0)
@@ -287,6 +305,7 @@ function ImportContratosModal({ onImport, onClose, retDefaults = NAT_RET_DEFAULT
               Ver colunas aceitas na planilha
             </summary>
             <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-[11px] text-slate-600 space-y-2">
+              <p className="font-bold text-slate-500 uppercase tracking-wide text-[10px]">Dados do Contrato</p>
               {[
                 { label: 'Nome',           cols: 'Nome Completo, Nome' },
                 { label: 'CPF / CNPJ',    cols: 'CPF/CNPJ, CPF, CNPJ' },
@@ -299,10 +318,29 @@ function ImportContratosModal({ onImport, onClose, retDefaults = NAT_RET_DEFAULT
                 { label: 'Fim',            cols: 'Fim do Contrato, Fim' },
                 { label: 'Discriminação',  cols: 'Discriminação do Serviço, Discriminação, Motivo do Pagamento:, Motivo do Pagamento, Motivo, Dados Pgto. (Obs.), Obs, Observação' },
                 { label: 'LC 116',         cols: 'Código Serviço LC 116, LC 116, LC116, LLC116, LC-116' },
-                { label: 'CEP tomador',    cols: 'CEP (preenche endereço automaticamente via ViaCEP)' },
+                { label: 'CEP tomador',    cols: 'CEP (preenche endereço do tomador automaticamente via ViaCEP)' },
               ].map(({ label, cols }) => (
                 <div key={label} className="flex gap-2">
-                  <span className="font-semibold text-slate-700 whitespace-nowrap w-32 shrink-0">{label}</span>
+                  <span className="font-semibold text-slate-700 whitespace-nowrap w-36 shrink-0">{label}</span>
+                  <span className="text-slate-500">{cols}</span>
+                </div>
+              ))}
+              <p className="pt-2 font-bold text-amber-600 uppercase tracking-wide text-[10px]">Dados do Imóvel (modo contabilidade)</p>
+              {[
+                { label: 'CIB',                cols: 'CIB, CIB Imóvel' },
+                { label: 'Inscrição fiscal',   cols: 'Inscrição Fiscal, Inscricao Fiscal, Inscrição Imobiliária, Inscricao Imobiliaria' },
+                { label: 'Finalidade',         cols: 'Finalidade, Finalidade Imóvel  (valores: residencial ou comercial)' },
+                { label: 'CEP imóvel',         cols: 'CEP Imóvel, CEP Imovel' },
+                { label: 'Logradouro',         cols: 'Logradouro Imóvel, Logradouro Imovel, Endereço Imóvel, Endereco Imovel' },
+                { label: 'Número',             cols: 'Número Imóvel, Numero Imovel, Nro Imóvel, Nro Imovel' },
+                { label: 'Complemento',        cols: 'Complemento Imóvel, Complemento Imovel' },
+                { label: 'Bairro',             cols: 'Bairro Imóvel, Bairro Imovel' },
+                { label: 'Cód. município',     cols: 'Cód. Município Imóvel, Cod Municipio Imovel, IBGE Imóvel, IBGE Imovel' },
+                { label: 'Município',          cols: 'Município Imóvel, Municipio Imovel' },
+                { label: 'NBS',                cols: 'NBS, Cód. NBS, Cod NBS  (ex: 1.1002.10.00)' },
+              ].map(({ label, cols }) => (
+                <div key={label} className="flex gap-2">
+                  <span className="font-semibold text-slate-700 whitespace-nowrap w-36 shrink-0">{label}</span>
                   <span className="text-slate-500">{cols}</span>
                 </div>
               ))}
@@ -1720,6 +1758,18 @@ export default function Contratos() {
           toma_bairro:     data.tamaBairro     || null,
           toma_cod_mun:    data.tamaCodMun     || null,
           toma_mun_nome:   data.tamaMunNome    || null,
+          // Imóvel (modo contabilidade)
+          imovel_cib:              data.imovelCib             || null,
+          imovel_inscricao_fiscal: data.imovelInscricaoFiscal || null,
+          imovel_finalidade:       data.imovelFinalidade       || null,
+          imovel_cep:              data.imovelCep             || null,
+          imovel_logradouro:       data.imovelLogradouro      || null,
+          imovel_numero:           data.imovelNumero          || null,
+          imovel_complemento:      data.imovelComplemento     || null,
+          imovel_bairro:           data.imovelBairro          || null,
+          imovel_cod_mun:          data.imovelCodMun          || null,
+          imovel_mun_nome:         data.imovelMunNome         || null,
+          cod_nbs:                 data.codNbs                || null,
         }).select().single()
         if (error) throw error
 
