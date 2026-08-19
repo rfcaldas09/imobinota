@@ -91,17 +91,20 @@ const mkRetDefaultsCtr = (profile) => ({
 // ── Parser de planilha XLS → contratos ────────────────────────────
 function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
   return data.map((row, i) => {
-    const nome = String(row['NOME COMPLETO'] || row['Nome'] || row['NOME'] || '').trim()
+    // Normaliza todas as chaves para maiúsculas — aceita colunas em qualquer capitalização
+    const r = Object.fromEntries(Object.entries(row).map(([k, v]) => [k.trim().toUpperCase(), v]))
+
+    const nome = String(r['NOME COMPLETO'] || r['NOME'] || '').trim()
 
     // CPF: Excel armazena como número, perdendo zeros à esquerda → repadding
-    let cpfRaw = String(row['CPF/CNPJ'] || row['CPF'] || row['CNPJ'] || '').replace(/\D/g, '')
+    let cpfRaw = String(r['CPF/CNPJ'] || r['CPF'] || r['CNPJ'] || '').replace(/\D/g, '')
     if (cpfRaw && cpfRaw.length < 11)  cpfRaw = cpfRaw.padStart(11, '0')   // CPF
     else if (cpfRaw && cpfRaw.length > 11 && cpfRaw.length < 14) cpfRaw = cpfRaw.padStart(14, '0') // CNPJ
     const cpf = cpfRaw ? maskCpfCnpj(cpfRaw) : ''
 
-    const email = String(row['E-MAIL'] || row['Email'] || row['EMAIL'] || '').trim()
-    const phone = String(row['TELEFONE'] || row['Telefone'] || '').trim()
-    const property = String(row['REFERÊNCIA'] || row['REFERENCIA'] || row['Referência'] || row['Referencia'] || '').trim()
+    const email    = String(r['E-MAIL'] || r['EMAIL'] || '').trim()
+    const phone    = String(r['TELEFONE'] || '').trim()
+    const property = String(r['REFERÊNCIA'] || r['REFERENCIA'] || '').trim()
 
     // Datas — openpyxl e XLSX retornam Date ou string
     const parseDate = v => {
@@ -111,26 +114,26 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
       if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
       return ''
     }
-    const start = parseDate(row['INÍCIO DO CONTRATO'] || row['INICIO DO CONTRATO'] || row['Início'] || row['Inicio'])
-    const end   = parseDate(row['FIM DO CONTRATO'] || row['Fim'] || '')
+    const start = parseDate(r['INÍCIO DO CONTRATO'] || r['INICIO DO CONTRATO'] || r['INÍCIO'] || r['INICIO'])
+    const end   = parseDate(r['FIM DO CONTRATO'] || r['FIM'] || '')
 
     // Valor
-    const vRaw = row['VALOR'] ?? row['Valor'] ?? 0
+    const vRaw = r['VALOR'] ?? 0
     const value = typeof vRaw === 'number' ? vRaw : parseFloat(String(vRaw).replace(/\./g,'').replace(',','.')) || 0
 
-    const dueDay = parseInt(row['DIA VENC.'] || row['DIA VENCIMENTO'] || row['Dia Venc'] || 10) || 10
+    const dueDay = parseInt(r['DIA VENC.'] || r['DIA VENCIMENTO'] || r['DIA VENC'] || 10) || 10
 
     const discriminacaoServico = String(
-      row['Discriminação do serviço'] || row['Discriminação'] ||
-      row['DADOS PGTO. (OBS.)'] || row['OBS'] || row['Observação'] || ''
+      r['DISCRIMINAÇÃO DO SERVIÇO'] || r['DISCRIMINAÇÃO'] ||
+      r['DADOS PGTO. (OBS.)'] || r['OBS'] || r['OBSERVAÇÃO'] || ''
     ).trim()
 
     // LC 116 da planilha — extrai só o código (ex: "25.03 - ..." → "25.03")
-    const lc116Raw = String(row['Código serviço LC 116'] || row['LC 116'] || row['LC116'] || '').trim()
+    const lc116Raw = String(r['CÓDIGO SERVIÇO LC 116'] || r['LC 116'] || r['LC116'] || '').trim()
     const codServicoLc116 = lc116Raw ? lc116Raw.split(' - ')[0].trim() : ''
 
     // CEP do tomador — Excel pode guardar como número (sem zeros/hífen)
-    const cepRaw = String(row['CEP'] || row['Cep'] || row['cep'] || '').replace(/\D/g, '').padStart(8, '0')
+    const cepRaw = String(r['CEP'] || '').replace(/\D/g, '').padStart(8, '0')
     const tamaCep = cepRaw.replace(/^0+$/, '') // descarta se for todo zeros (campo vazio)
 
     return {
