@@ -127,11 +127,12 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
 
     const discriminacaoServico = String(
       r['DISCRIMINAÇÃO DO SERVIÇO'] || r['DISCRIMINAÇÃO'] ||
+      r['MOTIVO DO PAGAMENTO:'] || r['MOTIVO DO PAGAMENTO'] || r['MOTIVO'] ||
       r['DADOS PGTO. (OBS.)'] || r['OBS'] || r['OBSERVAÇÃO'] || ''
     ).trim()
 
     // LC 116 da planilha — extrai só o código (ex: "25.03 - ..." → "25.03")
-    const lc116Raw = String(r['CÓDIGO SERVIÇO LC 116'] || r['LC 116'] || r['LC116'] || '').trim()
+    const lc116Raw = String(r['CÓDIGO SERVIÇO LC 116'] || r['LC 116'] || r['LC116'] || r['LLC116'] || r['LC-116'] || '').trim()
     const codServicoLc116 = lc116Raw ? lc116Raw.split(' - ')[0].trim() : ''
 
     // CEP do tomador — Excel pode guardar como número (sem zeros/hífen)
@@ -152,6 +153,8 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
       discriminacaoServico,
       codServicoLc116,   // vem da planilha; fallback para o campo do modal no handleImport
       tamaCep,
+      // Endereço do tomador — preenchido pelo lookup ViaCEP após o parse
+      tomaLogradouro: '', tomaNumero: '', tamaBairro: '', tamaCodMun: '', tamaMunNome: '',
       seguroFinanceiro:       0,
       seguroIncendio:         0,
       iptu:                   0,
@@ -172,13 +175,14 @@ function ImportContratosModal({ onImport, onClose, retDefaults = NAT_RET_DEFAULT
   const [dragOver, setDragOver]   = useState(false)
   const [parseErr, setParseErr]   = useState('')
   const [lc116, setLc116]         = useState('')
+  const [cepLoading, setCepLoading] = useState(false)
   const fileRef = useRef(null)
 
   const processFile = file => {
     if (!file) return
     setParseErr('')
     const reader = new FileReader()
-    reader.onload = e => {
+    reader.onload = async e => {
       try {
         const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true })
         const ws = wb.Sheets[wb.SheetNames[0]]
@@ -193,6 +197,29 @@ function ImportContratosModal({ onImport, onClose, retDefaults = NAT_RET_DEFAULT
         setSelectedIds(new Set(parsed.map(r => r._id)))
         setFileName(file.name)
         setStep('preview')
+
+        // Lookup ViaCEP em background para linhas com CEP
+        const cepsParaLookup = parsed.filter(r => r.tamaCep)
+        if (cepsParaLookup.length) {
+          setCepLoading(true)
+          const enriched = await Promise.all(parsed.map(async row => {
+            if (!row.tamaCep) return row
+            try {
+              const res = await fetch(`https://viacep.com.br/ws/${row.tamaCep}/json/`)
+              const d = await res.json()
+              if (!d.erro) return {
+                ...row,
+                tomaLogradouro: d.logradouro || '',
+                tamaBairro:     d.bairro     || '',
+                tamaCodMun:     d.ibge        || '',
+                tamaMunNome:    d.localidade  || '',
+              }
+            } catch { /* silencia falhas individuais */ }
+            return row
+          }))
+          setRows(enriched)
+          setCepLoading(false)
+        }
       } catch (err) { setParseErr('Erro ao ler arquivo: ' + err.message) }
     }
     reader.readAsArrayBuffer(file)
@@ -273,7 +300,10 @@ function ImportContratosModal({ onImport, onClose, retDefaults = NAT_RET_DEFAULT
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
           <div>
             <h2 className="text-base font-bold text-slate-800">Revisão da importação</h2>
-            <p className="text-xs text-slate-400 mt-0.5">{fileName}</p>
+            <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
+              {fileName}
+              {cepLoading && <><span className="w-3 h-3 border-2 border-slate-300 border-t-indigo-500 rounded-full animate-spin inline-block"/><span>buscando CEPs…</span></>}
+            </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><IcX c="w-5 h-5"/></button>
         </div>
