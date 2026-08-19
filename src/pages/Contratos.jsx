@@ -524,8 +524,13 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
     setCertMsg(null)
     try {
       const { supabase: sb } = await import('../lib/supabase')
-      const path = `certificados-nfse/${userId}/contratos/${Date.now()}_${file.name}`
-      const { error: upErr } = await sb.storage.from('certificados-nfse').upload(path, file, { upsert: true })
+      const safeName = file.name
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .replace(/_+/g, '_')
+      // path relativo ao bucket — NÃO incluir o nome do bucket aqui
+      const path = `${userId}/contratos/${Date.now()}_${safeName}`
+      const { error: upErr } = await sb.storage.from('certificados-nfse').upload(path, file, { upsert: true, contentType: 'application/x-pkcs12' })
       if (upErr) throw upErr
       set('certPfxPath', path)
       setCertMsg({ ok: true, msg: `Certificado "${file.name}" enviado.` })
