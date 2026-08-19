@@ -738,7 +738,7 @@ ${endTomaXml}</toma>
 </locPrest>
 <cServ>
 <cTribNac>${cfg.cTribNac}</cTribNac>
-${cfg.cTribMun ? `<cTribMun>${cfg.cTribMun}</cTribMun>\n` : ''}${cfg.codNbs ? `<cNBS>${escXml(cfg.codNbs)}</cNBS>\n` : ''}<xDescServ>${escXml(xDescServ.slice(0, 150))}</xDescServ>
+${cfg.cTribMun ? `<cTribMun>${cfg.cTribMun}</cTribMun>\n` : ''}<xDescServ>${escXml(xDescServ.slice(0, 150))}</xDescServ>
 </cServ>
 ${cfg.imovel ? `<infObra>\n<BemImovel>\n` +
   (cfg.imovel.cib            ? `<nCib>${escXml(cfg.imovel.cib.toUpperCase())}</nCib>\n`                 : '') +

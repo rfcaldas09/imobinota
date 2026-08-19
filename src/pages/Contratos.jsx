@@ -505,7 +505,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
     imovelCib: '', imovelInscricaoFiscal: '', imovelFinalidade: 'residencial',
     imovelLogradouro: '', imovelNumero: '', imovelComplemento: '', imovelBairro: '',
     imovelCep: '', imovelCodMun: '', imovelMunNome: '',
-    codNbs: '1.1002.10.00',
+    codNbs: null,
     // Certificado A1 por proprietário (modo contabilidade)
     certPfxPath: '', certSenha: '',
     // Retenções — federais pré-preenchidas com defaults do perfil (ou padrão nacional)
@@ -1550,7 +1550,7 @@ const mapRow = row => ({
   imovelCep:             row.imovel_cep              || '',
   imovelCodMun:          row.imovel_cod_mun          || '',
   imovelMunNome:         row.imovel_mun_nome         || '',
-  codNbs:                row.cod_nbs                 || '1.1002.10.00',
+  codNbs:                row.cod_nbs                 || null,
   certPfxPath:           row.cert_pfx_path           || '',
   // certSenha nunca volta do banco para o frontend
   certSenha: '',
