@@ -114,7 +114,9 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
       if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
       return ''
     }
-    const start = parseDate(r['INÍCIO DO CONTRATO'] || r['INICIO DO CONTRATO'] || r['INÍCIO'] || r['INICIO'])
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
+    const defaultStart = tomorrow.toISOString().slice(0, 10)
+    const start = parseDate(r['INÍCIO DO CONTRATO'] || r['INICIO DO CONTRATO'] || r['INÍCIO'] || r['INICIO']) || defaultStart
     const end   = parseDate(r['FIM DO CONTRATO'] || r['FIM'] || '')
 
     // Valor
