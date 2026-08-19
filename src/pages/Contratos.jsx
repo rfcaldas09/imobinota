@@ -129,6 +129,10 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
     const lc116Raw = String(row['Código serviço LC 116'] || row['LC 116'] || row['LC116'] || '').trim()
     const codServicoLc116 = lc116Raw ? lc116Raw.split(' - ')[0].trim() : ''
 
+    // CEP do tomador — Excel pode guardar como número (sem zeros/hífen)
+    const cepRaw = String(row['CEP'] || row['Cep'] || row['cep'] || '').replace(/\D/g, '').padStart(8, '0')
+    const tamaCep = cepRaw.replace(/^0+$/, '') // descarta se for todo zeros (campo vazio)
+
     return {
       _id:                    i,
       tenant:                 nome,
@@ -142,6 +146,7 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
       dueDay,
       discriminacaoServico,
       codServicoLc116,   // vem da planilha; fallback para o campo do modal no handleImport
+      tamaCep,
       seguroFinanceiro:       0,
       seguroIncendio:         0,
       iptu:                   0,
