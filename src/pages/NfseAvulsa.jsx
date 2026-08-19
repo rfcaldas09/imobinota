@@ -19,6 +19,7 @@ const IcPlus    = ({ c='' }) => ic('<line x1="12" y1="5" x2="12" y2="19"/><line 
 const IcX       = ({ c='' }) => ic('<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>', c)
 const IcSend    = ({ c='' }) => ic('<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>', c)
 const IcEdit    = ({ c='' }) => ic('<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>', c)
+const IcTrash   = ({ c='' }) => ic('<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>', c)
 const IcDoc     = ({ c='' }) => ic('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>', c)
 const IcDownload= ({ c='' }) => ic('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>', c)
 const IcBan     = ({ c='' }) => ic('<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>', c)
@@ -950,6 +951,7 @@ export default function NfseAvulsa() {
   const [showModal, setShowModal]   = useState(false)
   const [editIdx, setEditIdx]       = useState(null)
   const [showImportModal, setShowImportModal] = useState(false)
+  const [selectedPending, setSelectedPending] = useState(new Set())
 
   // Estado de emissão em lote
   const [emitting, setEmitting]       = useState(false)
@@ -1008,7 +1010,22 @@ export default function NfseAvulsa() {
 
   const handleRemove = idx => {
     setPending(p => p.filter((_, i) => i !== idx))
+    setSelectedPending(s => { const n = new Set(s); n.delete(idx); return n })
   }
+
+  const handleRemoveSelected = () => {
+    setPending(p => p.filter((_, i) => !selectedPending.has(i)))
+    setSelectedPending(new Set())
+  }
+
+  const allPendingSelected = pending.length > 0 && selectedPending.size === pending.length
+  const toggleAllPending = () =>
+    allPendingSelected
+      ? setSelectedPending(new Set())
+      : setSelectedPending(new Set(pending.map((_, i) => i)))
+  const togglePendingRow = idx => setSelectedPending(s => {
+    const n = new Set(s); n.has(idx) ? n.delete(idx) : n.add(idx); return n
+  })
 
   // ── Importar linhas do XLS ────────────────────────────────────
   const handleImportRows = rows => {
@@ -1414,6 +1431,12 @@ export default function NfseAvulsa() {
               )}
             </div>
             <div className="flex items-center gap-2">
+              {selectedPending.size > 0 && !emitting && (
+                <button onClick={handleRemoveSelected}
+                  className="flex items-center gap-1.5 border border-red-200 text-red-600 px-3 py-2 rounded-xl text-sm font-semibold hover:bg-red-50">
+                  <IcTrash c="w-3.5 h-3.5"/> Excluir selecionadas ({selectedPending.size})
+                </button>
+              )}
               {pending.length > 0 && !emitting && (
                 <button onClick={handleEmitirTudo}
                   className="flex items-center gap-1.5 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700">
@@ -1445,6 +1468,10 @@ export default function NfseAvulsa() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-xs font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-50">
+                  <th className="px-4 py-2.5 w-10">
+                    <input type="checkbox" checked={allPendingSelected} onChange={toggleAllPending}
+                      disabled={emitting} className="accent-indigo-600"/>
+                  </th>
                   <th className="px-5 py-2.5 text-left">Nome / Razão Social</th>
                   <th className="px-4 py-2.5 text-left">CPF / CNPJ</th>
                   <th className="px-4 py-2.5 text-left">Competência</th>
@@ -1453,34 +1480,41 @@ export default function NfseAvulsa() {
                 </tr>
               </thead>
               <tbody>
-                {pending.map((item, i) => (
-                  <tr key={i} className="border-t border-slate-50 hover:bg-slate-50/50">
-                    <td className="px-5 py-3">
-                      <p className="font-medium text-slate-800">{item.nome}</p>
-                      {item.email && <p className="text-xs text-slate-400">{item.email}</p>}
-                      {(item.issRetido || item.pIRRF || item.pCSLL || item.pCOFINS) && (
-                        <p className="text-xs text-orange-600 font-medium mt-0.5">
-                          {item.issRetido ? '📌 ISS retido ' : ''}{item.pIRRF || item.pCSLL || item.pCOFINS ? '· ret. federais' : ''}
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{item.cpfCnpj}</td>
-                    <td className="px-4 py-3 text-slate-600">{item.mesRef}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-slate-800">{fmtBRL(item.valor)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => handleEdit(i)} disabled={emitting}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30">
-                          <IcEdit/>
-                        </button>
-                        <button onClick={() => handleRemove(i)} disabled={emitting}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-30">
-                          <IcX/>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {pending.map((item, i) => {
+                  const checked = selectedPending.has(i)
+                  return (
+                    <tr key={i} className={`border-t border-slate-50 hover:bg-slate-50/50 ${checked ? 'bg-red-50/30' : ''}`}>
+                      <td className="px-4 py-3 text-center">
+                        <input type="checkbox" checked={checked} onChange={() => togglePendingRow(i)}
+                          disabled={emitting} className="accent-indigo-600"/>
+                      </td>
+                      <td className="px-5 py-3">
+                        <p className="font-medium text-slate-800">{item.nome}</p>
+                        {item.email && <p className="text-xs text-slate-400">{item.email}</p>}
+                        {(item.issRetido || item.pIRRF || item.pCSLL || item.pCOFINS) && (
+                          <p className="text-xs text-orange-600 font-medium mt-0.5">
+                            {item.issRetido ? '📌 ISS retido ' : ''}{item.pIRRF || item.pCSLL || item.pCOFINS ? '· ret. federais' : ''}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-500">{item.cpfCnpj}</td>
+                      <td className="px-4 py-3 text-slate-600">{item.mesRef}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-slate-800">{fmtBRL(item.valor)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => handleEdit(i)} disabled={emitting}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30">
+                            <IcEdit/>
+                          </button>
+                          <button onClick={() => handleRemove(i)} disabled={emitting}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 disabled:opacity-30">
+                            <IcX/>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           )}

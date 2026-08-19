@@ -13,6 +13,17 @@ const DEV_USER = {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [isContabilidade, setIsContabilidade] = useState(false)
+
+  const loadProfile = async (userId) => {
+    if (!userId || !supabaseConfigured) return
+    const { data } = await supabase
+      .from('profiles')
+      .select('is_contabilidade')
+      .eq('id', userId)
+      .maybeSingle()
+    setIsContabilidade(!!data?.is_contabilidade)
+  }
 
   useEffect(() => {
     if (!supabaseConfigured) {
@@ -24,17 +35,18 @@ export function AuthProvider({ children }) {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
+      loadProfile(session?.user?.id)
       setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
-        // Só limpa o usuário em logout explícito
         setUser(null)
+        setIsContabilidade(false)
       } else if (session?.user) {
-        // TOKEN_REFRESHED, SIGNED_IN, etc: só atualiza se o ID mudou
-        // Evita re-renders desnecessários quando o token é renovado ao voltar para a aba
+        const isNew = !user || user.id !== session.user.id
         setUser(prev => prev?.id === session.user.id ? prev : session.user)
+        if (isNew) loadProfile(session.user.id)
       }
     })
 
@@ -66,7 +78,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ user, loading, isContabilidade, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   )

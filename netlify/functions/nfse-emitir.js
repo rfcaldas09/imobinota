@@ -90,7 +90,17 @@ async function handle(event) {
   // inscricao_municipal é opcional: alguns municípios não têm dados complementares no CNC NFS-e
   // (erro E0120 quando o campo IM é enviado para esses municípios). O XML já o omite quando vazio.
   if (!p.nfse_municipio_ibge) return { statusCode: 400, body: JSON.stringify({ error: 'Código IBGE do município não configurado em Configurações → Fiscal' }) }
-  if (!p.nfse_cert_path) return { statusCode: 400, body: JSON.stringify({ error: 'Certificado digital A1 não enviado em Configurações → Empresa' }) }
+
+  // Certificado: per-contrato (modo contabilidade) tem precedência sobre certificado do perfil
+  const useContratoCert = !!(cobData.certPfxPath)
+  const effectiveCertPath    = useContratoCert ? cobData.certPfxPath    : p.nfse_cert_path
+  const effectiveCertPassEnc = useContratoCert ? cobData.certSenhaEnc   : p.nfse_cert_password_enc
+  if (!effectiveCertPath) {
+    return { statusCode: 400, body: JSON.stringify({ error: useContratoCert
+      ? 'Certificado digital A1 do proprietário não encontrado. Faça upload em Contratos → Editar Contrato.'
+      : 'Certificado digital A1 não enviado em Configurações → Empresa' }) }
+  }
+
   // Simples Nacional/MEI: alíquota ISS só é exigida quando ISS é retido pelo tomador (tpRetISSQN=2)
   // Para tpRetISSQN=1, pAliq não deve ser enviado (E0625), então a alíquota é opcional
   const _isSimplesPrestador = ['simples', 'mei'].includes((p.regime_tributario || '').toLowerCase())
@@ -106,21 +116,24 @@ async function handle(event) {
   console.log('[nfse-emitir] numeroDPS:', novNumero)
 
   // ── 3. Baixa o certificado do Storage ──────────────────────────
-  const certBytes = await downloadCert(SUPABASE_URL, SERVICE_KEY, p.nfse_cert_path)
-  console.log('[nfse-emitir] cert baixado, tamanho bytes:', certBytes.length, '| path:', p.nfse_cert_path)
+  console.log('[nfse-emitir] cert source:', useContratoCert ? 'contrato' : 'perfil', '| path:', effectiveCertPath)
+  const certBytes = await downloadCert(SUPABASE_URL, SERVICE_KEY, effectiveCertPath)
+  console.log('[nfse-emitir] cert baixado, tamanho bytes:', certBytes.length)
 
-  if (!p.nfse_cert_password_enc) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Senha do certificado não encontrada. Acesse Configurações → NFS-e, informe a senha e salve.' }) }
+  if (!effectiveCertPassEnc) {
+    return { statusCode: 400, body: JSON.stringify({ error: useContratoCert
+      ? 'Senha do certificado do proprietário não encontrada. Edite o contrato e informe a senha.'
+      : 'Senha do certificado não encontrada. Acesse Configurações → NFS-e, informe a senha e salve.' }) }
   }
   if (!CERT_KEY) {
     return { statusCode: 500, body: JSON.stringify({ error: 'NFSE_CERT_KEY não configurada nas variáveis de ambiente do servidor.' }) }
   }
 
-  const certPassword = decryptPassword(p.nfse_cert_password_enc, CERT_KEY)
+  const certPassword = decryptPassword(effectiveCertPassEnc, CERT_KEY)
   if (!certPassword) {
     return { statusCode: 500, body: JSON.stringify({ error: 'Falha ao descriptografar a senha do certificado. Verifique se NFSE_CERT_KEY no servidor é a mesma usada no upload.' }) }
   }
-  console.log('[nfse-emitir] certPassword decriptada OK, tamanho:', certPassword.length, '| enc length:', p.nfse_cert_password_enc.length)
+  console.log('[nfse-emitir] certPassword decriptada OK, tamanho:', certPassword.length)
 
   // ── 4. Extrai chave privada e certificado do .pfx ──────────────
   const { privateKey, certPem, certForge } = parsePfx(certBytes, certPassword)
@@ -205,6 +218,10 @@ async function handle(event) {
     regime:        (p.regime_tributario || 'simples'),
     // descServico: texto configurável pelo usuário em Configurações → Fiscal
     descServico:   p.nfse_desc_servico || '',
+    // Locação imobiliária (modo contabilidade): NBS e dados do imóvel
+    codNbs:        cobData.codNbs || null,
+    imovel:        cobData.imovel || null,
+    // imovel = { cib, inscricaoFiscal, logradouro, numero, complemento, bairro, cep, codMun, munNome }
   }
 
   let dpsXml
@@ -721,9 +738,19 @@ ${endTomaXml}</toma>
 </locPrest>
 <cServ>
 <cTribNac>${cfg.cTribNac}</cTribNac>
-${cfg.cTribMun ? `<cTribMun>${cfg.cTribMun}</cTribMun>\n` : ''}<xDescServ>${escXml(xDescServ.slice(0, 150))}</xDescServ>
+${cfg.cTribMun ? `<cTribMun>${cfg.cTribMun}</cTribMun>\n` : ''}${cfg.codNbs ? `<cNBS>${escXml(cfg.codNbs)}</cNBS>\n` : ''}<xDescServ>${escXml(xDescServ.slice(0, 150))}</xDescServ>
 </cServ>
-${infoComplXml}
+${cfg.imovel ? `<infObra>\n<BemImovel>\n` +
+  (cfg.imovel.cib            ? `<nCib>${escXml(cfg.imovel.cib.toUpperCase())}</nCib>\n`                 : '') +
+  (cfg.imovel.inscricaoFiscal? `<nInscImMunic>${escXml(cfg.imovel.inscricaoFiscal)}</nInscImMunic>\n`   : '') +
+  (cfg.imovel.codMun && cfg.imovel.cep ? `<end>\n<endNac>\n<cMun>${digits(cfg.imovel.codMun).slice(0,7)}</cMun>\n<CEP>${digits(cfg.imovel.cep).slice(0,8)}</CEP>\n</endNac>\n` +
+    (cfg.imovel.logradouro ? `<xLgr>${escXml(String(cfg.imovel.logradouro).slice(0,125))}</xLgr>\n` : '') +
+    (cfg.imovel.numero     ? `<nro>${escXml(String(cfg.imovel.numero).slice(0,10))}</nro>\n`         : '<nro>S/N</nro>\n') +
+    (cfg.imovel.complemento? `<xCpl>${escXml(String(cfg.imovel.complemento).slice(0,60))}</xCpl>\n`  : '') +
+    (cfg.imovel.bairro     ? `<xBairro>${escXml(String(cfg.imovel.bairro).slice(0,72))}</xBairro>\n` : '') +
+    `</end>\n`
+  : '') +
+  `</BemImovel>\n</infObra>\n` : ''}${infoComplXml}
 </serv>
 <valores>
 <vServPrest>

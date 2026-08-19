@@ -114,6 +114,22 @@ const mapCob = (row, lastNfse = null) => {
     nfseStatus:      lastNfse?.status      || null,
     nfseNumero:      lastNfse?.numero_nfse || null,
     nfseId:          lastNfse?.id          || null,
+    // modo contabilidade (locação imobiliária)
+    certPfxPath:  row.contratos?.cert_pfx_path || null,
+    certSenhaEnc: row.contratos?.cert_senha    || null,
+    codNbs:       row.contratos?.cod_nbs        || null,
+    imovel: (row.contratos?.imovel_cib || row.contratos?.imovel_cep) ? {
+      cib:            row.contratos?.imovel_cib             || null,
+      inscricaoFiscal:row.contratos?.imovel_inscricao_fiscal || null,
+      finalidade:     row.contratos?.imovel_finalidade       || null,
+      logradouro:     row.contratos?.imovel_logradouro       || '',
+      numero:         row.contratos?.imovel_numero           || 'S/N',
+      complemento:    row.contratos?.imovel_complemento      || null,
+      bairro:         row.contratos?.imovel_bairro           || '',
+      cep:            row.contratos?.imovel_cep              || '',
+      codMun:         row.contratos?.imovel_cod_mun          || '',
+      munNome:        row.contratos?.imovel_mun_nome         || '',
+    } : null,
   }
 }
 
@@ -493,6 +509,10 @@ function NfseModal({ cob, user, onClose }) {
               pPIS:    cob.pPIS    || null,
               pINSS:   cob.pINSS   || null,
             },
+            certPfxPath:  cob.certPfxPath  || null,
+            certSenhaEnc: cob.certSenhaEnc || null,
+            codNbs:       cob.codNbs       || null,
+            imovel:       cob.imovel       || null,
           },
         }),
       })
@@ -1016,7 +1036,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
     const ref = mesStr(mesRef)
     const { data: cobsDoMes } = await supabase
       .from('cobrancas')
-      .select('id, valor_total, mes_referencia, contrato_id, contratos(imovel, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, seguro_financeiro, seguro_incendio, iptu, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss, toma_logradouro, toma_numero, toma_bairro, toma_cep, toma_cod_mun, toma_mun_nome), inquilinos(nome, cpf, email)')
+      .select('id, valor_total, mes_referencia, contrato_id, contratos(imovel, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, seguro_financeiro, seguro_incendio, iptu, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss, toma_logradouro, toma_numero, toma_bairro, toma_cep, toma_cod_mun, toma_mun_nome, imovel_cib, imovel_inscricao_fiscal, imovel_finalidade, imovel_logradouro, imovel_numero, imovel_complemento, imovel_bairro, imovel_cep, imovel_cod_mun, imovel_mun_nome, cod_nbs, cert_pfx_path, cert_senha), inquilinos(nome, cpf, email)')
       .eq('user_id', user.id)
       .eq('mes_referencia', ref)
       .in('contrato_id', activeContracts.map(c => c.id))
@@ -1047,6 +1067,22 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
       tamaCep:        cob.contratos?.toma_cep        || '',
       tamaCodMun:     cob.contratos?.toma_cod_mun    || '',
       mesRef:          cob.mes_referencia,
+      // modo contabilidade (locação imobiliária)
+      certPfxPath:  cob.contratos?.cert_pfx_path || null,
+      certSenhaEnc: cob.contratos?.cert_senha    || null,
+      codNbs:       cob.contratos?.cod_nbs        || null,
+      imovel: (cob.contratos?.imovel_cib || cob.contratos?.imovel_cep) ? {
+        cib:            cob.contratos?.imovel_cib             || null,
+        inscricaoFiscal:cob.contratos?.imovel_inscricao_fiscal || null,
+        finalidade:     cob.contratos?.imovel_finalidade       || null,
+        logradouro:     cob.contratos?.imovel_logradouro       || '',
+        numero:         cob.contratos?.imovel_numero           || 'S/N',
+        complemento:    cob.contratos?.imovel_complemento      || null,
+        bairro:         cob.contratos?.imovel_bairro           || '',
+        cep:            cob.contratos?.imovel_cep              || '',
+        codMun:         cob.contratos?.imovel_cod_mun          || '',
+        munNome:        cob.contratos?.imovel_mun_nome         || '',
+      } : null,
     }))
   }
 
@@ -1139,6 +1175,10 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
                 pPIS:    cob.pPIS    || null,
                 pINSS:   cob.pINSS   || null,
               },
+              certPfxPath:  cob.certPfxPath  || null,
+              certSenhaEnc: cob.certSenhaEnc || null,
+              codNbs:       cob.codNbs       || null,
+              imovel:       cob.imovel       || null,
             },
           }),
         })
@@ -1806,7 +1846,7 @@ export default function Cobrancas() {
     // Query principal — sem join nfse_emissoes (exige FK formal no banco)
     const { data, error } = await supabase
       .from('cobrancas')
-      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss, toma_logradouro, toma_numero, toma_bairro, toma_cep, toma_cod_mun, toma_mun_nome), inquilinos(nome, cpf, email)')
+      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss, toma_logradouro, toma_numero, toma_bairro, toma_cep, toma_cod_mun, toma_mun_nome, imovel_cib, imovel_inscricao_fiscal, imovel_finalidade, imovel_logradouro, imovel_numero, imovel_complemento, imovel_bairro, imovel_cep, imovel_cod_mun, imovel_mun_nome, cod_nbs, cert_pfx_path, cert_senha), inquilinos(nome, cpf, email)')
       .eq('user_id', user.id)
       .eq('mes_referencia', ref)
       .order('created_at', { ascending: false })

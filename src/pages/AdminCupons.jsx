@@ -197,7 +197,7 @@ function TabUsuarios() {
   const [errosModal, setErrosModal] = useState(null)
   const [busca, setBusca]           = useState('')
   const [filtroAtivo, setFiltroAtivo] = useState('ativos') // 'ativos' | 'inativos' | 'todos'
-  const [toggling, setToggling]     = useState(null) // id do usuário sendo alterado
+  const [toggling, setToggling]     = useState(null) // '<id>-ativo' | '<id>-contab'
 
   const getToken = async () => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -224,22 +224,32 @@ function TabUsuarios() {
 
   useEffect(() => { load() }, [load])
 
+  const patchUser = async (userId, patch) => {
+    const token = await getToken()
+    const res = await fetch('/.netlify/functions/admin-stats', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ userId, ...patch }),
+    })
+    if (!res.ok) throw new Error('Erro ao atualizar')
+  }
+
   const handleToggleAtivo = async (u) => {
-    setToggling(u.id)
+    setToggling(`${u.id}-ativo`)
     try {
-      const token = await getToken()
-      const res = await fetch('/.netlify/functions/admin-stats', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ userId: u.id, admin_ativo: !u.admin_ativo }),
-      })
-      if (!res.ok) throw new Error('Erro ao atualizar')
+      await patchUser(u.id, { admin_ativo: !u.admin_ativo })
       setUsuarios(prev => prev.map(x => x.id === u.id ? { ...x, admin_ativo: !u.admin_ativo } : x))
-    } catch (e) {
-      alert(e.message)
-    } finally {
-      setToggling(null)
-    }
+    } catch (e) { alert(e.message) }
+    finally { setToggling(null) }
+  }
+
+  const handleToggleContabilidade = async (u) => {
+    setToggling(`${u.id}-contab`)
+    try {
+      await patchUser(u.id, { is_contabilidade: !u.is_contabilidade })
+      setUsuarios(prev => prev.map(x => x.id === u.id ? { ...x, is_contabilidade: !u.is_contabilidade } : x))
+    } catch (e) { alert(e.message) }
+    finally { setToggling(null) }
   }
 
   // Filtra por ativo/inativo/busca
@@ -347,6 +357,7 @@ function TabUsuarios() {
                 <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Recorr. ✅</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Total emitido</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Cadastro</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Contabil.</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
@@ -388,17 +399,30 @@ function TabUsuarios() {
                     {u.total_emitido > 0 ? fmtBRL(u.total_emitido) : <span className="text-slate-400">—</span>}
                   </td>
                   <td className="px-4 py-3 text-right text-slate-400 text-xs">{fmtDate(u.created_at)}</td>
+                  <td className="px-4 py-3 text-center">
+                    <button
+                      onClick={() => handleToggleContabilidade(u)}
+                      disabled={toggling === `${u.id}-contab`}
+                      title={u.is_contabilidade ? 'Desativar modo contabilidade' : 'Ativar modo contabilidade'}
+                      className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors disabled:opacity-40 ${
+                        u.is_contabilidade
+                          ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                          : 'bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-600'
+                      }`}>
+                      {toggling === `${u.id}-contab` ? '…' : u.is_contabilidade ? '✓ Ativo' : '— Off'}
+                    </button>
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => handleToggleAtivo(u)}
-                      disabled={toggling === u.id}
+                      disabled={toggling === `${u.id}-ativo`}
                       title={u.admin_ativo !== false ? 'Ocultar usuário' : 'Reativar usuário'}
                       className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors disabled:opacity-40 ${
                         u.admin_ativo !== false
                           ? 'bg-slate-100 text-slate-500 hover:bg-red-50 hover:text-red-600'
                           : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
                       }`}>
-                      {toggling === u.id ? '…' : u.admin_ativo !== false ? 'Ocultar' : 'Reativar'}
+                      {toggling === `${u.id}-ativo` ? '…' : u.admin_ativo !== false ? 'Ocultar' : 'Reativar'}
                     </button>
                   </td>
                 </tr>

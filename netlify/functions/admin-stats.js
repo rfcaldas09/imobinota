@@ -51,17 +51,24 @@ exports.handler = async (event) => {
     return { statusCode: authError.statusCode, headers, body: JSON.stringify({ error: authError.body }) }
   }
 
-  // ── PATCH: toggle admin_ativo de um usuário ──────────────────
+  // ── PATCH: toggle de flags de um usuário ──────────────────────
+  // Aceita: { userId, admin_ativo } ou { userId, is_contabilidade }
   if (event.httpMethod === 'PATCH') {
     let body
     try { body = JSON.parse(event.body || '{}') } catch (_) { body = {} }
-    const { userId, admin_ativo } = body
-    if (!userId || typeof admin_ativo !== 'boolean') {
-      return { statusCode: 400, headers, body: JSON.stringify({ error: 'userId e admin_ativo são obrigatórios' }) }
+    const { userId, admin_ativo, is_contabilidade } = body
+    if (!userId) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'userId é obrigatório' }) }
+    }
+    const patch = {}
+    if (typeof admin_ativo      === 'boolean') patch.admin_ativo      = admin_ativo
+    if (typeof is_contabilidade === 'boolean') patch.is_contabilidade = is_contabilidade
+    if (Object.keys(patch).length === 0) {
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'Nenhum campo válido para atualizar' }) }
     }
     const { error: updErr } = await supabase
       .from('profiles')
-      .update({ admin_ativo })
+      .update(patch)
       .eq('id', userId)
     if (updErr) return { statusCode: 500, headers, body: JSON.stringify({ error: updErr.message }) }
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) }
@@ -73,7 +80,7 @@ exports.handler = async (event) => {
   // Busca todos os perfis
   const { data: profiles, error: profErr } = await supabase
     .from('profiles')
-    .select('id, company_name, cnpj, email_contato, nfse_cert_path, plano_tipo, plano_fim, created_at, admin_ativo')
+    .select('id, company_name, cnpj, email_contato, nfse_cert_path, plano_tipo, plano_fim, created_at, admin_ativo, is_contabilidade')
     .order('created_at', { ascending: false })
 
   if (profErr) return { statusCode: 500, headers, body: JSON.stringify({ error: profErr.message }) }
@@ -122,7 +129,8 @@ exports.handler = async (event) => {
     plano:       p.plano_tipo  || null,
     plano_fim:   p.plano_fim   || null,
     created_at:  p.created_at,
-    admin_ativo: p.admin_ativo !== false, // default true
+    admin_ativo:      p.admin_ativo !== false, // default true
+    is_contabilidade: !!p.is_contabilidade,
     ...(statsById[p.id] || {
       avulsa_ok: 0, avulsa_erro: 0, avulsa_erros: [],
       rec_ok: 0, rec_erro: 0, total_emitido: 0,

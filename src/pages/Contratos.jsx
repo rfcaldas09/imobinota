@@ -450,16 +450,26 @@ function Row({ label, children }) {
   )
 }
 
+// Valida formato CIB: AAAAAAA-D (7 alfanum + hífen + 1 dígito)
+const isCibValid = v => !v || /^[A-Z0-9]{7}-\d$/.test(v.toUpperCase())
+
 // ── Formulário compartilhado (Novo / Editar) ──────────────────────
-function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor = 'bg-indigo-500', saving, retDefaults = NAT_RET_DEFAULT_CTR }) {
+function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor = 'bg-indigo-500', saving, retDefaults = NAT_RET_DEFAULT_CTR, isContabilidade = false }) {
   const blank = {
     tenant: '', cpf: '', property: '', value: '', seguroFinanceiro: '0',
     seguroIncendio: '0', iptu: '0', dueDay: '10',
     email: '', phone: '', start: new Date().toISOString().slice(0,10),
     end: '', status: 'Ativo', codServicoLc116: '',
     discriminacaoServico: '', solicitarDiscriminacaoMensal: false,
-    // Endereço do tomador
+    // Endereço do tomador (locatário)
     tomaLogradouro: '', tomaNumero: '', tamaBairro: '', tamaCep: '', tamaCodMun: '', tamaMunNome: '',
+    // Dados do imóvel (modo contabilidade)
+    imovelCib: '', imovelInscricaoFiscal: '', imovelFinalidade: 'residencial',
+    imovelLogradouro: '', imovelNumero: '', imovelComplemento: '', imovelBairro: '',
+    imovelCep: '', imovelCodMun: '', imovelMunNome: '',
+    codNbs: '1.1002.10.00',
+    // Certificado A1 por proprietário (modo contabilidade)
+    certPfxPath: '', certSenha: '',
     // Retenções — federais pré-preenchidas com defaults do perfil (ou padrão nacional)
     issRetido: false, ...retDefaults,
   }
@@ -474,23 +484,54 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
   const parsePctLocal = v => parseFloat((v||'').replace(',','.')) || 0
 
   const [cepLoading, setCepLoading] = useState(false)
-  const buscarCep = async cep => {
+  const buscarCep = async (cep, target = 'tomador') => {
     const digits = cep.replace(/\D/g, '')
     if (digits.length !== 8) return
-    setCepLoading(true)
+    setCepLoading(target)
     try {
       const r = await fetch(`https://viacep.com.br/ws/${digits}/json/`)
       const d = await r.json()
       if (!d.erro) {
-        setF(p => ({
-          ...p,
-          tomaLogradouro: d.logradouro || p.tomaLogradouro,
-          tamaBairro:     d.bairro     || p.tamaBairro,
-          tamaCodMun:     d.ibge       || p.tamaCodMun,
-          tamaMunNome:    d.localidade || p.tamaMunNome,
-        }))
+        if (target === 'tomador') {
+          setF(p => ({
+            ...p,
+            tomaLogradouro: d.logradouro || p.tomaLogradouro,
+            tamaBairro:     d.bairro     || p.tamaBairro,
+            tamaCodMun:     d.ibge       || p.tamaCodMun,
+            tamaMunNome:    d.localidade || p.tamaMunNome,
+          }))
+        } else {
+          setF(p => ({
+            ...p,
+            imovelLogradouro: d.logradouro || p.imovelLogradouro,
+            imovelBairro:     d.bairro     || p.imovelBairro,
+            imovelCodMun:     d.ibge       || p.imovelCodMun,
+            imovelMunNome:    d.localidade || p.imovelMunNome,
+          }))
+        }
       }
     } catch { /* silencia */ } finally { setCepLoading(false) }
+  }
+
+  // Certificado A1 por proprietário
+  const [certUploading, setCertUploading] = useState(false)
+  const [certMsg, setCertMsg]             = useState(null)
+  const certFileRef = useRef(null)
+
+  const handleCertUpload = async (file, userId) => {
+    if (!file) return
+    setCertUploading(true)
+    setCertMsg(null)
+    try {
+      const { supabase: sb } = await import('../lib/supabase')
+      const path = `certificados-nfse/${userId}/contratos/${Date.now()}_${file.name}`
+      const { error: upErr } = await sb.storage.from('certificados-nfse').upload(path, file, { upsert: true })
+      if (upErr) throw upErr
+      set('certPfxPath', path)
+      setCertMsg({ ok: true, msg: `Certificado "${file.name}" enviado.` })
+    } catch (err) {
+      setCertMsg({ ok: false, msg: err.message || 'Erro ao enviar certificado.' })
+    } finally { setCertUploading(false) }
   }
 
   const vServNum = parseFloat(f.value||0) || 0
@@ -532,13 +573,27 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
       codServicoLc116:             f.codServicoLc116             || null,
       discriminacaoServico:        f.discriminacaoServico         || null,
       solicitarDiscriminacaoMensal: !!f.solicitarDiscriminacaoMensal,
-      // Endereço do tomador
+      // Endereço do tomador (locatário)
       tomaLogradouro: f.tomaLogradouro || '',
       tomaNumero:     f.tomaNumero     || '',
       tamaBairro:     f.tamaBairro     || '',
       tamaCep:        f.tamaCep        || '',
       tamaCodMun:     f.tamaCodMun     || '',
       tamaMunNome:    f.tamaMunNome    || '',
+      // Dados do imóvel (modo contabilidade)
+      imovelCib:              f.imovelCib              || null,
+      imovelInscricaoFiscal:  f.imovelInscricaoFiscal  || null,
+      imovelFinalidade:       f.imovelFinalidade        || null,
+      imovelLogradouro:       f.imovelLogradouro        || null,
+      imovelNumero:           f.imovelNumero            || null,
+      imovelComplemento:      f.imovelComplemento       || null,
+      imovelBairro:           f.imovelBairro            || null,
+      imovelCep:              f.imovelCep               || null,
+      imovelCodMun:           f.imovelCodMun            || null,
+      imovelMunNome:          f.imovelMunNome           || null,
+      codNbs:                 f.codNbs                  || null,
+      certPfxPath:            f.certPfxPath             || null,
+      certSenha:              f.certSenha               || null,
       // Retenções
       issRetido:  !!f.issRetido,
       pIRRF:   parsePctLocal(f.pIRRF)   || null,
@@ -638,9 +693,149 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
 
           {/* Referência */}
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Referência</p>
-          <Row label="Referência">
-            <FormInp value={f.property} onChange={e => set('property', e.target.value)} placeholder=""/>
+          <Row label="Referência do Imóvel">
+            <FormInp value={f.property} onChange={e => set('property', e.target.value)} placeholder="Ex: Apto 302 — Rua das Flores"/>
           </Row>
+
+          {/* ── DADOS DO IMÓVEL (apenas modo contabilidade) ── */}
+          {isContabilidade && (
+            <>
+              <p className="text-xs font-bold text-amber-600 uppercase tracking-wide pt-1">Dados do Imóvel (NFS-e Locação)</p>
+              <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-3">
+
+                {/* Finalidade */}
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Finalidade</label>
+                  <select value={f.imovelFinalidade}
+                    onChange={e => {
+                      const v = e.target.value
+                      set('imovelFinalidade', v)
+                      set('codNbs', v === 'residencial' ? '1.1002.10.00' : '1.1002.20.00')
+                    }}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                    <option value="residencial">Residencial</option>
+                    <option value="comercial">Comercial / Não-Residencial</option>
+                  </select>
+                </div>
+
+                {/* CIB e Inscrição fiscal */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">
+                      CIB{f.imovelCib && !isCibValid(f.imovelCib) ? ' — formato inválido' : ''}
+                    </label>
+                    <input value={f.imovelCib || ''}
+                      onChange={e => set('imovelCib', e.target.value.toUpperCase())}
+                      placeholder="AAAAAAA-D"
+                      maxLength={9}
+                      className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 font-mono bg-white ${
+                        f.imovelCib && !isCibValid(f.imovelCib)
+                          ? 'border-red-400 focus:ring-red-300'
+                          : 'border-slate-200 focus:ring-amber-400'
+                      }`}/>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Inscrição Imobiliária (IPTU)</label>
+                    <input value={f.imovelInscricaoFiscal || ''}
+                      onChange={e => set('imovelInscricaoFiscal', e.target.value)}
+                      placeholder="Número da inscrição"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 font-mono bg-white"/>
+                  </div>
+                </div>
+
+                {/* Código NBS (calculado, editável) */}
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Código NBS</label>
+                  <input value={f.codNbs || ''}
+                    onChange={e => set('codNbs', e.target.value)}
+                    placeholder="1.1002.10.00"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 font-mono bg-white"/>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Auto-preenchido pela finalidade. 1.1002.10.00 = residencial · 1.1002.20.00 = comercial</p>
+                </div>
+
+                {/* Endereço do imóvel */}
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">CEP do Imóvel</label>
+                  <div className="relative">
+                    <input value={f.imovelCep || ''}
+                      onChange={e => {
+                        const v = e.target.value.replace(/\D/g,'').slice(0,8)
+                        set('imovelCep', v)
+                        if (v.length === 8) buscarCep(v, 'imovel')
+                      }}
+                      placeholder="00000000" maxLength={8}
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 font-mono pr-8 bg-white"/>
+                    {cepLoading === 'imovel' && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">…</span>}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="col-span-2">
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Logradouro</label>
+                    <input value={f.imovelLogradouro || ''} onChange={e => set('imovelLogradouro', e.target.value)}
+                      placeholder="Rua, Avenida…"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"/>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Número</label>
+                    <input value={f.imovelNumero || ''} onChange={e => set('imovelNumero', e.target.value)}
+                      placeholder="S/N"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"/>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Complemento</label>
+                    <input value={f.imovelComplemento || ''} onChange={e => set('imovelComplemento', e.target.value)}
+                      placeholder="Apto, Sala…"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"/>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Bairro</label>
+                    <input value={f.imovelBairro || ''} onChange={e => set('imovelBairro', e.target.value)}
+                      placeholder="Bairro"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"/>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Município</label>
+                    <input value={f.imovelMunNome ? `${f.imovelMunNome} (${f.imovelCodMun})` : (f.imovelCodMun || '')}
+                      readOnly placeholder="Preenchido pelo CEP"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-100 text-slate-500 font-mono text-xs"/>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── CERTIFICADO A1 DO PROPRIETÁRIO ── */}
+              <p className="text-xs font-bold text-amber-600 uppercase tracking-wide pt-1">Certificado A1 do Proprietário</p>
+              <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-2">
+                <p className="text-[11px] text-slate-500">Certificado e-CPF ou e-CNPJ do proprietário do imóvel. A NFS-e será emitida com este certificado.</p>
+                <div className="flex items-center gap-2">
+                  <input ref={certFileRef} type="file" accept=".pfx,.p12" className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0]
+                      if (file) handleCertUpload(file, /* userId passado via prop */ initial?._userId)
+                      e.target.value = ''
+                    }}/>
+                  <button type="button" onClick={() => certFileRef.current?.click()} disabled={certUploading}
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-100 disabled:opacity-50">
+                    {certUploading ? 'Enviando…' : f.certPfxPath ? '↑ Substituir certificado' : '↑ Enviar certificado .pfx'}
+                  </button>
+                  {f.certPfxPath && !certUploading && (
+                    <span className="text-xs text-emerald-600 font-medium">✓ Certificado salvo</span>
+                  )}
+                </div>
+                {certMsg && (
+                  <p className={`text-xs px-2 py-1 rounded ${certMsg.ok ? 'text-emerald-700 bg-emerald-50' : 'text-red-600 bg-red-50'}`}>
+                    {certMsg.msg}
+                  </p>
+                )}
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Senha do certificado</label>
+                  <input type="password" value={f.certSenha || ''}
+                    onChange={e => set('certSenha', e.target.value)}
+                    placeholder="Senha do arquivo .pfx"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"/>
+                </div>
+              </div>
+            </>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <Row label="Início do Contrato">
               <FormInp value={f.start} onChange={e => set('start', e.target.value)} type="date"/>
@@ -1293,13 +1488,28 @@ const mapRow = row => ({
   tamaCep:        row.toma_cep        || '',
   tamaCodMun:     row.toma_cod_mun    || '',
   tamaMunNome:    row.toma_mun_nome   || '',
+  // Dados do imóvel (contabilidade)
+  imovelCib:             row.imovel_cib              || '',
+  imovelInscricaoFiscal: row.imovel_inscricao_fiscal || '',
+  imovelFinalidade:      row.imovel_finalidade       || 'residencial',
+  imovelLogradouro:      row.imovel_logradouro       || '',
+  imovelNumero:          row.imovel_numero           || '',
+  imovelComplemento:     row.imovel_complemento      || '',
+  imovelBairro:          row.imovel_bairro           || '',
+  imovelCep:             row.imovel_cep              || '',
+  imovelCodMun:          row.imovel_cod_mun          || '',
+  imovelMunNome:         row.imovel_mun_nome         || '',
+  codNbs:                row.cod_nbs                 || '1.1002.10.00',
+  certPfxPath:           row.cert_pfx_path           || '',
+  // certSenha nunca volta do banco para o frontend
+  certSenha: '',
   totalValue:       (Number(row.valor_aluguel)||0) + (Number(row.seguro_financeiro)||0) +
                     (Number(row.seguro_incendio)||0) + (Number(row.iptu)||0),
 })
 
 // ── Página principal ───────────────────────────────────────────────
 export default function Contratos() {
-  const { user }  = useAuth()
+  const { user, isContabilidade }  = useAuth()
   const { certSet, loading: onboardingLoading } = useOnboarding()
 
   // Defaults de retenção do perfil do usuário
@@ -1396,6 +1606,20 @@ export default function Contratos() {
         toma_cep:        data.tamaCep        || null,
         toma_cod_mun:    data.tamaCodMun     || null,
         toma_mun_nome:   data.tamaMunNome    || null,
+        // Imóvel (contabilidade)
+        imovel_cib:              data.imovelCib             || null,
+        imovel_inscricao_fiscal: data.imovelInscricaoFiscal || null,
+        imovel_finalidade:       data.imovelFinalidade       || null,
+        imovel_logradouro:       data.imovelLogradouro       || null,
+        imovel_numero:           data.imovelNumero           || null,
+        imovel_complemento:      data.imovelComplemento      || null,
+        imovel_bairro:           data.imovelBairro           || null,
+        imovel_cep:              data.imovelCep              || null,
+        imovel_cod_mun:          data.imovelCodMun           || null,
+        imovel_mun_nome:         data.imovelMunNome          || null,
+        cod_nbs:                 data.codNbs                 || null,
+        cert_pfx_path:           data.certPfxPath            || null,
+        cert_senha:              data.certSenha              || null,
       }).select().single()
       if (error) throw error
 
@@ -1544,6 +1768,20 @@ export default function Contratos() {
         toma_cep:        data.tamaCep        || null,
         toma_cod_mun:    data.tamaCodMun     || null,
         toma_mun_nome:   data.tamaMunNome    || null,
+        // Imóvel (contabilidade)
+        imovel_cib:              data.imovelCib             || null,
+        imovel_inscricao_fiscal: data.imovelInscricaoFiscal || null,
+        imovel_finalidade:       data.imovelFinalidade       || null,
+        imovel_logradouro:       data.imovelLogradouro       || null,
+        imovel_numero:           data.imovelNumero           || null,
+        imovel_complemento:      data.imovelComplemento      || null,
+        imovel_bairro:           data.imovelBairro           || null,
+        imovel_cep:              data.imovelCep              || null,
+        imovel_cod_mun:          data.imovelCodMun           || null,
+        imovel_mun_nome:         data.imovelMunNome          || null,
+        cod_nbs:                 data.codNbs                 || null,
+        cert_pfx_path:           data.certPfxPath            || null,
+        ...(data.certSenha ? { cert_senha: data.certSenha } : {}),
         status:                        data.status,
       }).eq('id', data.id)
       if (error) throw error
@@ -1863,11 +2101,13 @@ export default function Contratos() {
           title={isRenewal ? '🔄 Renovar Contrato' : 'Editar Contrato'}
           accentColor={isRenewal ? 'bg-amber-400' : 'bg-purple-500'}
           saving={saving}
+          isContabilidade={isContabilidade}
           saveLabel={isRenewal
             ? <><IcCheck c="w-4 h-4"/> Renovar Contrato</>
             : <><IcPencil c="w-4 h-4"/> Salvar Alterações</>}
           initial={{
             ...editing,
+            _userId: user?.id,
             value:            String(editing.value),
             seguroFinanceiro: String(editing.seguroFinanceiro || 0),
             seguroIncendio:   String(editing.seguroIncendio   || 0),
@@ -1881,7 +2121,9 @@ export default function Contratos() {
         <ContractForm title="Novo Contrato" saving={saving}
           saveLabel={<><IcPlus c="w-4 h-4"/> Adicionar</>}
           onClose={() => setAdding(false)} onSave={handleAdd}
-          retDefaults={retDefaults}/>
+          retDefaults={retDefaults}
+          isContabilidade={isContabilidade}
+          initial={{ _userId: user?.id }}/>
       )}
       {scanning && <ScanModal contract={scanning} onClose={() => setScanning(null)} onToast={toast}/>}
       {toDelete && (
