@@ -512,25 +512,28 @@ function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, 
 }
 
 // ── Parser de planilha XLS → fila de emissão ──────────────────────
-const COMP_COLS = ['Competência','Competencia','Mês de referência','Mes de referencia','Mês','Mes','mesRef']
+const COMP_COLS_UP = ['COMPETÊNCIA','COMPETENCIA','MÊS DE REFERÊNCIA','MES DE REFERENCIA','MÊS','MES','MESREF']
 
 function parseXlsRows(data, fallbackMesRef, retDefaults = NAT_RET_DEFAULT) {
   return data.map((row, i) => {
+    // Normaliza chaves para maiúsculas — aceita colunas em qualquer capitalização
+    const r = Object.fromEntries(Object.entries(row).map(([k, v]) => [k.trim().toUpperCase(), v]))
+
     const nome = String(
-      row['Nome completo da paciente'] ?? row['Nome'] ?? row['Tomador'] ?? row['Razão Social'] ?? ''
+      r['NOME COMPLETO DA PACIENTE'] ?? r['NOME COMPLETO'] ?? r['NOME'] ?? r['TOMADOR'] ?? r['RAZÃO SOCIAL'] ?? r['RAZAO SOCIAL'] ?? ''
     ).trim()
 
     const cpfCnpj = String(
-      row['CPF da paciente'] ?? row['CPF'] ?? row['CNPJ'] ?? row['CPF/CNPJ'] ?? ''
+      r['CPF DA PACIENTE'] ?? r['CPF/CNPJ'] ?? r['CPF'] ?? r['CNPJ'] ?? ''
     ).trim()
 
     const email = String(
-      row['Email para envio da nota fiscal (se houver)'] ?? row['Email'] ?? row['E-mail'] ?? ''
+      r['EMAIL PARA ENVIO DA NOTA FISCAL (SE HOUVER)'] ?? r['E-MAIL'] ?? r['EMAIL'] ?? ''
     ).trim()
 
     // Valor — aceita número ou string em formato BR
     let valorNum = 0
-    const vRaw = row['Valor (R$)'] ?? row['Valor'] ?? row['Valor R$'] ?? row['valor'] ?? ''
+    const vRaw = r['VALOR (R$)'] ?? r['VALOR R$'] ?? r['VALOR'] ?? ''
     if (typeof vRaw === 'number') {
       valorNum = vRaw
     } else {
@@ -539,8 +542,8 @@ function parseXlsRows(data, fallbackMesRef, retDefaults = NAT_RET_DEFAULT) {
     }
 
     // Discriminação — concatena motivo + detalhe quando for "outro"
-    const motivo      = String(row['Motivo do pagamento:'] ?? row['Motivo do pagamento'] ?? row['Motivo'] ?? row['Discriminação'] ?? '').trim()
-    const outroDetalhe = String(row['Se o for outro, descreva aqui'] ?? row['Detalhe'] ?? '').trim()
+    const motivo       = String(r['MOTIVO DO PAGAMENTO:'] ?? r['MOTIVO DO PAGAMENTO'] ?? r['MOTIVO'] ?? r['DISCRIMINAÇÃO'] ?? r['DISCRIMINACAO'] ?? '').trim()
+    const outroDetalhe = String(r['SE O FOR OUTRO, DESCREVA AQUI'] ?? r['DETALHE'] ?? '').trim()
     let discriminacao = motivo
     if (motivo.toLowerCase() === 'outro' && outroDetalhe) {
       discriminacao = outroDetalhe
@@ -549,7 +552,7 @@ function parseXlsRows(data, fallbackMesRef, retDefaults = NAT_RET_DEFAULT) {
     }
 
     // Competência — busca coluna dedicada; senão usa fallback
-    const compRaw = COMP_COLS.reduce((f, c) => f || row[c] || '', '')
+    const compRaw = COMP_COLS_UP.reduce((f, c) => f || r[c] || '', '')
     let _mesRefFromSheet = null
     if (compRaw) {
       const s = String(compRaw).trim()
@@ -561,6 +564,14 @@ function parseXlsRows(data, fallbackMesRef, retDefaults = NAT_RET_DEFAULT) {
       }
     }
 
+    // LC 116
+    const lc116Raw = String(r['CÓDIGO SERVIÇO LC 116'] ?? r['CODIGO SERVICO LC 116'] ?? r['LC 116'] ?? r['LC116'] ?? r['LLC116'] ?? r['LC-116'] ?? '').trim()
+    const codLc116 = lc116Raw ? lc116Raw.split(' - ')[0].trim() : ''
+
+    // CEP do tomador
+    const cepRaw = String(r['CEP'] ?? '').replace(/\D/g, '').padStart(8, '0')
+    const tamaCep = cepRaw.replace(/^0+$/, '')
+
     return {
       _id:              i,
       _mesRefFromSheet,
@@ -570,10 +581,11 @@ function parseXlsRows(data, fallbackMesRef, retDefaults = NAT_RET_DEFAULT) {
       valor:            valorNum > 0 ? maskBRL(String(Math.round(valorNum * 100))) : '',
       discriminacao,
       mesRef:           _mesRefFromSheet || fallbackMesRef,
-      codLc116:         '',
+      codLc116,
       issRetido:        false,
       ...retDefaults,
-      tomaLogradouro: '', tomaNumero: '', tamaBairro: '', tamaCep: '', tamaCodMun: '', tamaMunNome: '',
+      tamaCep,
+      tomaLogradouro: '', tomaNumero: '', tamaBairro: '', tamaCodMun: '', tamaMunNome: '',
     }
   }).filter(r => r.nome && parseFloat(r.valor) > 0)
 }
@@ -587,13 +599,14 @@ function ImportXlsModal({ onImport, onClose, retDefaults = NAT_RET_DEFAULT }) {
   const [fileName, setFileName]   = useState('')
   const [dragOver, setDragOver]   = useState(false)
   const [parseErr, setParseErr]   = useState('')
+  const [cepLoading, setCepLoading] = useState(false)
   const fileRef = useRef(null)
 
   const processFile = file => {
     if (!file) return
     setParseErr('')
     const reader = new FileReader()
-    reader.onload = e => {
+    reader.onload = async e => {
       try {
         const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true })
         const ws = wb.Sheets[wb.SheetNames[0]]
@@ -608,6 +621,29 @@ function ImportXlsModal({ onImport, onClose, retDefaults = NAT_RET_DEFAULT }) {
         setSelectedIds(new Set(parsed.map(r => r._id)))
         setFileName(file.name)
         setStep('preview')
+
+        // Lookup ViaCEP em background para linhas com CEP
+        const cepsParaLookup = parsed.filter(r => r.tamaCep)
+        if (cepsParaLookup.length) {
+          setCepLoading(true)
+          const enriched = await Promise.all(parsed.map(async row => {
+            if (!row.tamaCep) return row
+            try {
+              const res = await fetch(`https://viacep.com.br/ws/${row.tamaCep}/json/`)
+              const d = await res.json()
+              if (!d.erro) return {
+                ...row,
+                tomaLogradouro: d.logradouro || '',
+                tamaBairro:     d.bairro     || '',
+                tamaCodMun:     d.ibge        || '',
+                tamaMunNome:    d.localidade  || '',
+              }
+            } catch { /* silencia */ }
+            return row
+          }))
+          setRows(enriched)
+          setCepLoading(false)
+        }
       } catch (err) { setParseErr('Erro ao ler arquivo: ' + err.message) }
     }
     reader.readAsArrayBuffer(file)
@@ -667,6 +703,33 @@ function ImportXlsModal({ onImport, onClose, retDefaults = NAT_RET_DEFAULT }) {
           <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
             onChange={e => processFile(e.target.files[0])}/>
 
+          {/* Colunas aceitas */}
+          <details className="group">
+            <summary className="text-xs font-semibold text-indigo-600 cursor-pointer select-none list-none flex items-center gap-1 hover:text-indigo-800">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                className="w-3.5 h-3.5 transition-transform group-open:rotate-90"><polyline points="9 18 15 12 9 6"/></svg>
+              Ver colunas aceitas na planilha
+            </summary>
+            <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-[11px] text-slate-600 space-y-2">
+              {[
+                { label: 'Nome *',         cols: 'Nome Completo da Paciente, Nome Completo, Nome, Tomador, Razão Social' },
+                { label: 'Valor *',        cols: 'Valor (R$), Valor R$, Valor' },
+                { label: 'CPF / CNPJ',     cols: 'CPF da Paciente, CPF/CNPJ, CPF, CNPJ' },
+                { label: 'E-mail',         cols: 'Email para envio da nota fiscal (se houver), E-mail, Email' },
+                { label: 'Discriminação',  cols: 'Motivo do Pagamento:, Motivo do Pagamento, Motivo, Discriminação, Detalhe' },
+                { label: 'Competência',    cols: 'Competência, Competencia, Mês de referência, Mês, Mes (formato MM/AAAA ou AAAA-MM)' },
+                { label: 'LC 116',         cols: 'Código Serviço LC 116, LC 116, LC116, LLC116, LC-116' },
+                { label: 'CEP tomador',    cols: 'CEP (preenche endereço automaticamente via ViaCEP)' },
+              ].map(({ label, cols }) => (
+                <div key={label} className="flex gap-2">
+                  <span className="font-semibold text-slate-700 whitespace-nowrap w-32 shrink-0">{label}</span>
+                  <span className="text-slate-500">{cols}</span>
+                </div>
+              ))}
+              <p className="pt-1 text-slate-400">Os nomes das colunas não precisam estar em maiúsculas. * obrigatório.</p>
+            </div>
+          </details>
+
           {parseErr && (
             <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{parseErr}</p>
           )}
@@ -691,7 +754,10 @@ function ImportXlsModal({ onImport, onClose, retDefaults = NAT_RET_DEFAULT }) {
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
           <div>
             <h2 className="text-base font-bold text-slate-800">Revisão da importação</h2>
-            <p className="text-xs text-slate-400 mt-0.5">{fileName}</p>
+            <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
+              {fileName}
+              {cepLoading && <><span className="w-3 h-3 border-2 border-slate-300 border-t-indigo-500 rounded-full animate-spin inline-block"/><span>buscando CEPs…</span></>}
+            </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><IcX c="w-5 h-5"/></button>
         </div>
