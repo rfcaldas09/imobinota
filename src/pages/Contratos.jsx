@@ -691,11 +691,15 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
             </div>
           )}
 
-          {/* Referência */}
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Referência</p>
-          <Row label="Referência do Imóvel">
-            <FormInp value={f.property} onChange={e => set('property', e.target.value)} placeholder="Ex: Apto 302 — Rua das Flores"/>
-          </Row>
+          {/* Referência — só modo contabilidade */}
+          {isContabilidade && (
+            <>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Referência</p>
+              <Row label="Referência do Imóvel">
+                <FormInp value={f.property} onChange={e => set('property', e.target.value)} placeholder="Ex: Apto 302 — Rua das Flores"/>
+              </Row>
+            </>
+          )}
 
           {/* ── DADOS DO IMÓVEL (apenas modo contabilidade) ── */}
           {isContabilidade && (
@@ -851,18 +855,22 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
             <Row label="Valor (R$) *">
               <FormInp value={f.value} onChange={e => set('value', e.target.value)} type="number" placeholder="0,00"/>
             </Row>
-            <Row label="Seguro Financeiro (R$)">
-              <FormInp value={f.seguroFinanceiro} onChange={e => set('seguroFinanceiro', e.target.value)} type="number" placeholder="0,00"/>
-            </Row>
+            {isContabilidade && (
+              <Row label="Seguro Financeiro (R$)">
+                <FormInp value={f.seguroFinanceiro} onChange={e => set('seguroFinanceiro', e.target.value)} type="number" placeholder="0,00"/>
+              </Row>
+            )}
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <Row label="Seguro Incêndio (R$)">
-              <FormInp value={f.seguroIncendio} onChange={e => set('seguroIncendio', e.target.value)} type="number" placeholder="0,00"/>
-            </Row>
-            <Row label="IPTU (R$)">
-              <FormInp value={f.iptu} onChange={e => set('iptu', e.target.value)} type="number" placeholder="0,00"/>
-            </Row>
-          </div>
+          {isContabilidade && (
+            <div className="grid grid-cols-2 gap-3">
+              <Row label="Seguro Incêndio (R$)">
+                <FormInp value={f.seguroIncendio} onChange={e => set('seguroIncendio', e.target.value)} type="number" placeholder="0,00"/>
+              </Row>
+              <Row label="IPTU (R$)">
+                <FormInp value={f.iptu} onChange={e => set('iptu', e.target.value)} type="number" placeholder="0,00"/>
+              </Row>
+            </div>
+          )}
 
           {/* Total calculado */}
           <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 flex justify-between items-center">
