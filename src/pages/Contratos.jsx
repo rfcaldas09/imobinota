@@ -279,6 +279,37 @@ function ImportContratosModal({ onImport, onClose, retDefaults = NAT_RET_DEFAULT
           <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
             onChange={e => processFile(e.target.files[0])}/>
 
+          {/* Colunas aceitas */}
+          <details className="group">
+            <summary className="text-xs font-semibold text-indigo-600 cursor-pointer select-none list-none flex items-center gap-1 hover:text-indigo-800">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                className="w-3.5 h-3.5 transition-transform group-open:rotate-90"><polyline points="9 18 15 12 9 6"/></svg>
+              Ver colunas aceitas na planilha
+            </summary>
+            <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-[11px] text-slate-600 space-y-2">
+              {[
+                { label: 'Nome',           cols: 'Nome Completo, Nome' },
+                { label: 'CPF / CNPJ',    cols: 'CPF/CNPJ, CPF, CNPJ' },
+                { label: 'E-mail',         cols: 'E-mail, Email' },
+                { label: 'Telefone',       cols: 'Telefone' },
+                { label: 'Referência',     cols: 'Referência, Referencia' },
+                { label: 'Valor',          cols: 'Valor' },
+                { label: 'Dia vencimento', cols: 'Dia Venc., Dia Vencimento, Dia Venc' },
+                { label: 'Início',         cols: 'Início do Contrato, Inicio do Contrato, Início, Inicio' },
+                { label: 'Fim',            cols: 'Fim do Contrato, Fim' },
+                { label: 'Discriminação',  cols: 'Discriminação do Serviço, Discriminação, Motivo do Pagamento:, Motivo do Pagamento, Motivo, Dados Pgto. (Obs.), Obs, Observação' },
+                { label: 'LC 116',         cols: 'Código Serviço LC 116, LC 116, LC116, LLC116, LC-116' },
+                { label: 'CEP tomador',    cols: 'CEP (preenche endereço automaticamente via ViaCEP)' },
+              ].map(({ label, cols }) => (
+                <div key={label} className="flex gap-2">
+                  <span className="font-semibold text-slate-700 whitespace-nowrap w-32 shrink-0">{label}</span>
+                  <span className="text-slate-500">{cols}</span>
+                </div>
+              ))}
+              <p className="pt-1 text-slate-400">Os nomes das colunas não precisam estar em maiúsculas.</p>
+            </div>
+          </details>
+
           {parseErr && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{parseErr}</p>}
         </div>
         <div className="px-6 pb-6">
@@ -1447,6 +1478,11 @@ export default function Contratos() {
           pct_cofins:  data.pCOFINS || null,
           pct_pis:     data.pPIS    || null,
           pct_inss:    data.pINSS   || null,
+          toma_cep:        data.tamaCep        || null,
+          toma_logradouro: data.tomaLogradouro || null,
+          toma_bairro:     data.tamaBairro     || null,
+          toma_cod_mun:    data.tamaCodMun     || null,
+          toma_mun_nome:   data.tamaMunNome    || null,
         }).select().single()
         if (error) throw error
 
