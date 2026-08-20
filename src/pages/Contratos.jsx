@@ -1110,6 +1110,7 @@ function DocModal({ type, contract: c, onClose, onToast }) {
           bairro:     c.tamaBairro     || '',
           cep:        c.tamaCep        || '',
           codMun:     c.tamaCodMun     || '',
+          munNome:    c.tamaMunNome    || '',
         } : null,
       }
       const res = await fetch('/.netlify/functions/nfse-emitir', {

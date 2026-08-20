@@ -228,8 +228,10 @@ function renderPage(doc, f, qrBuf) {
   lbl('Endereço:',            PL + 2,   ry, 42); val(f.tomadorEnd,       PL + 46,  ry, W - 50)
   ry += 11
 
-  lbl('País:',                PL + 2,   ry, 25); val(f.tomadorPais || 'BRASIL', PL + 29, ry, 80)
-  lbl('Nif:',                 PL + 115, ry, 20); val(f.tomadorNif || '', PL + 137, ry,  80)
+  lbl('Município:',           PL + 2,   ry, 45); val(f.tomadorMun,       PL + 49,  ry, 200)
+  lbl('UF:',                  PL + 255, ry, 16); val(f.tomadorUF,        PL + 273, ry,  30)
+  lbl('País:',                PL + 310, ry, 25); val(f.tomadorPais || 'BRASIL', PL + 337, ry, 80)
+  lbl('Nif:',                 PL + 422, ry, 20); val(f.tomadorNif || '', PL + 444, ry,  80)
   ry += 10
 
   y = ry; hline(y)
@@ -543,8 +545,18 @@ function extrairCamposPdf(xml, cobData, profile) {
     tomadorNumero: '',
     tomadorCompl:  '',
     tomadorBairro: '',
-    tomadorMun:    '',
-    tomadorUF:     '',
+    tomadorMun:    (() => {
+      const te = cobData?.tomadorEnd
+      if (!te) return ''
+      const nome = te.munNome || ''
+      return nome.toUpperCase()
+    })(),
+    tomadorUF: (() => {
+      const te = cobData?.tomadorEnd
+      if (!te) return ''
+      const cod = String(te.codMun || '')
+      return IBGE_UF[cod.slice(0, 2)] || ''
+    })(),
     tomadorCEP:    '',
     tomadorEmail:  cobData?.email    || '',
     tomadorTel:    '',

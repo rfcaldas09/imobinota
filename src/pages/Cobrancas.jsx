@@ -500,6 +500,7 @@ function NfseModal({ cob, user, onClose }) {
               bairro:     cob.tamaBairro     || '',
               cep:        cob.tamaCep        || '',
               codMun:     cob.tamaCodMun     || '',
+              munNome:    cob.tamaMunNome    || '',
             },
             retencoes: {
               tpRetISSQN: cob.issRetido ? 2 : 1,
@@ -1066,6 +1067,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
       tamaBairro:     cob.contratos?.toma_bairro     || '',
       tamaCep:        cob.contratos?.toma_cep        || '',
       tamaCodMun:     cob.contratos?.toma_cod_mun    || '',
+      tamaMunNome:    cob.contratos?.toma_mun_nome  || '',
       mesRef:          cob.mes_referencia,
       // modo contabilidade (locação imobiliária)
       certPfxPath:  cob.contratos?.cert_pfx_path || null,
@@ -1166,6 +1168,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
                 bairro:     cob.tamaBairro     || '',
                 cep:        cob.tamaCep        || '',
                 codMun:     cob.tamaCodMun     || '',
+                munNome:    cob.tamaMunNome    || '',
               },
               retencoes: {
                 tpRetISSQN: cob.issRetido ? 2 : 1,

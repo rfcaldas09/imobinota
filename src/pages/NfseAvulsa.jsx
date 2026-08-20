@@ -1086,6 +1086,7 @@ export default function NfseAvulsa() {
                 bairro:     item.tamaBairro     || '',
                 cep:        item.tamaCep        || '',
                 codMun:     item.tamaCodMun     || '',
+                munNome:    item.tamaMunNome    || '',
               } : null,
               // Por nota: município emissor e IM do prestador (sobrepõem o perfil se preenchidos)
               prestMunicipioIbge:      item.prestMunicipioIbge      || null,
