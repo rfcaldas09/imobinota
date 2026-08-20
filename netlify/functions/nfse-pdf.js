@@ -81,12 +81,9 @@ async function handle(event) {
         cobData.property        = ctr.imovel            || ''
         cobData.codServicoLc116 = ctr.cod_servico_lc116 || null
         // Retroativo: popula tomadorEnd com município caso não tenha vindo do cob_data_json
-        if (!cobData.tomadorEnd && (ctr.toma_cod_mun || ctr.toma_mun_nome)) {
-          cobData.tomadorEnd = { codMun: ctr.toma_cod_mun || '', munNome: ctr.toma_mun_nome || '' }
-        } else if (cobData.tomadorEnd && !cobData.tomadorEnd.munNome && ctr.toma_mun_nome) {
-          cobData.tomadorEnd.munNome = ctr.toma_mun_nome
-          cobData.tomadorEnd.codMun  = cobData.tomadorEnd.codMun || ctr.toma_cod_mun || ''
-        }
+        // Guarda dados do contrato para enriquecer depois do overlay cob_data_json
+        cobData._dbTomaMunNome = ctr.toma_mun_nome || ''
+        cobData._dbTomaCodMun  = ctr.toma_cod_mun  || ''
       }
     }
   }
@@ -105,6 +102,34 @@ async function handle(event) {
       if (cd.tomadorEnd)              cobData.tomadorEnd = cd.tomadorEnd
     } catch (_) { /* JSON inválido — ignora */ }
   }
+
+  // ── Enriquecimento do tomadorEnd com município ──────────────────
+  // Feito APÓS o overlay do cob_data_json para não ser sobrescrito
+  if (cobData.tomadorEnd && !cobData.tomadorEnd.munNome) {
+    // 1. Tenta DB (contrato)
+    if (cobData._dbTomaMunNome) {
+      cobData.tomadorEnd.munNome = cobData._dbTomaMunNome
+      cobData.tomadorEnd.codMun  = cobData.tomadorEnd.codMun || cobData._dbTomaCodMun
+    }
+    // 2. Fallback ViaCEP — usa o CEP já disponível no tomadorEnd
+    if (!cobData.tomadorEnd.munNome && cobData.tomadorEnd.cep) {
+      try {
+        const digits = String(cobData.tomadorEnd.cep).replace(/\D/g, '').slice(0, 8)
+        if (digits.length === 8) {
+          const vr = await fetch(`https://viacep.com.br/ws/${digits}/json/`, { signal: AbortSignal.timeout(3000) })
+          if (vr.ok) {
+            const vd = await vr.json()
+            if (!vd.erro) {
+              cobData.tomadorEnd.munNome = vd.localidade || ''
+              if (!cobData.tomadorEnd.codMun && vd.ibge) cobData.tomadorEnd.codMun = vd.ibge
+            }
+          }
+        }
+      } catch (_) { /* ViaCEP indisponível — continua sem nome */ }
+    }
+  }
+  delete cobData._dbTomaMunNome
+  delete cobData._dbTomaCodMun
 
   // Passa discriminação salva na emissão (tem prioridade sobre xInfComp do XML)
   if (em.discriminacao_servico) cobData.discriminacao = em.discriminacao_servico
