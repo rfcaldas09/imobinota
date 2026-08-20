@@ -66,7 +66,7 @@ async function handle(event) {
   }
   if (em.cobranca_id) {
     const cobRes = await supabaseFetch(SUPABASE_URL, SERVICE_KEY,
-      `cobrancas?id=eq.${em.cobranca_id}&select=contratos(imovel,cod_servico_lc116),inquilinos(nome,cpf,email)`
+      `cobrancas?id=eq.${em.cobranca_id}&select=contratos(imovel,cod_servico_lc116,toma_cod_mun,toma_mun_nome),inquilinos(nome,cpf,email)`
     )
     if (cobRes.ok) {
       const cobArr = await cobRes.json()
@@ -80,6 +80,13 @@ async function handle(event) {
       if (ctr) {
         cobData.property        = ctr.imovel            || ''
         cobData.codServicoLc116 = ctr.cod_servico_lc116 || null
+        // Retroativo: popula tomadorEnd com município caso não tenha vindo do cob_data_json
+        if (!cobData.tomadorEnd && (ctr.toma_cod_mun || ctr.toma_mun_nome)) {
+          cobData.tomadorEnd = { codMun: ctr.toma_cod_mun || '', munNome: ctr.toma_mun_nome || '' }
+        } else if (cobData.tomadorEnd && !cobData.tomadorEnd.munNome && ctr.toma_mun_nome) {
+          cobData.tomadorEnd.munNome = ctr.toma_mun_nome
+          cobData.tomadorEnd.codMun  = cobData.tomadorEnd.codMun || ctr.toma_cod_mun || ''
+        }
       }
     }
   }
