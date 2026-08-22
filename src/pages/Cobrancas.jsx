@@ -1546,8 +1546,8 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
 function StatusBadge({ status }) {
   const cfg = STATUS_CFG[status] || STATUS_CFG['Pendente']
   return (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${cfg.bg} ${cfg.text}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`}/>
+    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${cfg.bg} ${cfg.text}`}>
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cfg.dot}`}/>
       {cfg.label || status}
     </span>
   )
