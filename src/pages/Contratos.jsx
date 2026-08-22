@@ -68,7 +68,7 @@ const isPhoneValid = v => {
 }
 
 const FILTERS  = ['Todos', 'Ativo', 'Inativo', 'Por Vencer']
-const PER_PAGE = 10
+const PER_PAGE = 50
 
 const isExpiringSoon = (c) => {
   if (!c.end) return false
@@ -1603,7 +1603,7 @@ export default function Contratos() {
       .from('contratos')
       .select('*, inquilinos(nome, cpf, email, telefone)')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
+      .order('inquilinos(nome)', { ascending: true })
     if (error) { toast('Erro ao carregar contratos', 'error') }
     else setContracts((data || []).map(mapRow))
     setLoading(false)

@@ -969,7 +969,8 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
   const [action, setAction]     = useState('nfse')
   const [mesRef, setMesRef]     = useState(initialMes)
   const [preview, setPreview]   = useState(null)  // { toCreate, skipped, pendingContracts }
-  const [selectedIds, setSelectedIds] = useState(null) // Set de IDs selecionados no step selecao
+  const [selectedIds, setSelectedIds]   = useState(null) // Set de IDs selecionados no step selecao
+  const [contractSearch, setContractSearch] = useState('')  // filtro de busca no step selecao
   const [progress, setProgress] = useState(0)
   const [logs, setLogs]         = useState([])
   const [result, setResult]     = useState(null)
@@ -1030,6 +1031,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
   const goToSelecao = () => {
     const pendingIds = new Set((preview?.pendingContracts || []).map(c => c.id))
     setSelectedIds(pendingIds)
+    setContractSearch('')
     setStep('selecao')
   }
 
@@ -1276,53 +1278,85 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
               </div>
             </div>
 
-            {/* Barra selecionar todos + contador */}
-            <div className="flex items-center justify-between mb-3">
-              <button
-                onClick={() => {
-                  const allIds = new Set((preview.pendingContracts || []).map(c => c.id))
-                  const allSelected = (preview.pendingContracts || []).every(c => selectedIds?.has(c.id))
-                  setSelectedIds(allSelected ? new Set() : allIds)
-                }}
-                className="text-xs text-indigo-600 font-semibold hover:underline"
-              >
-                {(preview.pendingContracts || []).every(c => selectedIds?.has(c.id))
-                  ? 'Desmarcar todos'
-                  : 'Selecionar todos'}
-              </button>
-              <span className="text-xs text-slate-500 font-medium">
-                <span className="text-indigo-700 font-bold">{selectedIds?.size ?? 0}</span> de {preview.pendingContracts?.length ?? 0} selecionados
-              </span>
+            {/* Campo de busca */}
+            <div className="relative mb-3">
+              <input
+                type="text"
+                placeholder="Filtrar por nome do cliente…"
+                value={contractSearch}
+                onChange={e => setContractSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+              />
+              <svg className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              {contractSearch && (
+                <button onClick={() => setContractSearch('')} className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
+              )}
             </div>
 
-            {/* Lista de contratos */}
-            <div className="overflow-y-auto flex-1 space-y-1.5 pr-1" style={{ maxHeight: '50vh' }}>
-              {(preview.pendingContracts || []).map(c => {
-                const checked = selectedIds?.has(c.id) ?? false
-                return (
-                  <label key={c.id}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-all ${
-                      checked ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-white hover:border-slate-300'
-                    }`}
-                  >
-                    <input type="checkbox" checked={checked} onChange={() => {
-                      setSelectedIds(prev => {
-                        const next = new Set(prev)
-                        if (next.has(c.id)) next.delete(c.id); else next.add(c.id)
-                        return next
-                      })
-                    }} className="accent-indigo-600 w-4 h-4 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-800 truncate">{c.tenant}</p>
-                      <p className="text-xs text-slate-400 truncate">{c.property}</p>
-                    </div>
-                    <span className="text-sm font-semibold text-slate-700 flex-shrink-0">
-                      {(c.totalValue ?? 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })}
+            {/* Barra selecionar todos + contador */}
+            {(() => {
+              const allPending = (preview.pendingContracts || [])
+                .slice().sort((a, b) => (a.tenant || '').localeCompare(b.tenant || '', 'pt-BR'))
+              const visible = contractSearch
+                ? allPending.filter(c => (c.tenant || '').toLowerCase().includes(contractSearch.toLowerCase()))
+                : allPending
+              const allVisibleSelected = visible.length > 0 && visible.every(c => selectedIds?.has(c.id))
+              return (
+                <>
+                  <div className="flex items-center justify-between mb-3">
+                    <button
+                      onClick={() => {
+                        setSelectedIds(prev => {
+                          const next = new Set(prev)
+                          if (allVisibleSelected) visible.forEach(c => next.delete(c.id))
+                          else visible.forEach(c => next.add(c.id))
+                          return next
+                        })
+                      }}
+                      className="text-xs text-indigo-600 font-semibold hover:underline"
+                    >
+                      {allVisibleSelected ? 'Desmarcar visíveis' : 'Selecionar visíveis'}
+                    </button>
+                    <span className="text-xs text-slate-500 font-medium">
+                      <span className="text-indigo-700 font-bold">{selectedIds?.size ?? 0}</span> de {allPending.length} selecionados
+                      {contractSearch && <span className="text-slate-400"> · {visible.length} visíveis</span>}
                     </span>
-                  </label>
-                )
-              })}
-            </div>
+                  </div>
+
+                  {/* Lista de contratos */}
+                  <div className="overflow-y-auto flex-1 space-y-1.5 pr-1" style={{ maxHeight: '50vh' }}>
+                    {visible.map(c => {
+                      const checked = selectedIds?.has(c.id) ?? false
+                      return (
+                        <label key={c.id}
+                          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-all ${
+                            checked ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-white hover:border-slate-300'
+                          }`}
+                        >
+                          <input type="checkbox" checked={checked} onChange={() => {
+                            setSelectedIds(prev => {
+                              const next = new Set(prev)
+                              if (next.has(c.id)) next.delete(c.id); else next.add(c.id)
+                              return next
+                            })
+                          }} className="accent-indigo-600 w-4 h-4 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-800 truncate">{c.tenant}</p>
+                            <p className="text-xs text-slate-400 truncate">{c.property}</p>
+                          </div>
+                          <span className="text-sm font-semibold text-slate-700 flex-shrink-0">
+                            {(c.totalValue ?? 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })}
+                          </span>
+                        </label>
+                      )
+                    })}
+                    {visible.length === 0 && (
+                      <p className="text-center text-sm text-slate-400 py-6">Nenhum contrato encontrado para "{contractSearch}"</p>
+                    )}
+                  </div>
+                </>
+              )
+            })()}
 
             <div className="flex gap-3 mt-5 pt-4 border-t border-slate-100">
               <button onClick={() => setStep('pick')} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50">Voltar</button>
@@ -1877,6 +1911,7 @@ export default function Cobrancas() {
       .select('id, inquilino_id, imovel, valor_aluguel, seguro_financeiro, seguro_incendio, iptu, dia_vencimento, status, discriminacao_servico, solicitar_discriminacao_mensal, inquilinos(nome)')
       .eq('user_id', user.id)
       .neq('status', 'Inativo')
+      .order('inquilinos(nome)', { ascending: true })
 
     setContracts((ctrs || []).map(r => ({
       id:               r.id,
@@ -1916,10 +1951,16 @@ export default function Cobrancas() {
   }, [cobrancas])
 
   // ── Filtro ─────────────────────────────────────────────────────
-  const lista = useMemo(
-    () => filter === 'Todos' ? cobrancas : cobrancas.filter(c => c.status === filter),
-    [cobrancas, filter]
-  )
+  const lista = useMemo(() => {
+    const base = filter === 'Todos' ? cobrancas : cobrancas.filter(c => c.status === filter)
+    // 1º: NFS-e emitida vem antes; 2º: alfabético por nome do cliente
+    return [...base].sort((a, b) => {
+      const aEmit = a.nfseStatus === 'emitida' ? 0 : 1
+      const bEmit = b.nfseStatus === 'emitida' ? 0 : 1
+      if (aEmit !== bEmit) return aEmit - bEmit
+      return (a.tenant || '').localeCompare(b.tenant || '', 'pt-BR')
+    })
+  }, [cobrancas, filter])
 
   // ── Atualizar status ───────────────────────────────────────────
   const updateStatus = async (id, newStatus) => {
