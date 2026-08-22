@@ -2143,7 +2143,7 @@ export default function Cobrancas() {
                   <td className="px-5 py-3.5 text-right font-semibold text-slate-700">{fmt(c.totalValue)}</td>
                   <td className="px-5 py-3.5 text-center">
                     <div className="flex flex-col items-center gap-1">
-                      <StatusBadge status={c.status}/>
+                      {/* Badge NFS-e — acima do status de pagamento */}
                       {c.nfseStatus === 'emitida' ? (
                         <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full whitespace-nowrap">
                           📋 NFS-e{c.nfseNumero ? ` nº ${c.nfseNumero}` : ' ✓'}
@@ -2152,7 +2152,12 @@ export default function Cobrancas() {
                         <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full whitespace-nowrap">
                           📋 NFS-e: {c.nfseStatus}
                         </span>
-                      ) : null}
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                          📋 Nota pendente
+                        </span>
+                      )}
+                      <StatusBadge status={c.status}/>
                     </div>
                   </td>
                   {/* Coluna Situação — botões de status (visível em telas xl+) */}
