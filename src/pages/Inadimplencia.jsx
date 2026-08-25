@@ -270,8 +270,11 @@ function AbaPorLocatario({ lancamentos, onUpdateCob, onUpdateLocacao }) {
                 <p className="text-xs text-slate-400">Atualizado</p>
                 <p className="text-sm font-bold text-red-600">{fmt(g.totalAtualizado)}</p>
               </div>
-              <div className="text-right text-xs text-slate-400">
-                {totalGeral > 0 ? `${((g.totalAtualizado / totalGeral) * 100).toFixed(1)}%` : '—'}
+              <div className="text-right">
+                <p className="text-xs text-slate-400">% do total</p>
+                <p className="text-sm font-semibold text-slate-500">
+                  {totalGeral > 0 ? `${((g.totalAtualizado / totalGeral) * 100).toFixed(1)}%` : '—'}
+                </p>
               </div>
             </div>
           </div>
@@ -309,15 +312,15 @@ function AbaResumo({ lancamentos, totalCarteira }) {
   const stats = useMemo(() => {
     const tenants = new Set(lancamentos.map(l => l.tenant))
     let totalOriginal = 0, totalAtualizado = 0
-    const aging = { avencer: 0, d1_30: 0, d31_60: 0, d61_90: 0, d91_180: 0, d180: 0 }
-    const agingVal = { avencer: 0, d1_30: 0, d31_60: 0, d61_90: 0, d91_180: 0, d180: 0 }
+    const aging = { d1_30: 0, d31_60: 0, d61_90: 0, d91_180: 0, d180: 0 }
+    const agingVal = { d1_30: 0, d31_60: 0, d61_90: 0, d91_180: 0, d180: 0 }
 
     for (const l of lancamentos) {
       totalOriginal += l.totalValue || 0
       const vAtual = l.valorAtualizado || calcValorAtualizado(l.totalValue, l.pctMulta, l.pctJurosMes, l.dataVencimento)
       totalAtualizado += vAtual
-      const dias = l.dataVencimento ? Math.floor((hoje - new Date(l.dataVencimento + 'T12:00:00')) / 86400000) : 0
-      const bucket = dias <= 0 ? 'avencer' : dias <= 30 ? 'd1_30' : dias <= 60 ? 'd31_60' : dias <= 90 ? 'd61_90' : dias <= 180 ? 'd91_180' : 'd180'
+      const dias = l.dataVencimento ? Math.floor((hoje - new Date(l.dataVencimento + 'T12:00:00')) / 86400000) : 1
+      const bucket = dias <= 30 ? 'd1_30' : dias <= 60 ? 'd31_60' : dias <= 90 ? 'd61_90' : dias <= 180 ? 'd91_180' : 'd180'
       aging[bucket]++
       agingVal[bucket] += vAtual
     }
@@ -328,7 +331,6 @@ function AbaResumo({ lancamentos, totalCarteira }) {
   const pctCarteira = totalCarteira > 0 ? (stats.totalAtualizado / totalCarteira * 100).toFixed(1) : '—'
 
   const agingRows = [
-    { label: 'A vencer / Em dia', key: 'avencer', color: 'text-slate-500' },
     { label: '1 a 30 dias',       key: 'd1_30',   color: 'text-yellow-600' },
     { label: '31 a 60 dias',      key: 'd31_60',  color: 'text-orange-500' },
     { label: '61 a 90 dias',      key: 'd61_90',  color: 'text-orange-600' },
@@ -443,7 +445,14 @@ export default function Inadimplencia() {
       }
     })
 
-    setLancamentos(rows)
+    // Somente vencimentos no passado (inadimplentes de verdade)
+    const hoje = new Date()
+    const rowsPassadas = rows.filter(r => {
+      if (!r.dataVencimento) return false
+      return new Date(r.dataVencimento + 'T12:00:00') < hoje
+    })
+
+    setLancamentos(rowsPassadas)
     setLoading(false)
   }, [user])
 

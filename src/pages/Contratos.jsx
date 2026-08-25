@@ -872,6 +872,63 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
                 </div>
               </div>
 
+              {/* ── GESTÃO DO CONTRATO ── */}
+              <p className="text-xs font-bold text-amber-700 uppercase tracking-wide">Gestão do Contrato</p>
+              <div className="border border-amber-100 bg-amber-50 rounded-xl px-4 py-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <Row label="Nº Contrato (legado)">
+                    <FormInp value={f.numContrato} onChange={e => set('numContrato', e.target.value)} placeholder="Ex: 1340"/>
+                  </Row>
+                  <Row label="Situação da Locação">
+                    <select value={f.situacaoLocacao} onChange={e => set('situacaoLocacao', e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                      {['Andamento','Em desocupação','Desocupado'].map(s => <option key={s}>{s}</option>)}
+                    </select>
+                  </Row>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Row label="Situação do Imóvel">
+                    <select value={f.sitImovel} onChange={e => set('sitImovel', e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                      <option value="">—</option>
+                      {['Baixado','Relocado','Baixado - Foi relocado'].map(s => <option key={s}>{s}</option>)}
+                    </select>
+                  </Row>
+                  <Row label="Índice de Correção">
+                    <select value={f.indiceCorrecao} onChange={e => set('indiceCorrecao', e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                      {['Nenhum','IGP-M','IPCA','INPC'].map(s => <option key={s}>{s}</option>)}
+                    </select>
+                  </Row>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Multa por Atraso (%)</label>
+                    <div className="relative">
+                      <input value={f.pctMulta} onChange={e => set('pctMulta', maskPct(e.target.value))}
+                        placeholder="0,00"
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 pr-6"/>
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">Juros ao Mês (%)</label>
+                    <div className="relative">
+                      <input value={f.pctJurosMes} onChange={e => set('pctJurosMes', maskPct(e.target.value))}
+                        placeholder="0,00"
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 pr-6"/>
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                    </div>
+                  </div>
+                </div>
+                <Row label="Observações">
+                  <textarea value={f.obsContrato} onChange={e => set('obsContrato', e.target.value)}
+                    placeholder="Observações internas sobre o contrato…"
+                    rows={2} maxLength={1000}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"/>
+                </Row>
+              </div>
+
               {/* ── CERTIFICADO A1 DO PROPRIETÁRIO ── */}
               <p className="text-xs font-bold text-amber-600 uppercase tracking-wide pt-1">Certificado A1 do Proprietário</p>
               <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-2">
@@ -989,65 +1046,6 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
               <p className="text-xs text-slate-400 mt-0.5">Antes de emitir, o sistema pedirá o texto — útil para contratos com número de ordem de compra ou referência que muda todo mês.</p>
             </div>
           </label>
-
-          {/* Gestão — somente modo contabilidade */}
-          {isContabilidade && (
-            <div className="border border-amber-100 bg-amber-50 rounded-xl px-4 py-4 space-y-3">
-              <p className="text-xs font-bold text-amber-700 uppercase tracking-wide">Gestão do Contrato</p>
-              <div className="grid grid-cols-2 gap-3">
-                <Row label="Nº Contrato (legado)">
-                  <FormInp value={f.numContrato} onChange={e => set('numContrato', e.target.value)} placeholder="Ex: 1340"/>
-                </Row>
-                <Row label="Situação da Locação">
-                  <select value={f.situacaoLocacao} onChange={e => set('situacaoLocacao', e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
-                    {['Andamento','Em desocupação','Desocupado'].map(s => <option key={s}>{s}</option>)}
-                  </select>
-                </Row>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Row label="Situação do Imóvel">
-                  <select value={f.sitImovel} onChange={e => set('sitImovel', e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
-                    <option value="">—</option>
-                    {['Baixado','Relocado','Baixado - Foi relocado'].map(s => <option key={s}>{s}</option>)}
-                  </select>
-                </Row>
-                <Row label="Índice de Correção">
-                  <select value={f.indiceCorrecao} onChange={e => set('indiceCorrecao', e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
-                    {['Nenhum','IGP-M','IPCA','INPC'].map(s => <option key={s}>{s}</option>)}
-                  </select>
-                </Row>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">Multa por Atraso (%)</label>
-                  <div className="relative">
-                    <input value={f.pctMulta} onChange={e => set('pctMulta', maskPct(e.target.value))}
-                      placeholder="0,00"
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 pr-6"/>
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">Juros ao Mês (%)</label>
-                  <div className="relative">
-                    <input value={f.pctJurosMes} onChange={e => set('pctJurosMes', maskPct(e.target.value))}
-                      placeholder="0,00"
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 pr-6"/>
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
-                  </div>
-                </div>
-              </div>
-              <Row label="Observações">
-                <textarea value={f.obsContrato} onChange={e => set('obsContrato', e.target.value)}
-                  placeholder="Observações internas sobre o contrato…"
-                  rows={2} maxLength={1000}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"/>
-              </Row>
-            </div>
-          )}
 
           {/* Retenções — sempre visível */}
           <div className="border border-slate-200 rounded-xl px-4 py-4 space-y-4">
