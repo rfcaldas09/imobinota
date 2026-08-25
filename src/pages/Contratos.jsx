@@ -153,6 +153,13 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
     const imovelMunNome         = String(r['MUNICÍPIO IMÓVEL'] || r['MUNICIPIO IMOVEL'] || '').trim() || null
     const codNbs                = String(r['NBS'] || r['CÓD. NBS'] || r['COD NBS'] || '').trim() || null
 
+    // ── Campos de gestão legado ──
+    const numContrato = String(r['Nº Contrato'] || r['N Contrato'] || r['NUM CONTRATO'] || r['NUMERO CONTRATO'] || '').trim() || null
+    const situacaoLocacaoRaw = String(r['Situação'] || r['Situacao'] || '').trim()
+    const situacaoLocacao = ['Andamento','Em desocupação','Desocupado'].includes(situacaoLocacaoRaw) ? situacaoLocacaoRaw : 'Andamento'
+    const pctMulta    = parseFloat(String(r['Multa (%)'] || r['% Multa'] || r['PCT MULTA'] || '').replace(',','.')) || null
+    const pctJurosMes = parseFloat(String(r['Juros Mês (%)'] || r['% Juros'] || r['PCT JUROS'] || '').replace(',','.')) || null
+
     return {
       _id:                    i,
       tenant:                 nome,
@@ -179,6 +186,11 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
       imovelCib, imovelInscricaoFiscal, imovelFinalidade,
       imovelCep, imovelLogradouro, imovelNumero, imovelComplemento,
       imovelBairro, imovelCodMun, imovelMunNome, codNbs,
+      // Gestão legado
+      numContrato, situacaoLocacao,
+      pctMulta: pctMulta != null ? String(pctMulta).replace('.',',') : '',
+      pctJurosMes: pctJurosMes != null ? String(pctJurosMes).replace('.',',') : '',
+      sitImovel: '', obsContrato: '', indiceCorrecao: 'Nenhum',
       ...retDefaults,
     }
   }).filter(r => r.tenant && r.value > 0)
@@ -508,6 +520,9 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
     codNbs: null,
     // Certificado A1 por proprietário (modo contabilidade)
     certPfxPath: '', certSenha: '',
+    // Gestão (modo contabilidade — legado)
+    numContrato: '', situacaoLocacao: 'Andamento', sitImovel: '', obsContrato: '',
+    pctMulta: '', pctJurosMes: '', indiceCorrecao: 'Nenhum',
     // Retenções — federais pré-preenchidas com defaults do perfil (ou padrão nacional)
     issRetido: false, ...retDefaults,
   }
@@ -637,6 +652,14 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
       codNbs:                 f.codNbs                  || null,
       certPfxPath:            f.certPfxPath             || null,
       certSenha:              f.certSenha               || null,
+      // Gestão legado (contabilidade)
+      numContrato:      f.numContrato      || null,
+      situacaoLocacao:  f.situacaoLocacao  || null,
+      sitImovel:        f.sitImovel        || null,
+      obsContrato:      f.obsContrato      || null,
+      pctMulta:         parsePctLocal(f.pctMulta)    || null,
+      pctJurosMes:      parsePctLocal(f.pctJurosMes) || null,
+      indiceCorrecao:   f.indiceCorrecao  || null,
       // Retenções
       issRetido:  !!f.issRetido,
       pIRRF:   parsePctLocal(f.pIRRF)   || null,
@@ -899,7 +922,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
               <FormInp value={f.value} onChange={e => set('value', e.target.value)} type="number" placeholder="0,00"/>
             </Row>
             {isContabilidade && (
-              <Row label="Seguro Financeiro (R$)">
+              <Row label="Garantidora (R$)">
                 <FormInp value={f.seguroFinanceiro} onChange={e => set('seguroFinanceiro', e.target.value)} type="number" placeholder="0,00"/>
               </Row>
             )}
@@ -966,6 +989,65 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
               <p className="text-xs text-slate-400 mt-0.5">Antes de emitir, o sistema pedirá o texto — útil para contratos com número de ordem de compra ou referência que muda todo mês.</p>
             </div>
           </label>
+
+          {/* Gestão — somente modo contabilidade */}
+          {isContabilidade && (
+            <div className="border border-amber-100 bg-amber-50 rounded-xl px-4 py-4 space-y-3">
+              <p className="text-xs font-bold text-amber-700 uppercase tracking-wide">Gestão do Contrato</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Row label="Nº Contrato (legado)">
+                  <FormInp value={f.numContrato} onChange={e => set('numContrato', e.target.value)} placeholder="Ex: 1340"/>
+                </Row>
+                <Row label="Situação da Locação">
+                  <select value={f.situacaoLocacao} onChange={e => set('situacaoLocacao', e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                    {['Andamento','Em desocupação','Desocupado'].map(s => <option key={s}>{s}</option>)}
+                  </select>
+                </Row>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Row label="Situação do Imóvel">
+                  <select value={f.sitImovel} onChange={e => set('sitImovel', e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                    <option value="">—</option>
+                    {['Baixado','Relocado','Baixado - Foi relocado'].map(s => <option key={s}>{s}</option>)}
+                  </select>
+                </Row>
+                <Row label="Índice de Correção">
+                  <select value={f.indiceCorrecao} onChange={e => set('indiceCorrecao', e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+                    {['Nenhum','IGP-M','IPCA','INPC'].map(s => <option key={s}>{s}</option>)}
+                  </select>
+                </Row>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Multa por Atraso (%)</label>
+                  <div className="relative">
+                    <input value={f.pctMulta} onChange={e => set('pctMulta', maskPct(e.target.value))}
+                      placeholder="0,00"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 pr-6"/>
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Juros ao Mês (%)</label>
+                  <div className="relative">
+                    <input value={f.pctJurosMes} onChange={e => set('pctJurosMes', maskPct(e.target.value))}
+                      placeholder="0,00"
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 pr-6"/>
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                  </div>
+                </div>
+              </div>
+              <Row label="Observações">
+                <textarea value={f.obsContrato} onChange={e => set('obsContrato', e.target.value)}
+                  placeholder="Observações internas sobre o contrato…"
+                  rows={2} maxLength={1000}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"/>
+              </Row>
+            </div>
+          )}
 
           {/* Retenções — sempre visível */}
           <div className="border border-slate-200 rounded-xl px-4 py-4 space-y-4">
@@ -1180,7 +1262,7 @@ function DocModal({ type, contract: c, onClose, onToast }) {
               <div className="divide-y divide-slate-50 text-sm">
                 {[
                   ['Valor', c.value],
-                  ...(c.seguroFinanceiro > 0 ? [['Seguro Financeiro', c.seguroFinanceiro]] : []),
+                  ...(c.seguroFinanceiro > 0 ? [['Garantidora', c.seguroFinanceiro]] : []),
                   ...(c.seguroIncendio   > 0 ? [['Seguro Incêndio',   c.seguroIncendio]]   : []),
                   ...(c.iptu             > 0 ? [['IPTU',               c.iptu]]             : []),
                 ].map(([k, v]) => (
@@ -1430,7 +1512,7 @@ function ContractDrawer({ contract: c, onClose, onEdit, onScan, onDelete, onToas
             <div className="bg-slate-50 rounded-xl p-4 space-y-2">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Composição da Cobrança</p>
               {[['Valor', c.value],
-                ['Seg. Financeiro', c.seguroFinanceiro],
+                ['Garantidora', c.seguroFinanceiro],
                 ['Seg. Incêndio', c.seguroIncendio],
                 ['IPTU', c.iptu]].map(([l,v]) => v > 0 && (
                 <div key={l} className="flex justify-between text-sm">
@@ -1555,6 +1637,14 @@ const mapRow = row => ({
   certPfxPath:           row.cert_pfx_path           || '',
   // certSenha nunca volta do banco para o frontend
   certSenha: '',
+  // Gestão (modo contabilidade — legado)
+  numContrato:     row.num_contrato      || '',
+  situacaoLocacao: row.situacao_locacao  || 'Andamento',
+  sitImovel:       row.sit_imovel        || '',
+  obsContrato:     row.obs_contrato      || '',
+  pctMulta:        row.pct_multa        != null ? String(row.pct_multa).replace('.', ',')     : '',
+  pctJurosMes:     row.pct_juros_mes    != null ? String(row.pct_juros_mes).replace('.', ',') : '',
+  indiceCorrecao:  row.indice_correcao   || 'Nenhum',
   totalValue:       (Number(row.valor_aluguel)||0) + (Number(row.seguro_financeiro)||0) +
                     (Number(row.seguro_incendio)||0) + (Number(row.iptu)||0),
 })

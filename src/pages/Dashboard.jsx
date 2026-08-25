@@ -47,7 +47,7 @@ const mapCob = row => ({
 
 // ── Componente principal ───────────────────────────────────────────
 export default function Dashboard() {
-  const { user }  = useAuth()
+  const { user, isContabilidade }  = useAuth()
   const [view, setView]   = useState('mensal') // 'mensal' | 'anual'
   const [contracts, setContracts] = useState([])
   const [cobrancas, setCobrancas] = useState([])   // mês atual
@@ -58,6 +58,7 @@ export default function Dashboard() {
   const [lastUpdated, setLastUpdated] = useState(null)
   const [avulsasMensais, setAvulsasMensais] = useState([])
   const [avulsasAnuais,  setAvulsasAnuais]  = useState([])
+  const [inadKpis, setInadKpis] = useState(null)
 
   const load = async () => {
     if (!user) return
@@ -66,9 +67,33 @@ export default function Dashboard() {
     // Contratos (sempre — usado em vencimentos)
     const { data: ctrData } = await supabase
       .from('contratos')
-      .select('*, inquilinos(nome)')
+      .select('*, inquilinos(nome), is_contabilidade')
       .eq('user_id', user.id)
-    setContracts((ctrData || []).map(mapRow))
+    const mappedContracts = (ctrData || []).map(mapRow)
+    setContracts(mappedContracts)
+
+    // KPIs de inadimplência (somente is_contabilidade)
+    if (isContabilidade) {
+      const { data: inadData } = await supabase
+        .from('cobrancas')
+        .select('valor_total, inquilino_id, contratos!inner(is_contabilidade)')
+        .eq('user_id', user.id)
+        .eq('status', 'Em Atraso')
+        .eq('contratos.is_contabilidade', true)
+
+      const totalInad = (inadData || []).reduce((s, c) => s + Number(c.valor_total || 0), 0)
+      const locatariosSet = new Set((inadData || []).map(c => c.inquilino_id).filter(Boolean))
+
+      // Carteira = soma dos valores dos contratos contabilidade ativos
+      const carteiraTotal = (ctrData || [])
+        .filter(r => r.is_contabilidade && r.status !== 'Inativo')
+        .reduce((s, r) => s + (Number(r.valor_aluguel) || 0) + (Number(r.seguro_financeiro) || 0) +
+                          (Number(r.seguro_incendio) || 0) + (Number(r.iptu) || 0), 0)
+
+      const pctCarteira = carteiraTotal > 0 ? Math.round((totalInad / carteiraTotal) * 100) : 0
+
+      setInadKpis({ total: totalInad, locatarios: locatariosSet.size, pctCarteira })
+    }
 
     if (view === 'mensal') {
       const { data: cobData } = await supabase
@@ -441,6 +466,39 @@ export default function Dashboard() {
                 )}
               </div>
             </>
+          )}
+
+          {/* ── Cards Inadimplência (somente contabilidade) ───── */}
+          {isContabilidade && inadKpis && (
+            <div className="bg-white rounded-2xl border border-red-100 p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-base">⚠️</span>
+                <h3 className="font-semibold text-slate-900 text-sm">Inadimplência — Carteira Garantidora</h3>
+                <a href="/inadimplencia"
+                  className="ml-auto text-xs text-indigo-600 hover:underline font-medium">
+                  Ver detalhes →
+                </a>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="text-center">
+                  <p className="text-[11px] text-slate-400 uppercase tracking-wide font-semibold mb-1">Total Inadimplente</p>
+                  <p className="text-xl font-bold text-red-600">{fmt(inadKpis.total)}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">em aberto (Em Atraso)</p>
+                </div>
+                <div className="text-center border-x border-slate-100">
+                  <p className="text-[11px] text-slate-400 uppercase tracking-wide font-semibold mb-1">Locatários Inad.</p>
+                  <p className="text-xl font-bold text-orange-500">{inadKpis.locatarios}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">com cobrança em atraso</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-[11px] text-slate-400 uppercase tracking-wide font-semibold mb-1">% da Carteira</p>
+                  <p className={`text-xl font-bold ${inadKpis.pctCarteira >= 30 ? 'text-red-600' : inadKpis.pctCarteira >= 10 ? 'text-orange-500' : 'text-amber-500'}`}>
+                    {inadKpis.pctCarteira}%
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">inadimplente vs carteira</p>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* ── Painéis inferiores ─────────────────────────────── */}

@@ -118,6 +118,13 @@ const mapCob = (row, lastNfse = null) => {
     certPfxPath:  row.contratos?.cert_pfx_path || null,
     certSenhaEnc: row.contratos?.cert_senha    || null,
     codNbs:       row.contratos?.cod_nbs        || null,
+    // gestão legado
+    situacaoCobranca: row.situacao_cobranca || '',
+    valorAtualizado:  Number(row.valor_atualizado) || null,
+    // campos do contrato usados para calcular valor atualizado
+    pctMulta:     Number(row.contratos?.pct_multa)     || 0,
+    pctJurosMes:  Number(row.contratos?.pct_juros_mes) || 0,
+    situacaoLocacao: row.contratos?.situacao_locacao || 'Andamento',
     imovel: (row.contratos?.imovel_cib || row.contratos?.imovel_cep) ? {
       cib:            row.contratos?.imovel_cib             || null,
       inscricaoFiscal:row.contratos?.imovel_inscricao_fiscal || null,
@@ -1724,7 +1731,7 @@ function AdicionarCobrancaModal({ contracts, user, onClose, onDone }) {
 
 // ── Página principal ──────────────────────────────────────────────
 export default function Cobrancas() {
-  const { user }    = useAuth()
+  const { user, isContabilidade }    = useAuth()
   const { isActive } = useSubscription()
   const navigate    = useNavigate()
   const { certSet, loading: onboardingLoading } = useOnboarding()
@@ -1883,7 +1890,7 @@ export default function Cobrancas() {
     // Query principal — sem join nfse_emissoes (exige FK formal no banco)
     const { data, error } = await supabase
       .from('cobrancas')
-      .select('*, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss, toma_logradouro, toma_numero, toma_bairro, toma_cep, toma_cod_mun, toma_mun_nome, imovel_cib, imovel_inscricao_fiscal, imovel_finalidade, imovel_logradouro, imovel_numero, imovel_complemento, imovel_bairro, imovel_cep, imovel_cod_mun, imovel_mun_nome, cod_nbs, cert_pfx_path, cert_senha), inquilinos(nome, cpf, email)')
+      .select('*, situacao_cobranca, valor_atualizado, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss, toma_logradouro, toma_numero, toma_bairro, toma_cep, toma_cod_mun, toma_mun_nome, imovel_cib, imovel_inscricao_fiscal, imovel_finalidade, imovel_logradouro, imovel_numero, imovel_complemento, imovel_bairro, imovel_cep, imovel_cod_mun, imovel_mun_nome, cod_nbs, cert_pfx_path, cert_senha, pct_multa, pct_juros_mes, situacao_locacao), inquilinos(nome, cpf, email)')
       .eq('user_id', user.id)
       .eq('mes_referencia', ref)
       .order('created_at', { ascending: false })
@@ -1961,6 +1968,12 @@ export default function Cobrancas() {
       return (a.tenant || '').localeCompare(b.tenant || '', 'pt-BR')
     })
   }, [cobrancas, filter])
+
+  // ── Atualizar situacao_cobranca ────────────────────────────────
+  const updateSituacaoCobranca = async (id, valor) => {
+    await supabase.from('cobrancas').update({ situacao_cobranca: valor || null }).eq('id', id)
+    setCobrancas(prev => prev.map(c => c.id === id ? { ...c, situacaoCobranca: valor } : c))
+  }
 
   // ── Atualizar status ───────────────────────────────────────────
   const updateStatus = async (id, newStatus) => {
@@ -2122,6 +2135,7 @@ export default function Cobrancas() {
                 <th className="text-right px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Valor</th>
                 <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Status</th>
                 <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden xl:table-cell">Situação</th>
+                {isContabilidade && <th className="text-center px-3 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden xl:table-cell">Cobrança</th>}
                 <th className="px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide text-right">Ações</th>
               </tr>
             </thead>
@@ -2185,6 +2199,22 @@ export default function Cobrancas() {
                       </div>
                     )}
                   </td>
+
+                  {/* Coluna Situação Cobrança — somente is_contabilidade */}
+                  {isContabilidade && (
+                    <td className="px-3 py-3.5 hidden xl:table-cell text-center">
+                      <select
+                        value={c.situacaoCobranca || ''}
+                        onChange={e => updateSituacaoCobranca(c.id, e.target.value)}
+                        className="text-[10px] border border-slate-200 rounded-lg px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 max-w-[130px]"
+                      >
+                        <option value="">—</option>
+                        {['Cobrar','Atrasa todo mês','Cumprindo Acordo','Acordo Result','Estava cumprindo acordo','Ajuizado','Despejo Urgente','Enviado documentação','Pagou parcial'].map(s =>
+                          <option key={s} value={s}>{s}</option>
+                        )}
+                      </select>
+                    </td>
+                  )}
 
                   {/* Coluna Ações — NFS-e + Editar valor */}
                   <td className="px-5 py-3.5 text-right">
