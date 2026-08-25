@@ -2135,7 +2135,6 @@ export default function Cobrancas() {
                 <th className="text-right px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Valor</th>
                 <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Status</th>
                 <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden xl:table-cell">Situação</th>
-                {isContabilidade && <th className="text-center px-3 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden xl:table-cell">Cobrança</th>}
                 <th className="px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide text-right">Ações</th>
               </tr>
             </thead>
@@ -2199,22 +2198,6 @@ export default function Cobrancas() {
                       </div>
                     )}
                   </td>
-
-                  {/* Coluna Situação Cobrança — somente is_contabilidade */}
-                  {isContabilidade && (
-                    <td className="px-3 py-3.5 hidden xl:table-cell text-center">
-                      <select
-                        value={c.situacaoCobranca || ''}
-                        onChange={e => updateSituacaoCobranca(c.id, e.target.value)}
-                        className="text-[10px] border border-slate-200 rounded-lg px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 max-w-[130px]"
-                      >
-                        <option value="">—</option>
-                        {['Cobrar','Atrasa todo mês','Cumprindo Acordo','Acordo Result','Estava cumprindo acordo','Ajuizado','Despejo Urgente','Enviado documentação','Pagou parcial'].map(s =>
-                          <option key={s} value={s}>{s}</option>
-                        )}
-                      </select>
-                    </td>
-                  )}
 
                   {/* Coluna Ações — NFS-e + Editar valor */}
                   <td className="px-5 py-3.5 text-right">

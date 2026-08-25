@@ -344,8 +344,8 @@ function AbaResumo({ lancamentos, totalCarteira }) {
       <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-4">
         <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Resumo Geral</p>
         {[
-          { label: 'Total de lançamentos',          val: stats.total },
           { label: 'Locatários inadimplentes',      val: stats.tenants },
+          { label: 'Cobranças em atraso',           val: stats.total },
           { label: 'Valor original total',          val: fmt(stats.totalOriginal) },
           { label: 'Valor atualizado total',        val: fmt(stats.totalAtualizado), bold: true, red: true },
           { label: '% da carteira (valor)',         val: `${pctCarteira}%`, bold: true },
