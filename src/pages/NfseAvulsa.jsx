@@ -412,10 +412,11 @@ function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, 
           <div className="border border-indigo-200 bg-indigo-50 rounded-xl px-4 py-3 space-y-3">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-indigo-700">🏙️ Município e Inscrição Municipal do Prestador</span>
+              <span className="text-xs text-slate-400">(seu município, não do cliente)</span>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium text-slate-500 block mb-1">Código IBGE (7 dígitos)</label>
+                <label className="text-xs font-medium text-slate-500 block mb-1">IBGE do município emissor — <strong>seu</strong> município (7 dígitos)</label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -423,8 +424,15 @@ function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, 
                   value={f.prestMunicipioIbge}
                   onChange={e => setF(p => ({ ...p, prestMunicipioIbge: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
                   placeholder="ex: 8105005"
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white font-mono"
+                  className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white font-mono ${
+                    nfseDefaults.municipioIbge && f.prestMunicipioIbge && f.prestMunicipioIbge !== nfseDefaults.municipioIbge
+                      ? 'border-amber-400 bg-amber-50'
+                      : 'border-slate-200'
+                  }`}
                 />
+                {nfseDefaults.municipioIbge && f.prestMunicipioIbge && f.prestMunicipioIbge !== nfseDefaults.municipioIbge && (
+                  <p className="text-xs text-amber-600 mt-1">⚠️ Diferente do perfil ({nfseDefaults.municipioIbge}). Corrija se não foi intencional.</p>
+                )}
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-500 block mb-1">Inscrição Municipal (IM)</label>

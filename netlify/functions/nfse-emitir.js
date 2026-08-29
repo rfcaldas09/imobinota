@@ -296,13 +296,17 @@ async function handle(event) {
             const desc  = e.Descricao   || e.descricao   || ''
             const compl = e.Complemento || e.complemento || ''
             let msg = cod ? `[${cod}] ${desc}${compl ? ': ' + compl : ''}` : desc
-            // E0039: município não habilitado — mostra qual IBGE foi realmente enviado no cLocEmi
+            // E0039: município não habilitado — mensagem clara para o usuário
             if (cod === 'E0039') {
               const ibgeEnviado = municipioIbgeResolved || p.nfse_municipio_ibge || ''
               const ibgePerfil  = p.nfse_municipio_ibge || ''
               const munNome     = p.nfse_municipio_nome || ''
               const override    = ibgeEnviado !== ibgePerfil
-              msg += ` (IBGE enviado no cLocEmi: ${ibgeEnviado}${munNome && !override ? ` — ${munNome}` : ''}${override ? ` ⚠️ diferente do perfil (${ibgePerfil} — ${munNome})` : ''})`
+              if (override) {
+                msg = `O município IBGE informado para este Tomador (${ibgeEnviado}) não está cadastrado no Sistema Nacional NFS-e. O município configurado no perfil é ${ibgePerfil}${munNome ? ` (${munNome})` : ''}. Corrija o campo "Município emissor" nesta nota para o IBGE correto e reprocesse.`
+              } else {
+                msg = `O município emissor (IBGE ${ibgeEnviado}${munNome ? ` — ${munNome}` : ''}) não está habilitado no Sistema Nacional NFS-e. Entre em contato com a Prefeitura para verificar o cadastramento do município.`
+              }
             }
             return msg
           }).join('\n')
