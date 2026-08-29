@@ -697,15 +697,15 @@ function buildDpsXml(cfg, cob, homologacao) {
 
   // Endereço do tomador — obrigatório quando tpRetISSQN = 2
   const te = cob.tomadorEnd
-  const endTomaXml = te && te.cep && te.codMun
+  const endTomaXml = te && te.cep && te.codMun && te.logradouro
     ? `<end>\n` +
       `<endNac>\n` +
       `<cMun>${digits(te.codMun).slice(0, 7)}</cMun>\n` +
       `<CEP>${digits(te.cep).slice(0, 8)}</CEP>\n` +
       `</endNac>\n` +
-      `<xLgr>${escXml((te.logradouro || '').slice(0, 125))}</xLgr>\n` +
+      `<xLgr>${escXml(String(te.logradouro).slice(0, 125))}</xLgr>\n` +
       `<nro>${escXml((te.numero || 'S/N').slice(0, 10))}</nro>\n` +
-      `<xBairro>${escXml((te.bairro || '').slice(0, 72))}</xBairro>\n` +
+      `<xBairro>${escXml((te.bairro || 'Não informado').slice(0, 72))}</xBairro>\n` +
       `</end>\n`
     : ''
 
@@ -760,7 +760,7 @@ ${cfg.imovel ? `<infObra>\n<BemImovel>\n` +
 <tribMun>
 <tribISSQN>1</tribISSQN>
 <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
-${tpRetISSQN === 2 ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</tribMun>
+${tpRetISSQN === 2 && isSimples ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</tribMun>
 ${hasRetFed ? `<tribFed>\n${tribFedInnerXml}</tribFed>\n` : ''}${totTribXml}
 </trib>
 </valores>
