@@ -559,9 +559,8 @@ function buildDpsXml(cfg, cob, homologacao) {
     }
     tomadorTag = `<CPF>${cpfTomador}</CPF>`
   } else if (cpfTomador.length > 0) {
-    // Número de dígitos inesperado — trata como sem NIF (código 3 = Outros)
-    console.warn('[nfse-emitir] CPF/CNPJ do tomador com comprimento inesperado:', cpfTomador.length, '— usando cNaoNIF=3')
-    tomadorTag = `<cNaoNIF>3</cNaoNIF>`
+    // Número de dígitos inesperado — dado malformado, não há código válido para isso
+    throw new Error(`CPF/CNPJ do tomador "${cob.tenant}" está malformado (${cpfTomador.length} dígitos). Corrija o cadastro do inquilino/cliente para 11 dígitos (CPF) ou 14 dígitos (CNPJ) antes de emitir a NFS-e.`)
   } else {
     // Sem CPF/CNPJ — código 1 = pessoa natural não obrigada à inscrição no CPF
     tomadorTag = `<cNaoNIF>1</cNaoNIF>`
