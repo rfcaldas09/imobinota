@@ -295,7 +295,16 @@ async function handle(event) {
             const cod   = e.Codigo      || e.codigo      || ''
             const desc  = e.Descricao   || e.descricao   || ''
             const compl = e.Complemento || e.complemento || ''
-            return cod ? `[${cod}] ${desc}${compl ? ': ' + compl : ''}` : desc
+            let msg = cod ? `[${cod}] ${desc}${compl ? ': ' + compl : ''}` : desc
+            // E0039: município não habilitado — mostra qual IBGE foi realmente enviado no cLocEmi
+            if (cod === 'E0039') {
+              const ibgeEnviado = municipioIbgeResolved || p.nfse_municipio_ibge || ''
+              const ibgePerfil  = p.nfse_municipio_ibge || ''
+              const munNome     = p.nfse_municipio_nome || ''
+              const override    = ibgeEnviado !== ibgePerfil
+              msg += ` (IBGE enviado no cLocEmi: ${ibgeEnviado}${munNome && !override ? ` — ${munNome}` : ''}${override ? ` ⚠️ diferente do perfil (${ibgePerfil} — ${munNome})` : ''})`
+            }
+            return msg
           }).join('\n')
         }
       } catch { userMessage = responseBody.slice(0, 500) || userMessage }
