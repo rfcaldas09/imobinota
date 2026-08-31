@@ -291,12 +291,9 @@ function renderPage(doc, f, qrBuf) {
   }
   y += 25; hline(y)
 
-  // Tributos + VALOR LÍQUIDO
+  // Tributos (sem VALOR LÍQUIDO — removido para evitar confusão com retenções do tomador)
   y += 3
   t(`Valor Aproximado dos tributos ${fmtVal(f.valorTributos || 0)}`, PL + 3, y, 250, { size: 7 })
-  t('VALOR LÍQUIDO DA NOTA', PL + 255, y, W - 375, { bold: true, size: 9, align: 'right', color: DRK })
-  t(fmtVal(f.valorLiquido),  PR - 115,  y, 112,    { bold: true, size: 9, align: 'right' })
-  vline(PR - 120, y, 13)
   y += 14; hline(y)
 
   // Linha adicional: valor efetivo a receber (aparece apenas quando há PIS/COFINS retidos)
