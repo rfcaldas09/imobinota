@@ -74,12 +74,13 @@ export default function Dashboard() {
 
     // KPIs de inadimplência (somente is_contabilidade)
     if (isContabilidade) {
+      // Usuário isContabilidade → todos os contratos dele já são contabilidade
+      // Não usa join com contratos para evitar filtros PostgREST que descartam linhas silenciosamente
       const { data: inadData } = await supabase
         .from('cobrancas')
-        .select('valor_total, inquilino_id, mes_referencia, dia_vencimento, contratos!inner(is_contabilidade)')
+        .select('valor_total, inquilino_id, mes_referencia, dia_vencimento')
         .eq('user_id', user.id)
         .neq('status', 'Pago')
-        .eq('contratos.is_contabilidade', true)
 
       // Mesmo critério da tela Inadimplência: vencimento no passado
       const hoje = new Date()
