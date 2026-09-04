@@ -141,16 +141,17 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
     const lc116Raw = String(r['CÓDIGO SERVIÇO LC 116'] || r['LC 116'] || r['LC116'] || r['LLC116'] || r['LC-116'] || '').trim()
     const codServicoLc116 = lc116Raw ? lc116Raw.split(' - ')[0].trim() : ''
 
-    // CEP do tomador — Excel pode guardar como número (sem zeros/hífen)
-    const cepRaw = String(r['CEP'] || '').replace(/\D/g, '').padStart(8, '0')
-    const tamaCep = cepRaw.replace(/^0+$/, '') // descarta se for todo zeros (campo vazio)
-
     // ── Dados do imóvel (modo contabilidade — locação imobiliária) ──
     const parseCep8 = v => { const d = String(v||'').replace(/\D/g,'').padStart(8,'0'); return d.replace(/^0+$/,'') }
     const imovelCib             = String(r['CIB'] || r['CIB IMÓVEL'] || '').trim().toUpperCase() || null
     const imovelInscricaoFiscal = String(r['INSCRIÇÃO FISCAL'] || r['INSCRICAO FISCAL'] || r['INSCRIÇÃO IMOBILIÁRIA'] || r['INSCRICAO IMOBILIARIA'] || '').trim() || null
     const imovelFinalidade      = String(r['FINALIDADE'] || r['FINALIDADE IMÓVEL'] || '').toLowerCase().includes('comercial') ? 'comercial' : 'residencial'
     const imovelCep             = parseCep8(r['CEP IMÓVEL'] || r['CEP IMOVEL'])
+
+    // CEP do tomador — usa coluna 'CEP' se existir, caso contrário usa CEP do imóvel
+    const cepRaw = String(r['CEP'] || '').replace(/\D/g, '').padStart(8, '0')
+    const tamaCepExplicito = cepRaw.replace(/^0+$/, '')
+    const tamaCep = tamaCepExplicito || imovelCep // fallback: mesmo CEP do imóvel
     const imovelLogradouro      = String(r['LOGRADOURO IMÓVEL'] || r['LOGRADOURO IMOVEL'] || r['ENDEREÇO IMÓVEL'] || r['ENDERECO IMOVEL'] || '').trim() || null
     const imovelNumero          = String(r['NÚMERO IMÓVEL'] || r['NUMERO IMOVEL'] || r['NRO IMÓVEL'] || r['NRO IMOVEL'] || '').trim() || null
     const imovelComplemento     = String(r['COMPLEMENTO IMÓVEL'] || r['COMPLEMENTO IMOVEL'] || '').trim() || null
