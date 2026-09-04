@@ -2007,8 +2007,8 @@ export default function Contratos() {
         situacao_locacao:        data.situacaoLocacao  || 'Andamento',
         sit_imovel:              data.sitImovel        || null,
         obs_contrato:            data.obsContrato      || null,
-        pct_multa:               parsePctLocal(data.pctMulta)    || null,
-        pct_juros_mes:           parsePctLocal(data.pctJurosMes) || null,
+        pct_multa:               parsePctMod(data.pctMulta)    || null,
+        pct_juros_mes:           parsePctMod(data.pctJurosMes) || null,
         indice_correcao:         data.indiceCorrecao   || 'Nenhum',
         // Locatário
         locatario_nome:          data.locatarioNome      || null,
