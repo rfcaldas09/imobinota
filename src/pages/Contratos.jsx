@@ -176,7 +176,7 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
       tamaCep,
       // Endereço do tomador — preenchido pelo lookup ViaCEP após o parse
       tomaLogradouro: '', tomaNumero: '', tamaBairro: '', tamaCodMun: '', tamaMunNome: '',
-      seguroFinanceiro:       0,
+      seguroFinanceiro: parseFloat(String(r['GARANTIDORA'] || r['SEGURO FINANCEIRO'] || r['PARCELA GARANTIDORA'] || 0).replace(',','.')) || 0,
       seguroIncendio:         0,
       iptu:                   0,
       status:                 'Ativo',
@@ -190,7 +190,11 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
       numContrato, situacaoLocacao,
       pctMulta: pctMulta != null ? String(pctMulta).replace('.',',') : '',
       pctJurosMes: pctJurosMes != null ? String(pctJurosMes).replace('.',',') : '',
-      sitImovel: '', obsContrato: '', indiceCorrecao: 'Nenhum',
+      sitImovel: String(r['SIT IMOVEL'] || r['SIT IMÓVEL'] || r['SITUAÇÃO DO IMÓVEL'] || '').trim(),
+      locatarioNome:     String(r['LOCATÁRIO NOME'] || r['LOCATARIO NOME'] || r['NOME LOCATÁRIO'] || '').trim(),
+      locatarioTelefone: String(r['TELEFONE LOCATÁRIO'] || r['TELEFONE LOCATARIO'] || '').trim(),
+      locatarioEmail:    String(r['EMAIL LOCATÁRIO'] || r['EMAIL LOCATARIO'] || r['E-MAIL LOCATÁRIO'] || '').trim(),
+      obsContrato: '', indiceCorrecao: 'Nenhum',
       ...retDefaults,
     }
   }).filter(r => r.tenant && r.value > 0)
@@ -522,6 +526,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
     certPfxPath: '', certSenha: '',
     // Gestão (modo contabilidade — legado)
     numContrato: '', situacaoLocacao: 'Andamento', sitImovel: '', obsContrato: '',
+    locatarioNome: '', locatarioTelefone: '', locatarioEmail: '',
     pctMulta: '', pctJurosMes: '', indiceCorrecao: 'Nenhum',
     // Retenções — federais pré-preenchidas com defaults do perfil (ou padrão nacional)
     issRetido: false, ...retDefaults,
@@ -772,6 +777,33 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
             <>
               <p className="text-xs font-bold text-amber-600 uppercase tracking-wide pt-1">Dados do Imóvel (NFS-e Locação)</p>
               <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-3">
+
+                {/* Dados do Locatário */}
+                <div>
+                  <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-1">Locatário</p>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">Nome do Locatário</label>
+                      <input value={f.locatarioNome || ''} onChange={e => set('locatarioNome', e.target.value)}
+                        placeholder="Nome completo do locatário"
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"/>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 block mb-1">Telefone</label>
+                        <input value={f.locatarioTelefone || ''} onChange={e => set('locatarioTelefone', e.target.value)}
+                          placeholder="(47) 99999-0000"
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"/>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 block mb-1">E-mail</label>
+                        <input value={f.locatarioEmail || ''} onChange={e => set('locatarioEmail', e.target.value)}
+                          type="email" placeholder="locatario@email.com"
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"/>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
                 {/* Finalidade */}
                 <div>
@@ -1638,8 +1670,11 @@ const mapRow = row => ({
   // Gestão (modo contabilidade — legado)
   numContrato:     row.num_contrato      || '',
   situacaoLocacao: row.situacao_locacao  || 'Andamento',
-  sitImovel:       row.sit_imovel        || '',
-  obsContrato:     row.obs_contrato      || '',
+  sitImovel:         row.sit_imovel          || '',
+  obsContrato:       row.obs_contrato        || '',
+  locatarioNome:     row.locatario_nome      || '',
+  locatarioTelefone: row.locatario_telefone  || '',
+  locatarioEmail:    row.locatario_email     || '',
   pctMulta:        row.pct_multa        != null ? String(row.pct_multa).replace('.', ',')     : '',
   pctJurosMes:     row.pct_juros_mes    != null ? String(row.pct_juros_mes).replace('.', ',') : '',
   indiceCorrecao:  row.indice_correcao   || 'Nenhum',
@@ -1760,6 +1795,9 @@ export default function Contratos() {
         cod_nbs:                 data.codNbs                 || null,
         cert_pfx_path:           data.certPfxPath            || null,
         cert_senha:              data.certSenha              || null,
+        locatario_nome:          data.locatarioNome          || null,
+        locatario_telefone:      data.locatarioTelefone      || null,
+        locatario_email:         data.locatarioEmail         || null,
       }).select().single()
       if (error) throw error
 
@@ -1826,7 +1864,7 @@ export default function Contratos() {
           user_id: user.id, inquilino_id,
           imovel:              data.property,
           valor_aluguel:       data.value,
-          seguro_financeiro:   0,
+          seguro_financeiro:   data.seguroFinanceiro || 0,
           seguro_incendio:     0,
           iptu:                0,
           dia_vencimento:      data.dueDay,
@@ -1859,6 +1897,14 @@ export default function Contratos() {
           imovel_cod_mun:          data.imovelCodMun          || null,
           imovel_mun_nome:         data.imovelMunNome         || null,
           cod_nbs:                 data.codNbs                || null,
+          // Gestão legado
+          num_contrato:            data.numContrato           || null,
+          situacao_locacao:        data.situacaoLocacao       || 'Andamento',
+          sit_imovel:              data.sitImovel             || null,
+          // Locatário
+          locatario_nome:          data.locatarioNome         || null,
+          locatario_telefone:      data.locatarioTelefone     || null,
+          locatario_email:         data.locatarioEmail        || null,
         }).select().single()
         if (error) throw error
 
@@ -1935,6 +1981,18 @@ export default function Contratos() {
         cert_pfx_path:           data.certPfxPath            || null,
         ...(data.certSenha ? { cert_senha: data.certSenha } : {}),
         status:                        data.status,
+        // Gestão legado
+        num_contrato:            data.numContrato      || null,
+        situacao_locacao:        data.situacaoLocacao  || 'Andamento',
+        sit_imovel:              data.sitImovel        || null,
+        obs_contrato:            data.obsContrato      || null,
+        pct_multa:               parsePctLocal(data.pctMulta)    || null,
+        pct_juros_mes:           parsePctLocal(data.pctJurosMes) || null,
+        indice_correcao:         data.indiceCorrecao   || 'Nenhum',
+        // Locatário
+        locatario_nome:          data.locatarioNome      || null,
+        locatario_telefone:      data.locatarioTelefone  || null,
+        locatario_email:         data.locatarioEmail     || null,
       }).eq('id', data.id)
       if (error) throw error
 
