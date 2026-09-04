@@ -76,13 +76,22 @@ export default function Dashboard() {
     if (isContabilidade) {
       const { data: inadData } = await supabase
         .from('cobrancas')
-        .select('valor_total, inquilino_id, contratos!inner(is_contabilidade)')
+        .select('valor_total, inquilino_id, mes_referencia, dia_vencimento, contratos!inner(is_contabilidade)')
         .eq('user_id', user.id)
-        .eq('status', 'Em Atraso')
+        .neq('status', 'Pago')
         .eq('contratos.is_contabilidade', true)
 
-      const totalInad = (inadData || []).reduce((s, c) => s + Number(c.valor_total || 0), 0)
-      const locatariosSet = new Set((inadData || []).map(c => c.inquilino_id).filter(Boolean))
+      // Mesmo critério da tela Inadimplência: vencimento no passado
+      const hoje = new Date()
+      const vencidas = (inadData || []).filter(c => {
+        if (!c.mes_referencia || !c.dia_vencimento) return false
+        const [ano, mes] = c.mes_referencia.split('-')
+        const venc = new Date(`${ano}-${mes}-${String(c.dia_vencimento).padStart(2,'0')}T12:00:00`)
+        return venc < hoje
+      })
+
+      const totalInad = vencidas.reduce((s, c) => s + Number(c.valor_total || 0), 0)
+      const locatariosSet = new Set(vencidas.map(c => c.inquilino_id).filter(Boolean))
 
       // Carteira = soma dos valores dos contratos contabilidade ativos
       const carteiraTotal = (ctrData || [])
