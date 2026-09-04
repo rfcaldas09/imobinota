@@ -107,6 +107,9 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
 
     const email    = String(r['E-MAIL'] || r['EMAIL'] || '').trim()
     const phone    = String(r['TELEFONE'] || '').trim()
+    // Contato do locatário (colunas separadas — não sobrescreve email/phone do proprietário)
+    const locTel   = String(r['LOCATÁRIO TELEFONE'] || r['LOCATARIO TELEFONE'] || '').trim()
+    const locEmail = String(r['LOCATÁRIO EMAIL'] || r['LOCATARIO EMAIL'] || r['E-MAIL LOCATÁRIO'] || '').trim()
     const property = String(r['REFERÊNCIA'] || r['REFERENCIA'] || '').trim()
 
     // Datas — openpyxl e XLSX retornam Date ou string
@@ -157,7 +160,7 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
     const codNbs                = String(r['NBS'] || r['CÓD. NBS'] || r['COD NBS'] || '').trim() || null
 
     // ── Campos de gestão legado ──
-    const numContrato = String(r['Nº Contrato'] || r['N Contrato'] || r['NUM CONTRATO'] || r['NUMERO CONTRATO'] || '').trim() || null
+    const numContrato = String(r['Nº CONTRATO'] || r['N CONTRATO'] || r['NUM CONTRATO'] || r['NUMERO CONTRATO'] || '').trim() || null
     const situacaoLocacaoRaw = String(r['Situação'] || r['Situacao'] || '').trim()
     const situacaoLocacao = ['Andamento','Em desocupação','Desocupado'].includes(situacaoLocacaoRaw) ? situacaoLocacaoRaw : 'Andamento'
     const pctMulta    = parseFloat(String(r['Multa (%)'] || r['% Multa'] || r['PCT MULTA'] || '').replace(',','.')) || null
@@ -195,8 +198,8 @@ function parseContratosXls(data, retDefaults = NAT_RET_DEFAULT_CTR) {
       pctJurosMes: pctJurosMes != null ? String(pctJurosMes).replace('.',',') : '',
       sitImovel: String(r['SIT IMOVEL'] || r['SIT IMÓVEL'] || r['SITUAÇÃO DO IMÓVEL'] || '').trim(),
       locatarioNome:     String(r['LOCATÁRIO NOME'] || r['LOCATARIO NOME'] || r['NOME LOCATÁRIO'] || '').trim(),
-      locatarioTelefone: String(r['TELEFONE LOCATÁRIO'] || r['TELEFONE LOCATARIO'] || '').trim(),
-      locatarioEmail:    String(r['EMAIL LOCATÁRIO'] || r['EMAIL LOCATARIO'] || r['E-MAIL LOCATÁRIO'] || '').trim(),
+      locatarioTelefone: locTel,
+      locatarioEmail:    locEmail,
       obsContrato: '', indiceCorrecao: 'Nenhum',
       ...retDefaults,
     }
@@ -235,24 +238,40 @@ function ImportContratosModal({ onImport, onClose, retDefaults = NAT_RET_DEFAULT
         setFileName(file.name)
         setStep('preview')
 
-        // Lookup ViaCEP em background para linhas com CEP
-        const cepsParaLookup = parsed.filter(r => r.tamaCep)
-        if (cepsParaLookup.length) {
+        // Lookup ViaCEP em background para CEP do tomador e do imóvel
+        const fetchCep = async cep => {
+          try {
+            const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`)
+            const d = await res.json()
+            return d.erro ? null : d
+          } catch { return null }
+        }
+
+        const hasToma  = parsed.some(r => r.tamaCep)
+        const hasImovel = parsed.some(r => r.imovelCep)
+        if (hasToma || hasImovel) {
           setCepLoading(true)
           const enriched = await Promise.all(parsed.map(async row => {
-            if (!row.tamaCep) return row
-            try {
-              const res = await fetch(`https://viacep.com.br/ws/${row.tamaCep}/json/`)
-              const d = await res.json()
-              if (!d.erro) return {
-                ...row,
+            let out = { ...row }
+            if (row.tamaCep) {
+              const d = await fetchCep(row.tamaCep)
+              if (d) Object.assign(out, {
                 tomaLogradouro: d.logradouro || '',
                 tamaBairro:     d.bairro     || '',
-                tamaCodMun:     d.ibge        || '',
-                tamaMunNome:    d.localidade  || '',
-              }
-            } catch { /* silencia falhas individuais */ }
-            return row
+                tamaCodMun:     d.ibge       || '',
+                tamaMunNome:    d.localidade || '',
+              })
+            }
+            if (row.imovelCep) {
+              const d = await fetchCep(row.imovelCep)
+              if (d) Object.assign(out, {
+                imovelLogradouro: out.imovelLogradouro || d.logradouro || '',
+                imovelBairro:     out.imovelBairro     || d.bairro     || '',
+                imovelCodMun:     out.imovelCodMun     || d.ibge       || '',
+                imovelMunNome:    out.imovelMunNome     || d.localidade || '',
+              })
+            }
+            return out
           }))
           setRows(enriched)
           setCepLoading(false)
@@ -721,9 +740,8 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
             </Row>
           </div>
 
-          {/* Endereço do tomador */}
-          {f.cpf.trim() && (
-            <div className="border border-slate-200 bg-slate-50 rounded-xl p-3 space-y-2">
+          {/* Endereço do tomador — sempre visível */}
+          <div className="border border-slate-200 bg-slate-50 rounded-xl p-3 space-y-2">
               <p className="text-xs font-semibold text-slate-600">Endereço do tomador (opcional — usado na NFS-e)</p>
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -763,7 +781,6 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
                 </div>
               </div>
             </div>
-          )}
 
           {/* Referência — só modo contabilidade */}
           {isContabilidade && (
