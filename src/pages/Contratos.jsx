@@ -77,6 +77,7 @@ const isExpiringSoon = (c) => {
 }
 
 // Converte string com vírgula decimal ou número para float (ex: '3,00' → 3)
+// parsePctMod: converte string com vírgula decimal para float (ex: '3,00' → 3)
 const parsePctMod = v => parseFloat((v || '').toString().replace(',', '.')) || null
 
 // Padrão nacional de retenções federais
