@@ -67,7 +67,7 @@ export default function Dashboard() {
     // Contratos (sempre — usado em vencimentos)
     const { data: ctrData } = await supabase
       .from('contratos')
-      .select('*, inquilinos(nome), is_contabilidade')
+      .select('*, inquilinos(nome)')
       .eq('user_id', user.id)
     const mappedContracts = (ctrData || []).map(mapRow)
     setContracts(mappedContracts)
