@@ -76,6 +76,9 @@ const isExpiringSoon = (c) => {
   return diff >= 0 && diff <= 60
 }
 
+// Converte string com vírgula decimal ou número para float (ex: '3,00' → 3)
+const parsePctMod = v => parseFloat((v || '').toString().replace(',', '.')) || null
+
 // Padrão nacional de retenções federais
 const NAT_RET_DEFAULT_CTR = { pIRRF: '1,50', pCSLL: '1,00', pCOFINS: '3,00', pPIS: '0,65', pINSS: '' }
 
@@ -1875,11 +1878,11 @@ export default function Contratos() {
           discriminacao_servico:         data.discriminacaoServico || null,
           solicitar_discriminacao_mensal: false,
           iss_retido:  false,
-          pct_irrf:    parsePctLocal(data.pIRRF)   || null,
-          pct_csll:    parsePctLocal(data.pCSLL)   || null,
-          pct_cofins:  parsePctLocal(data.pCOFINS) || null,
-          pct_pis:     parsePctLocal(data.pPIS)    || null,
-          pct_inss:    parsePctLocal(data.pINSS)   || null,
+          pct_irrf:    parsePctMod(data.pIRRF),
+          pct_csll:    parsePctMod(data.pCSLL),
+          pct_cofins:  parsePctMod(data.pCOFINS),
+          pct_pis:     parsePctMod(data.pPIS),
+          pct_inss:    parsePctMod(data.pINSS),
           toma_cep:        data.tamaCep        || null,
           toma_logradouro: data.tomaLogradouro || null,
           toma_bairro:     data.tamaBairro     || null,
