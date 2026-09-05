@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import MonthPicker from '../components/MonthPicker'
 
 const fmt = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const fmtDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '—'
@@ -116,6 +117,82 @@ function NovoLancamentoModal({ cobrancas, contratos, classificacoes, onClose, on
   )
 }
 
+// ── Modal de edição de lançamento ──────────────────────────────────────────
+function EditarLancamentoModal({ lancamento, classificacoes, onClose, onSaved }) {
+  const [classificacaoId, setClassificacaoId] = useState(lancamento.classificacaoId || '')
+  const [valor,           setValor]           = useState(String(lancamento.valor))
+  const [data,            setData]            = useState(lancamento.data || '')
+  const [tipo,            setTipo]            = useState(lancamento.tipo || 'parcial')
+  const [obs,             setObs]             = useState(lancamento.obs || '')
+  const [saving,          setSaving]          = useState(false)
+
+  const inpCls = 'w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-violet-400'
+
+  const salvar = async () => {
+    if (!valor || !data) return
+    setSaving(true)
+    await supabase.from('desembolsos').update({
+      classificacao_id: classificacaoId || null,
+      valor:            parseFloat(String(valor).replace(',', '.')),
+      data, tipo, obs: obs || null,
+    }).eq('id', lancamento.id)
+    setSaving(false)
+    onSaved()
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="h-1 bg-violet-500 rounded-t-2xl"/>
+        <div className="px-6 pt-5 pb-3 flex items-center justify-between">
+          <h3 className="font-bold text-slate-900">Editar Desembolso</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+        <div className="px-6 pb-6 space-y-3">
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Classificação</label>
+            <select value={classificacaoId} onChange={e => setClassificacaoId(e.target.value)} className={inpCls}>
+              <option value="">— Sem classificação —</option>
+              {classificacoes.map(cl => (
+                <option key={cl.id} value={cl.id}>{cl.nome}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">Valor (R$) *</label>
+              <input value={valor} onChange={e => setValor(e.target.value)} type="number" placeholder="0,00"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400"/>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500 block mb-1">Data *</label>
+              <input value={data} onChange={e => setData(e.target.value)} type="date"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400"/>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Tipo</label>
+            <select value={tipo} onChange={e => setTipo(e.target.value)} className={inpCls}>
+              <option value="parcial">Parcial</option>
+              <option value="total">Total</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Observações</label>
+            <input value={obs} onChange={e => setObs(e.target.value)} placeholder="Opcional"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400"/>
+          </div>
+          <button onClick={salvar} disabled={saving || !valor || !data}
+            className="w-full py-2.5 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:opacity-40 transition">
+            {saving ? 'Salvando…' : 'Salvar Alterações'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Modal resultado da importação ───────────────────────────────────────────
 function ImportResultModal({ result, onClose }) {
   return (
@@ -167,11 +244,21 @@ export default function Desembolsos() {
   const [loading,        setLoading]        = useState(true)
   const [expanded,       setExpanded]       = useState({})
   const [busca,          setBusca]          = useState('')
-  const [filtroDE,       setFiltroDE]       = useState('')   // 'YYYY-MM'
-  const [filtroATE,      setFiltroATE]      = useState('')   // 'YYYY-MM'
+  const [filtroDE,       setFiltroDE]       = useState(null) // Date | null
+  const [filtroATE,      setFiltroATE]      = useState(null) // Date | null
   const [novoModal,      setNovoModal]      = useState(false)
+  const [editModal,      setEditModal]      = useState(null)  // lancamento object | null
+  const [deletingId,     setDeletingId]     = useState(null)
   const [importResult,   setImportResult]   = useState(null)
   const [importing,      setImporting]      = useState(false)
+
+  const deleteLancamento = async (id) => {
+    if (!window.confirm('Excluir este desembolso?')) return
+    setDeletingId(id)
+    await supabase.from('desembolsos').delete().eq('id', id)
+    setDeletingId(null)
+    load()
+  }
 
   const load = async () => {
     if (!user) return
@@ -242,12 +329,13 @@ export default function Desembolsos() {
       }
 
       const item = {
-        id:            d.id,
-        data:          d.data,
-        valor:         Number(d.valor || 0),
-        tipo:          d.tipo,
-        obs:           d.obs,
-        classificacao: d.classificacoes_desembolso?.nome || '—',
+        id:              d.id,
+        data:            d.data,
+        valor:           Number(d.valor || 0),
+        tipo:            d.tipo,
+        obs:             d.obs,
+        classificacao:   d.classificacoes_desembolso?.nome || '—',
+        classificacaoId: d.classificacao_id || '',
       }
 
       mg.contratos[ctrId].lancamentos.push(item)
@@ -269,8 +357,8 @@ export default function Desembolsos() {
     let result = grupos
 
     // Filtro de período
-    if (filtroDE)  result = result.filter(mg => mg.mesRef >= filtroDE)
-    if (filtroATE) result = result.filter(mg => mg.mesRef <= filtroATE)
+    if (filtroDE)  result = result.filter(mg => mg.mesRef >= filtroDE.toISOString().slice(0, 7))
+    if (filtroATE) result = result.filter(mg => mg.mesRef <= filtroATE.toISOString().slice(0, 7))
 
     // Filtro de busca (imóvel / inquilino)
     if (busca.trim()) {
@@ -488,19 +576,35 @@ export default function Desembolsos() {
             placeholder="Filtrar por imóvel ou inquilino…"
             className="w-full pl-9 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-violet-400"/>
         </div>
-        {/* Período */}
-        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2">
-          <span className="text-xs text-slate-400 font-medium shrink-0">De</span>
-          <input type="month" value={filtroDE} onChange={e => setFiltroDE(e.target.value)}
-            className="text-sm border-0 outline-none bg-transparent text-slate-700 cursor-pointer"/>
-          <span className="text-xs text-slate-400 font-medium shrink-0">até</span>
-          <input type="month" value={filtroATE} onChange={e => setFiltroATE(e.target.value)}
-            className="text-sm border-0 outline-none bg-transparent text-slate-700 cursor-pointer"/>
-          {(filtroDE || filtroATE) && (
-            <button onClick={() => { setFiltroDE(''); setFiltroATE('') }}
-              className="text-slate-400 hover:text-slate-600 text-lg leading-none ml-1" title="Limpar período">×</button>
-          )}
-        </div>
+        {/* Período — De */}
+        {filtroDE ? (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-slate-400 shrink-0">De</span>
+            <MonthPicker value={filtroDE} onChange={setFiltroDE}/>
+            <button onClick={() => setFiltroDE(null)}
+              className="text-slate-400 hover:text-slate-600 text-base leading-none" title="Remover filtro início">×</button>
+          </div>
+        ) : (
+          <button onClick={() => setFiltroDE(new Date(new Date().getFullYear(), 0, 1))}
+            className="text-xs px-3 py-2.5 border border-dashed border-slate-300 rounded-xl text-slate-400 hover:border-violet-400 hover:text-violet-500 transition whitespace-nowrap">
+            + De
+          </button>
+        )}
+
+        {/* Período — Até */}
+        {filtroATE ? (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-slate-400 shrink-0">Até</span>
+            <MonthPicker value={filtroATE} onChange={setFiltroATE}/>
+            <button onClick={() => setFiltroATE(null)}
+              className="text-slate-400 hover:text-slate-600 text-base leading-none" title="Remover filtro fim">×</button>
+          </div>
+        ) : (
+          <button onClick={() => setFiltroATE(new Date())}
+            className="text-xs px-3 py-2.5 border border-dashed border-slate-300 rounded-xl text-slate-400 hover:border-violet-400 hover:text-violet-500 transition whitespace-nowrap">
+            + Até
+          </button>
+        )}
       </div>
 
       {/* Tabela agrupada */}
@@ -575,7 +679,22 @@ export default function Desembolsos() {
                                   <p className="text-slate-500 text-[11px] leading-snug">{l.obs}</p>
                                 )}
                               </div>
-                              <span className="font-semibold text-violet-700 shrink-0 text-sm">{fmt(l.valor)}</span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="font-semibold text-violet-700 text-sm">{fmt(l.valor)}</span>
+                                <button
+                                  title="Editar"
+                                  onClick={() => setEditModal(l)}
+                                  className="p-1 rounded hover:bg-violet-100 text-slate-400 hover:text-violet-600 transition">
+                                  ✏️
+                                </button>
+                                <button
+                                  title="Excluir"
+                                  onClick={() => deleteLancamento(l.id)}
+                                  disabled={deletingId === l.id}
+                                  className="p-1 rounded hover:bg-red-100 text-slate-400 hover:text-red-500 transition disabled:opacity-40">
+                                  🗑
+                                </button>
+                              </div>
                             </div>
                           </td>
                         </tr>
@@ -602,6 +721,14 @@ export default function Desembolsos() {
           cobrancas={cobrancas}
           classificacoes={classificacoes}
           onClose={() => setNovoModal(false)}
+          onSaved={load}
+        />
+      )}
+      {editModal && (
+        <EditarLancamentoModal
+          lancamento={editModal}
+          classificacoes={classificacoes}
+          onClose={() => setEditModal(null)}
           onSaved={load}
         />
       )}
