@@ -2153,7 +2153,14 @@ export default function Cobrancas() {
                   <td className="px-5 py-3.5 text-center text-slate-500 hidden lg:table-cell">
                     {c.dueDay ? `Dia ${c.dueDay}` : '—'}
                   </td>
-                  <td className="px-5 py-3.5 text-right font-semibold text-slate-700">{fmt(c.totalValue)}</td>
+                  <td className="px-5 py-3.5 text-right">
+                    <span className="font-semibold text-slate-700">{fmt(c.totalValue)}</span>
+                    {c.seguroFinanceiro > 0 && (
+                      <p className="text-[11px] italic text-violet-500 mt-0.5">
+                        Garantidora: {fmt(c.seguroFinanceiro)}
+                      </p>
+                    )}
+                  </td>
                   <td className="px-5 py-3.5 text-center">
                     <div className="flex flex-col items-center gap-1">
                       {/* Badge NFS-e — acima do status de pagamento */}

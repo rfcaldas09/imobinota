@@ -788,21 +788,19 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
               </div>
             </div>
 
-          {/* Referência — só modo contabilidade */}
-          {isContabilidade && (
-            <>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Referência</p>
-              <Row label="Referência do Imóvel">
-                <FormInp value={f.property} onChange={e => set('property', e.target.value)} placeholder="Ex: Apto 302 — Rua das Flores"/>
-              </Row>
-            </>
-          )}
-
           {/* ── DADOS DO IMÓVEL (apenas modo contabilidade) ── */}
           {isContabilidade && (
             <>
               <p className="text-xs font-bold text-amber-600 uppercase tracking-wide pt-1">Dados do Imóvel (NFS-e Locação)</p>
               <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-3">
+
+                {/* Referência do Imóvel */}
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Referência do Imóvel</label>
+                  <input value={f.property} onChange={e => set('property', e.target.value)}
+                    placeholder="Ex: Apto 302 — Rua das Flores"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"/>
+                </div>
 
                 {/* Dados do Locatário */}
                 <div>
@@ -987,47 +985,31 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
                 </Row>
               </div>
 
-              {/* ── CERTIFICADO A1 DO PROPRIETÁRIO ── */}
-              <p className="text-xs font-bold text-amber-600 uppercase tracking-wide pt-1">Certificado A1 do Proprietário</p>
-              <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-2">
-                <p className="text-[11px] text-slate-500">Certificado e-CPF ou e-CNPJ do proprietário do imóvel. A NFS-e será emitida com este certificado.</p>
-                <div className="flex items-center gap-2">
-                  <input ref={certFileRef} type="file" accept=".pfx,.p12" className="hidden"
-                    onChange={e => {
-                      const file = e.target.files?.[0]
-                      if (file) handleCertUpload(file, /* userId passado via prop */ initial?._userId)
-                      e.target.value = ''
-                    }}/>
-                  <button type="button" onClick={() => certFileRef.current?.click()} disabled={certUploading}
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-100 disabled:opacity-50">
-                    {certUploading ? 'Enviando…' : f.certPfxPath ? '↑ Substituir certificado' : '↑ Enviar certificado .pfx'}
-                  </button>
-                  {f.certPfxPath && !certUploading && (
-                    <span className="text-xs text-emerald-600 font-medium">✓ Certificado salvo</span>
-                  )}
-                </div>
-                {certMsg && (
-                  <p className={`text-xs px-2 py-1 rounded ${certMsg.ok ? 'text-emerald-700 bg-emerald-50' : 'text-red-600 bg-red-50'}`}>
-                    {certMsg.msg}
-                  </p>
-                )}
-                <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">Senha do certificado</label>
-                  <input type="password" value={f.certSenha || ''}
-                    onChange={e => set('certSenha', e.target.value)}
-                    placeholder="Senha do arquivo .pfx"
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"/>
-                </div>
-              </div>
             </>
           )}
-          <div className="grid grid-cols-2 gap-3">
-            <Row label="Início do Contrato">
-              <FormInp value={f.start} onChange={e => set('start', e.target.value)} type="date"/>
-            </Row>
-            <Row label="Fim do Contrato">
-              <FormInp value={f.end} onChange={e => set('end', e.target.value)} type="date"/>
-            </Row>
+
+          {/* ── VIGÊNCIA DO CONTRATO ── */}
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide pt-1">Vigência do Contrato</p>
+          <div className="border border-slate-200 bg-slate-50 rounded-xl p-3 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Row label="Início do Contrato">
+                <FormInp value={f.start} onChange={e => set('start', e.target.value)} type="date"/>
+              </Row>
+              <Row label="Fim do Contrato">
+                <FormInp value={f.end} onChange={e => set('end', e.target.value)} type="date"/>
+              </Row>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Row label="Dia de Vencimento">
+                <FormInp value={f.dueDay} onChange={e => set('dueDay', e.target.value)} type="number" min="1" max="31"/>
+              </Row>
+              <Row label="Status do contrato">
+                <select value={f.status} onChange={e => set('status', e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  {['Ativo','Inativo'].map(s => <option key={s}>{s}</option>)}
+                </select>
+              </Row>
+            </div>
           </div>
 
           {/* Composição financeira */}
@@ -1096,48 +1078,74 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
             )
           })()}
 
-          {/* Vencimento e status */}
-          <div className="grid grid-cols-2 gap-3">
-            <Row label="Dia de Vencimento">
-              <FormInp value={f.dueDay} onChange={e => set('dueDay', e.target.value)} type="number" min="1" max="31"/>
-            </Row>
-            <Row label="Status do contrato">
-              <select value={f.status} onChange={e => set('status', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                {['Ativo','Inativo'].map(s => <option key={s}>{s}</option>)}
-              </select>
-            </Row>
-          </div>
+          {/* ── CERTIFICADO A1 DO PROPRIETÁRIO ── */}
+          {isContabilidade && (
+            <>
+              <p className="text-xs font-bold text-amber-600 uppercase tracking-wide pt-1">Certificado A1 do Proprietário</p>
+              <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-2">
+                <p className="text-[11px] text-slate-500">Certificado e-CPF ou e-CNPJ do proprietário do imóvel. A NFS-e será emitida com este certificado.</p>
+                <div className="flex items-center gap-2">
+                  <input ref={certFileRef} type="file" accept=".pfx,.p12" className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0]
+                      if (file) handleCertUpload(file, /* userId passado via prop */ initial?._userId)
+                      e.target.value = ''
+                    }}/>
+                  <button type="button" onClick={() => certFileRef.current?.click()} disabled={certUploading}
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-100 disabled:opacity-50">
+                    {certUploading ? 'Enviando…' : f.certPfxPath ? '↑ Substituir certificado' : '↑ Enviar certificado .pfx'}
+                  </button>
+                  {f.certPfxPath && !certUploading && (
+                    <span className="text-xs text-emerald-600 font-medium">✓ Certificado salvo</span>
+                  )}
+                </div>
+                {certMsg && (
+                  <p className={`text-xs px-2 py-1 rounded ${certMsg.ok ? 'text-emerald-700 bg-emerald-50' : 'text-red-600 bg-red-50'}`}>
+                    {certMsg.msg}
+                  </p>
+                )}
+                <div>
+                  <label className="text-xs font-medium text-slate-500 block mb-1">Senha do certificado</label>
+                  <input type="password" value={f.certSenha || ''}
+                    onChange={e => set('certSenha', e.target.value)}
+                    placeholder="Senha do arquivo .pfx"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"/>
+                </div>
+              </div>
+            </>
+          )}
 
-          {/* Fiscal */}
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide pt-1">Fiscal (NFS-e)</p>
-          <div className="pb-1">
-            <Lc116Picker value={f.codServicoLc116} onChange={v => set('codServicoLc116', v)} />
-          </div>
-
-          <Row label="Discriminação do serviço (texto fixo)">
-            <textarea
-              value={f.discriminacaoServico}
-              onChange={e => set('discriminacaoServico', e.target.value)}
-              placeholder="Texto que aparecerá na Discriminação do Serviço da NFS-e. Deixe vazio para usar a descrição do código LC 116."
-              rows={3}
-              maxLength={2000}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-            />
-          </Row>
-
-          <label className="flex items-start gap-2.5 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={!!f.solicitarDiscriminacaoMensal}
-              onChange={e => set('solicitarDiscriminacaoMensal', e.target.checked)}
-              className="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
+          {/* ── FISCAL (NFS-e) ── */}
+          <p className="text-xs font-bold text-indigo-600 uppercase tracking-wide pt-1">Fiscal (NFS-e)</p>
+          <div className="border border-indigo-200 bg-indigo-50 rounded-xl p-3 space-y-3">
             <div>
-              <span className="text-sm text-slate-700 font-medium">Solicitar discriminação a cada emissão</span>
-              <p className="text-xs text-slate-400 mt-0.5">Antes de emitir, o sistema pedirá o texto — útil para contratos com número de ordem de compra ou referência que muda todo mês.</p>
+              <Lc116Picker value={f.codServicoLc116} onChange={v => set('codServicoLc116', v)} />
             </div>
-          </label>
+
+            <Row label="Discriminação do serviço (texto fixo)">
+              <textarea
+                value={f.discriminacaoServico}
+                onChange={e => set('discriminacaoServico', e.target.value)}
+                placeholder="Texto que aparecerá na Discriminação do Serviço da NFS-e. Deixe vazio para usar a descrição do código LC 116."
+                rows={3}
+                maxLength={2000}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+              />
+            </Row>
+
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={!!f.solicitarDiscriminacaoMensal}
+                onChange={e => set('solicitarDiscriminacaoMensal', e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <div>
+                <span className="text-sm text-slate-700 font-medium">Solicitar discriminação a cada emissão</span>
+                <p className="text-xs text-slate-400 mt-0.5">Antes de emitir, o sistema pedirá o texto — útil para contratos com número de ordem de compra ou referência que muda todo mês.</p>
+              </div>
+            </label>
+          </div>
 
           {/* Retenções — sempre visível */}
           <div className="border border-slate-200 rounded-xl px-4 py-4 space-y-4">

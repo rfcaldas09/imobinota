@@ -42,7 +42,7 @@ const mapCob = row => ({
   tenant:           row.inquilinos?.nome  || row.contratos?.inquilinos?.nome || '—',
   property:         row.contratos?.imovel || '—',
   totalValue:       Number(row.valor_total)       || 0,
-  seguroFinanceiro: Number(row.seguro_financeiro) || 0,
+  seguroFinanceiro: Number(row.seguro_financeiro) || Number(row.contratos?.seguro_financeiro) || 0,
   status:           row.status || 'Pendente',
 })
 
@@ -109,7 +109,7 @@ export default function Dashboard() {
     if (view === 'mensal') {
       const { data: cobData } = await supabase
         .from('cobrancas')
-        .select('*, contratos(imovel), inquilinos(nome)')
+        .select('*, contratos(imovel, seguro_financeiro), inquilinos(nome)')
         .eq('user_id', user.id)
         .eq('mes_referencia', mesStr(mesRef))
       setCobrancas((cobData || []).map(mapCob))
