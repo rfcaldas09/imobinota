@@ -38,11 +38,12 @@ const mapRow = row => ({
 
 // ── Mapeia linha de cobrança ────────────────────────────────────────
 const mapCob = row => ({
-  id:         row.id,
-  tenant:     row.inquilinos?.nome  || row.contratos?.inquilinos?.nome || '—',
-  property:   row.contratos?.imovel || '—',
-  totalValue: Number(row.valor_total) || 0,
-  status:     row.status || 'Pendente',
+  id:               row.id,
+  tenant:           row.inquilinos?.nome  || row.contratos?.inquilinos?.nome || '—',
+  property:         row.contratos?.imovel || '—',
+  totalValue:       Number(row.valor_total)       || 0,
+  seguroFinanceiro: Number(row.seguro_financeiro) || 0,
+  status:           row.status || 'Pendente',
 })
 
 // ── Componente principal ───────────────────────────────────────────
@@ -159,9 +160,10 @@ export default function Dashboard() {
   const pending = useMemo(() => cobrancas.filter(c => c.status === 'Pendente'),  [cobrancas])
   const overdue = useMemo(() => cobrancas.filter(c => c.status === 'Em Atraso'), [cobrancas])
 
-  const paidVal    = useMemo(() => paid.reduce((s,c)    => s + c.totalValue, 0), [paid])
-  const pendingVal = useMemo(() => pending.reduce((s,c)  => s + c.totalValue, 0), [pending])
-  const overdueVal = useMemo(() => overdue.reduce((s,c)  => s + c.totalValue, 0), [overdue])
+  const paidVal        = useMemo(() => paid.reduce((s,c)     => s + c.totalValue,       0), [paid])
+  const pendingVal     = useMemo(() => pending.reduce((s,c)  => s + c.totalValue,       0), [pending])
+  const overdueVal     = useMemo(() => overdue.reduce((s,c)  => s + c.totalValue,       0), [overdue])
+  const garantidoraVal = useMemo(() => cobrancas.reduce((s,c) => s + c.seguroFinanceiro, 0), [cobrancas])
 
   // Avulsas somam ao total emitido e à parcela "Pagos" (nota avulsa = já pago)
   const avulsaMensalVal = useMemo(() => avulsasMensais.reduce((s, a) => s + Number(a.valor_servico || 0), 0), [avulsasMensais])
@@ -315,7 +317,7 @@ export default function Dashboard() {
           {/* ── KPI Cards ──────────────────────────────────────── */}
           {view === 'mensal' ? (
             <>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                 <div className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl p-5 text-white col-span-2 lg:col-span-1">
                   <p className="text-indigo-200 text-xs font-semibold uppercase tracking-wide mb-1">Total Emitido</p>
                   <p className="text-2xl font-bold mb-1">{fmt(totalVal)}</p>
@@ -348,6 +350,18 @@ export default function Dashboard() {
                     <p className="text-xs text-slate-400 mt-1">{pct(val)}% do total</p>
                   </div>
                 ))}
+                {/* Card Garantidora */}
+                <div className="bg-white rounded-2xl p-5 border border-slate-100">
+                  <div className="mb-3">
+                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide mb-1">🛡️ Garantidora</p>
+                    <p className="text-xl font-bold text-violet-600">{fmt(garantidoraVal)}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">parcela do mês</p>
+                  </div>
+                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: totalVal > 0 ? `${Math.round((garantidoraVal / totalVal) * 100)}%` : '0%' }}/>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">{totalVal > 0 ? Math.round((garantidoraVal / totalVal) * 100) : 0}% do total</p>
+                </div>
               </div>
 
               {/* Progresso mensal */}

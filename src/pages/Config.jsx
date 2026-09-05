@@ -206,14 +206,19 @@ function Lc116Picker({ value, onChange }) {
 }
 
 export default function Config() {
-  const { user } = useAuth()
+  const { user, isContabilidade, controlaGarantidora } = useAuth()
   const { refresh: refreshNfse } = useNfseReadiness()
   const [searchParams, setSearchParams] = useSearchParams()
   const [tab, setTab]           = useState(() => {
     const t = searchParams.get('tab')
-    const valid = ['empresa', 'fiscal', 'email', 'template', 'api']
+    const valid = ['empresa', 'fiscal', 'email', 'template', 'api', 'classificacoes']
     return valid.includes(t) ? t : 'empresa'
   })
+  // Classificações de desembolso
+  const [clsList,      setClsList]      = useState([])
+  const [clsNovo,      setClsNovo]      = useState('')
+  const [clsSaving,    setClsSaving]    = useState(false)
+  const [clsDeleting,  setClsDeleting]  = useState(null)
   const [saved, setSaved]       = useState(false)
   const [saving, setSaving]     = useState(false)
   const [loadingProfile, setLoadingProfile] = useState(true)
@@ -229,12 +234,13 @@ export default function Config() {
 
   const [f, setF] = useState({
     // Empresa
-    company:      '',
-    cnpj:         '',
-    inscMun:      '',
-    telefone:     '',
-    emailContato: '',
-    certOk:       false,
+    company:             '',
+    cnpj:                '',
+    inscMun:             '',
+    telefone:            '',
+    emailContato:        '',
+    controlaGarantidora: false,
+    certOk:              false,
     certNome:     '',
     certValidade: '',
     certPassword: '',
@@ -282,12 +288,13 @@ export default function Config() {
       .then(({ data }) => {
         setF(p => ({
           ...p,
-          company:      data?.company_name         || '',
-          cnpj:         data?.cnpj                 || '',
-          inscMun:      data?.inscricao_municipal   || '',
-          telefone:     data?.telefone              || user.phone || '',
-          emailContato: data?.email_contato         || user.email || '',
-          certOk:       !!data?.nfse_cert_path,
+          company:             data?.company_name         || '',
+          cnpj:                data?.cnpj                 || '',
+          inscMun:             data?.inscricao_municipal   || '',
+          telefone:            data?.telefone              || user.phone || '',
+          emailContato:        data?.email_contato         || user.email || '',
+          controlaGarantidora: !!data?.controla_garantidora,
+          certOk:              !!data?.nfse_cert_path,
           certNome:     data?.nfse_cert_path ? data.nfse_cert_path.split('/').pop() : '',
           certPassword: '',
           // certSenhaOk é estado separado (fora de f) — atualizado abaixo
@@ -341,6 +348,34 @@ export default function Config() {
       })
   }, [user])
 
+  // ── Carrega classificações de desembolso ─────────────────────
+  const loadCls = async () => {
+    if (!user) return
+    const { data } = await supabase
+      .from('classificacoes_desembolso')
+      .select('id, nome')
+      .eq('user_id', user.id)
+      .order('nome')
+    setClsList(data || [])
+  }
+  useEffect(() => { if (tab === 'classificacoes') loadCls() }, [user, tab])
+
+  const addCls = async () => {
+    if (!clsNovo.trim() || !user) return
+    setClsSaving(true)
+    await supabase.from('classificacoes_desembolso').insert({ user_id: user.id, nome: clsNovo.trim() })
+    setClsNovo('')
+    setClsSaving(false)
+    loadCls()
+  }
+
+  const deleteCls = async (id) => {
+    setClsDeleting(id)
+    await supabase.from('classificacoes_desembolso').delete().eq('id', id)
+    setClsDeleting(null)
+    loadCls()
+  }
+
   // ── Salva no banco ────────────────────────────────────────────
   const save = async () => {
     if (!user) return
@@ -349,11 +384,12 @@ export default function Config() {
 
     if (tab === 'empresa') {
       Object.assign(payload, {
-        company_name:        f.company,
-        cnpj:                f.cnpj,
-        inscricao_municipal: f.inscMun,
-        telefone:            f.telefone,
-        email_contato:       f.emailContato,
+        company_name:         f.company,
+        cnpj:                 f.cnpj,
+        inscricao_municipal:  f.inscMun,
+        telefone:             f.telefone,
+        email_contato:        f.emailContato,
+        controla_garantidora: f.controlaGarantidora,
       })
       // Salva senha do certificado se preenchida (campo fica na aba Empresa)
       const certPwdValue = certPasswordRef.current?.value || f.certPassword
@@ -532,6 +568,13 @@ export default function Config() {
             {t.emoji} {t.label}
           </button>
         ))}
+        {isContabilidade && controlaGarantidora && (
+          <button onClick={() => setTab('classificacoes')}
+            className={`flex-1 min-w-fit px-3 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+              tab === 'classificacoes' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+            🏷️ Classificações
+          </button>
+        )}
       </div>
 
       {/* ── Empresa ────────────────────────────────────────────── */}
@@ -568,6 +611,19 @@ export default function Config() {
                     <Inp value={f.emailContato} onChange={e => set('emailContato', e.target.value)} type="email" placeholder="contato@empresa.com.br"/>
                   </div>
                 </div>
+                {/* Funcionalidade Garantidora */}
+                <label className="flex items-start gap-2.5 cursor-pointer select-none pt-1">
+                  <input
+                    type="checkbox"
+                    checked={!!f.controlaGarantidora}
+                    onChange={e => set('controlaGarantidora', e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div>
+                    <span className="text-sm text-slate-700 font-medium">Controla valores de aluguel e gera boleto para garantidora</span>
+                    <p className="text-xs text-slate-400 mt-0.5">Habilita campos de composição do pacote de aluguel (condomínio, água, energia e outros encargos) nos contratos.</p>
+                  </div>
+                </label>
               </div>
             )}
           </Section>
@@ -1202,8 +1258,53 @@ export default function Config() {
         </div>
       )}
 
+      {/* ── Classificações de Desembolso ─────────────────── */}
+      {tab === 'classificacoes' && isContabilidade && controlaGarantidora && (
+        <div className="space-y-4">
+          <div className="bg-white border border-slate-100 rounded-2xl p-5 space-y-4">
+            <h3 className="font-semibold text-slate-800 text-sm">🏷️ Classificações de Desembolso</h3>
+            <p className="text-xs text-slate-400">Categorias disponíveis ao registrar ou importar desembolsos (ex.: Aluguel, Condomínio, IPTU, Manutenção, Outros).</p>
+
+            {/* Adicionar nova */}
+            <div className="flex gap-2">
+              <input
+                value={clsNovo}
+                onChange={e => setClsNovo(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addCls()}
+                placeholder="Nova classificação…"
+                className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400"/>
+              <button
+                onClick={addCls}
+                disabled={clsSaving || !clsNovo.trim()}
+                className="px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:opacity-40 transition">
+                {clsSaving ? '…' : 'Adicionar'}
+              </button>
+            </div>
+
+            {/* Lista */}
+            {clsList.length === 0 ? (
+              <p className="text-sm text-slate-400 py-4 text-center">Nenhuma classificação cadastrada ainda.</p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {clsList.map(cl => (
+                  <li key={cl.id} className="flex items-center justify-between py-2.5">
+                    <span className="text-sm text-slate-700 font-medium">{cl.nome}</span>
+                    <button
+                      onClick={() => deleteCls(cl.id)}
+                      disabled={clsDeleting === cl.id}
+                      className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40 transition">
+                      {clsDeleting === cl.id ? 'Removendo…' : 'Remover'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Botão salvar ─────────────────────────────────── */}
-      <div className="flex justify-end mt-6">
+      <div className={`flex justify-end mt-6 ${tab === 'classificacoes' ? 'hidden' : ''}`}>
         <button
           onClick={save}
           disabled={saving || saved}

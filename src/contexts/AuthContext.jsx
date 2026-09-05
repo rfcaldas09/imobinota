@@ -14,15 +14,17 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [isContabilidade, setIsContabilidade] = useState(false)
+  const [controlaGarantidora, setControlaGarantidora] = useState(false)
 
   const loadProfile = async (userId) => {
     if (!userId || !supabaseConfigured) return
     const { data } = await supabase
       .from('profiles')
-      .select('is_contabilidade')
+      .select('is_contabilidade, controla_garantidora')
       .eq('id', userId)
       .maybeSingle()
     setIsContabilidade(!!data?.is_contabilidade)
+    setControlaGarantidora(!!data?.controla_garantidora)
   }
 
   useEffect(() => {
@@ -43,6 +45,7 @@ export function AuthProvider({ children }) {
       if (event === 'SIGNED_OUT') {
         setUser(null)
         setIsContabilidade(false)
+        setControlaGarantidora(false)
       } else if (session?.user) {
         const isNew = !user || user.id !== session.user.id
         setUser(prev => prev?.id === session.user.id ? prev : session.user)
@@ -78,7 +81,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, isContabilidade, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ user, loading, isContabilidade, controlaGarantidora, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   )

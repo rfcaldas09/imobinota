@@ -533,6 +533,8 @@ const isCibValid = v => !v || /^[A-Z0-9]{7}-\d$/.test(v.toUpperCase())
 
 // ── Formulário compartilhado (Novo / Editar) ──────────────────────
 function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor = 'bg-indigo-500', saving, retDefaults = NAT_RET_DEFAULT_CTR, isContabilidade = false }) {
+  const { controlaGarantidora } = useAuth()
+  const isPacoteUser = isContabilidade && controlaGarantidora
   const blank = {
     tenant: '', cpf: '', property: '', value: '', seguroFinanceiro: '0',
     seguroIncendio: '0', iptu: '0', dueDay: '10',
@@ -552,6 +554,8 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
     numContrato: '', situacaoLocacao: 'Andamento', sitImovel: '', obsContrato: '',
     locatarioNome: '', locatarioTelefone: '', locatarioEmail: '',
     pctMulta: '', pctJurosMes: '', indiceCorrecao: 'Nenhum',
+    // Pacote de aluguel (Cau ê — is_contabilidade)
+    condominio: '', estimativaAgua: '', estimativaEnergia: '', outrosEncargos: '',
     // Retenções — federais pré-preenchidas com defaults do perfil (ou padrão nacional)
     issRetido: false, ...retDefaults,
   }
@@ -1057,6 +1061,40 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
             </div>
             <p className="text-xl font-bold text-indigo-800 tabular-nums">{fmt(totalValue)}</p>
           </div>
+
+          {/* Pacote de aluguel — apenas caue@imoveisportal.com + is_contabilidade */}
+          {isPacoteUser && (() => {
+            const cond  = parseFloat((f.condominio       || '').toString().replace(',','.')) || 0
+            const agua  = parseFloat((f.estimativaAgua   || '').toString().replace(',','.')) || 0
+            const energ = parseFloat((f.estimativaEnergia|| '').toString().replace(',','.')) || 0
+            const outr  = parseFloat((f.outrosEncargos   || '').toString().replace(',','.')) || 0
+            const totalPacote = cond + agua + energ + outr
+            return (
+              <div className="border border-violet-200 bg-violet-50 rounded-xl p-4 space-y-3">
+                <p className="text-xs font-bold text-violet-500 uppercase tracking-wide">Composição do Pacote de Aluguel</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Row label="Condomínio (R$)">
+                    <FormInp value={f.condominio} onChange={e => set('condominio', e.target.value)} type="number" placeholder="0,00"/>
+                  </Row>
+                  <Row label="Estimativa de Água (R$)">
+                    <FormInp value={f.estimativaAgua} onChange={e => set('estimativaAgua', e.target.value)} type="number" placeholder="0,00"/>
+                  </Row>
+                  <Row label="Energia (R$)">
+                    <FormInp value={f.estimativaEnergia} onChange={e => set('estimativaEnergia', e.target.value)} type="number" placeholder="0,00"/>
+                  </Row>
+                  <Row label="Outros Encargos (R$)">
+                    <FormInp value={f.outrosEncargos} onChange={e => set('outrosEncargos', e.target.value)} type="number" placeholder="0,00"/>
+                  </Row>
+                </div>
+                <div className="flex justify-between items-center bg-violet-100 rounded-lg px-3 py-2">
+                  <p className="text-xs font-semibold text-violet-700">Total do Pacote</p>
+                  <p className="text-sm font-bold text-violet-800 tabular-nums">
+                    {totalPacote.toLocaleString('pt-BR', { style:'currency', currency:'BRL' })}
+                  </p>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Vencimento e status */}
           <div className="grid grid-cols-2 gap-3">
@@ -1700,6 +1738,10 @@ const mapRow = row => ({
   pctMulta:        row.pct_multa        != null ? String(row.pct_multa).replace('.', ',')     : '',
   pctJurosMes:     row.pct_juros_mes    != null ? String(row.pct_juros_mes).replace('.', ',') : '',
   indiceCorrecao:  row.indice_correcao   || 'Nenhum',
+  condominio:       row.condominio        != null ? String(row.condominio) : '',
+  estimativaAgua:   row.estimativa_agua   != null ? String(row.estimativa_agua) : '',
+  estimativaEnergia:row.estimativa_energia!= null ? String(row.estimativa_energia) : '',
+  outrosEncargos:   row.outros_encargos   != null ? String(row.outros_encargos) : '',
   totalValue:       (Number(row.valor_aluguel)||0) + (Number(row.seguro_financeiro)||0) +
                     (Number(row.seguro_incendio)||0) + (Number(row.iptu)||0),
 })
@@ -2015,6 +2057,11 @@ export default function Contratos() {
         locatario_nome:          data.locatarioNome      || null,
         locatario_telefone:      data.locatarioTelefone  || null,
         locatario_email:         data.locatarioEmail     || null,
+        // Pacote de aluguel
+        condominio:         parseFloat(String(data.condominio        ||'').replace(',','.')) || null,
+        estimativa_agua:    parseFloat(String(data.estimativaAgua    ||'').replace(',','.')) || null,
+        estimativa_energia: parseFloat(String(data.estimativaEnergia ||'').replace(',','.')) || null,
+        outros_encargos:    parseFloat(String(data.outrosEncargos    ||'').replace(',','.')) || null,
       }).eq('id', data.id)
       if (error) throw error
 

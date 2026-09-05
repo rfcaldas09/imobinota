@@ -17,13 +17,14 @@ const NAV = [
   { to: '/contratos',      label: 'Contratos Recorrentes',  Icon: IcFile },
   { to: '/cobrancas',      label: 'Emitir NFS-e recorrente', Icon: IcDollar },
   { to: '/inadimplencia',  label: 'Inadimplência',           Icon: IcTrend, contabilidade: true },
+  { to: '/desembolsos',    label: 'Desembolsos',             Icon: IcDollar, garantidora: true },
   { to: '/relatorios',     label: 'Relatórios',              Icon: IcTrend },
   { to: '/inquilinos',     label: 'Clientes',                Icon: IcUsers },
   { to: '/config',         label: 'Configurações',           Icon: IcSettings },
 ]
 
 export default function Sidebar() {
-  const { user, signOut, isContabilidade } = useAuth()
+  const { user, signOut, isContabilidade, controlaGarantidora } = useAuth()
   const navigate = useNavigate()
   const sub = useSubscription()
   const [showUserMenu, setShowUserMenu] = useState(false)
@@ -74,7 +75,10 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-        {NAV.filter(item => !item.contabilidade || isContabilidade).map(({ to, label, Icon }) => (
+        {NAV.filter(item =>
+          (!item.contabilidade || isContabilidade) &&
+          (!item.garantidora   || (isContabilidade && controlaGarantidora))
+        ).map(({ to, label, Icon }) => (
           <NavLink
             key={to}
             to={to}

@@ -14,6 +14,7 @@ import Plano from './pages/Plano'
 import NfseAvulsa from './pages/NfseAvulsa'
 import AdminCupons from './pages/AdminCupons'
 import Inadimplencia from './pages/Inadimplencia'
+import Desembolsos from './pages/Desembolsos'
 import OnboardingWizard, { useOnboarding } from './components/OnboardingWizard'
 
 function PrivateRoute({ children }) {
@@ -55,6 +56,7 @@ function AppRoutes() {
       <Route path="/plano"      element={<PrivateRoute><Layout><Plano /></Layout></PrivateRoute>} />
       <Route path="/nfse-avulsa"   element={<PrivateRoute><Layout><NfseAvulsa /></Layout></PrivateRoute>} />
       <Route path="/inadimplencia" element={<PrivateRoute><Layout><Inadimplencia /></Layout></PrivateRoute>} />
+      <Route path="/desembolsos"   element={<PrivateRoute><Layout><Desembolsos /></Layout></PrivateRoute>} />
       {/* Rota admin — sem link na sidebar, acesso direto pela URL */}
       <Route path="/admin/cupons"  element={<PrivateRoute><Layout><AdminCupons /></Layout></PrivateRoute>} />
       <Route path="*"              element={<Navigate to="/" replace />} />
