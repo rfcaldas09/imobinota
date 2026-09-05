@@ -60,7 +60,7 @@ function NovoLancamentoModal({ cobrancas, contratos, classificacoes, onClose, on
             <select value={contrato} onChange={e => { setContrato(e.target.value); setCobranca('') }} className={inpCls}>
               <option value="">Selecione…</option>
               {contratos.map(c => (
-                <option key={c.id} value={c.id}>{c.imovel || c.tenant || c.id}</option>
+                <option key={c.id} value={c.id}>{c.tenant && c.tenant !== '—' ? `${c.imovel?.match(/^\(\d+\)/)?.[0] ?? ''} ${c.tenant}`.trim() : c.imovel || c.id}</option>
               ))}
             </select>
           </div>
@@ -167,6 +167,8 @@ export default function Desembolsos() {
   const [loading,        setLoading]        = useState(true)
   const [expanded,       setExpanded]       = useState({})
   const [busca,          setBusca]          = useState('')
+  const [filtroDE,       setFiltroDE]       = useState('')   // 'YYYY-MM'
+  const [filtroATE,      setFiltroATE]      = useState('')   // 'YYYY-MM'
   const [novoModal,      setNovoModal]      = useState(false)
   const [importResult,   setImportResult]   = useState(null)
   const [importing,      setImporting]      = useState(false)
@@ -214,29 +216,29 @@ export default function Desembolsos() {
 
   useEffect(() => { load() }, [user])
 
-  // ── Agrupa por contrato → mês ────────────────────────────────────────────
+  // ── Agrupa por mês → contratos ───────────────────────────────────────────
+  const curMes = new Date().toISOString().slice(0, 7) // 'YYYY-MM'
+
   const grupos = useMemo(() => {
     const map = {}
     for (const d of desembolsos) {
       const cob   = d.cobrancas
       const ctr   = cob?.contratos
       const ctrId = cob?.contrato_id || 'sem-contrato'
-      const mes   = cob?.mes_referencia || 'sem-mes'
+      const mes   = (cob?.mes_referencia || 'sem-mes').slice(0, 7) // 'YYYY-MM'
 
-      if (!map[ctrId]) {
-        map[ctrId] = {
+      if (!map[mes]) map[mes] = { mesRef: mes, total: 0, count: 0, contratos: {} }
+      const mg = map[mes]
+
+      if (!mg.contratos[ctrId]) {
+        mg.contratos[ctrId] = {
           contratoId: ctrId,
           imovel:     ctr?.imovel || '—',
           inquilino:  ctr?.inquilinos?.nome || '—',
           total:      0,
           count:      0,
-          meses:      {},
+          lancamentos: [],
         }
-      }
-
-      const g = map[ctrId]
-      if (!g.meses[mes]) {
-        g.meses[mes] = { mesRef: mes, total: 0, count: 0, lancamentos: [] }
       }
 
       const item = {
@@ -248,30 +250,56 @@ export default function Desembolsos() {
         classificacao: d.classificacoes_desembolso?.nome || '—',
       }
 
-      g.meses[mes].lancamentos.push(item)
-      g.meses[mes].total += item.valor
-      g.meses[mes].count++
-      g.total += item.valor
-      g.count++
+      mg.contratos[ctrId].lancamentos.push(item)
+      mg.contratos[ctrId].total += item.valor
+      mg.contratos[ctrId].count++
+      mg.total += item.valor
+      mg.count++
     }
 
     return Object.values(map)
-      .sort((a, b) => a.imovel.localeCompare(b.imovel))
-      .map(g => ({
-        ...g,
-        meses: Object.values(g.meses).sort((a, b) =>
-          (b.mesRef || '').localeCompare(a.mesRef || '')
-        ),
+      .sort((a, b) => (b.mesRef || '').localeCompare(a.mesRef || ''))
+      .map(mg => ({
+        ...mg,
+        contratos: Object.values(mg.contratos).sort((a, b) => a.imovel.localeCompare(b.imovel)),
       }))
   }, [desembolsos])
 
   const gruposFiltrados = useMemo(() => {
-    if (!busca.trim()) return grupos
-    const q = norm(busca)
-    return grupos.filter(g => norm(g.imovel).includes(q) || norm(g.inquilino).includes(q))
-  }, [grupos, busca])
+    let result = grupos
 
-  const totalGeral = useMemo(() => grupos.reduce((s, g) => s + g.total, 0), [grupos])
+    // Filtro de período
+    if (filtroDE)  result = result.filter(mg => mg.mesRef >= filtroDE)
+    if (filtroATE) result = result.filter(mg => mg.mesRef <= filtroATE)
+
+    // Filtro de busca (imóvel / inquilino)
+    if (busca.trim()) {
+      const q = norm(busca)
+      result = result
+        .map(mg => ({
+          ...mg,
+          contratos: mg.contratos.filter(c => norm(c.imovel).includes(q) || norm(c.inquilino).includes(q)),
+        }))
+        .filter(mg => mg.contratos.length > 0)
+    }
+
+    return result
+  }, [grupos, busca, filtroDE, filtroATE])
+
+  // KPIs sempre refletem o filtro ativo
+  const totalGeral    = useMemo(() => gruposFiltrados.reduce((s, g) => s + g.total, 0), [gruposFiltrados])
+  const totalContratos = useMemo(() => {
+    const ids = new Set()
+    gruposFiltrados.forEach(mg => mg.contratos.forEach(c => ids.add(c.contratoId)))
+    return ids.size
+  }, [gruposFiltrados])
+  const totalLancamentos = useMemo(() => gruposFiltrados.reduce((s, g) => s + g.count, 0), [gruposFiltrados])
+
+  // Expansão: mês atual aberto por padrão, anteriores fechados
+  const isMesExpanded  = mesRef => `mes__${mesRef}` in expanded ? expanded[`mes__${mesRef}`] : mesRef === curMes
+  const toggleMesRow   = mesRef => setExpanded(p => ({ ...p, [`mes__${mesRef}`]: !isMesExpanded(mesRef) }))
+  const isCtrExpanded  = (mesRef, ctrId) => !!expanded[`${mesRef}__${ctrId}`]
+  const toggleCtrRow   = (mesRef, ctrId) => setExpanded(p => ({ ...p, [`${mesRef}__${ctrId}`]: !isCtrExpanded(mesRef, ctrId) }))
 
   // ── Importação Excel ─────────────────────────────────────────────────────
   // Colunas: IMÓVEL, MÊS REFERÊNCIA, VALOR, DATA, TIPO, CLASSIFICAÇÃO, OBSERVAÇÕES
@@ -394,9 +422,7 @@ export default function Desembolsos() {
     if (ok > 0) load()
   }
 
-  // Dois níveis de expansão: contrato e (contrato+mês)
-  const toggleCtr = id => setExpanded(p => ({ ...p, [id]: !p[id] }))
-  const toggleMes = key => setExpanded(p => ({ ...p, [key]: !p[key] }))
+  // toggles movidos para cima junto com isMesExpanded / isCtrExpanded
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
@@ -434,28 +460,47 @@ export default function Desembolsos() {
         <div className="bg-gradient-to-br from-violet-600 to-purple-700 rounded-2xl p-5 text-white">
           <p className="text-violet-200 text-xs font-semibold uppercase tracking-wide mb-1">Total Desembolsado</p>
           <p className="text-2xl font-bold">{fmt(totalGeral)}</p>
+          {(filtroDE || filtroATE) && (
+            <p className="text-violet-300 text-[10px] mt-1">período filtrado</p>
+          )}
         </div>
         <div className="bg-white rounded-2xl p-5 border border-slate-100">
           <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1">Contratos</p>
-          <p className="text-2xl font-bold text-slate-800">{grupos.length}</p>
+          <p className="text-2xl font-bold text-slate-800">{totalContratos}</p>
           <p className="text-xs text-slate-400 mt-0.5">com desembolso registrado</p>
         </div>
         <div className="bg-white rounded-2xl p-5 border border-slate-100">
           <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1">Lançamentos</p>
-          <p className="text-2xl font-bold text-slate-800">{desembolsos.length}</p>
+          <p className="text-2xl font-bold text-slate-800">{totalLancamentos}</p>
           <p className="text-xs text-slate-400 mt-0.5">registros no total</p>
         </div>
       </div>
 
-      {/* Busca */}
-      <div className="relative">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-          className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
-          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        </svg>
-        <input value={busca} onChange={e => setBusca(e.target.value)}
-          placeholder="Filtrar por imóvel ou inquilino…"
-          className="w-full pl-9 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-violet-400"/>
+      {/* Filtros */}
+      <div className="flex flex-wrap gap-2 items-center">
+        {/* Busca */}
+        <div className="relative flex-1 min-w-48">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input value={busca} onChange={e => setBusca(e.target.value)}
+            placeholder="Filtrar por imóvel ou inquilino…"
+            className="w-full pl-9 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-violet-400"/>
+        </div>
+        {/* Período */}
+        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2">
+          <span className="text-xs text-slate-400 font-medium shrink-0">De</span>
+          <input type="month" value={filtroDE} onChange={e => setFiltroDE(e.target.value)}
+            className="text-sm border-0 outline-none bg-transparent text-slate-700 cursor-pointer"/>
+          <span className="text-xs text-slate-400 font-medium shrink-0">até</span>
+          <input type="month" value={filtroATE} onChange={e => setFiltroATE(e.target.value)}
+            className="text-sm border-0 outline-none bg-transparent text-slate-700 cursor-pointer"/>
+          {(filtroDE || filtroATE) && (
+            <button onClick={() => { setFiltroDE(''); setFiltroATE('') }}
+              className="text-slate-400 hover:text-slate-600 text-lg leading-none ml-1" title="Limpar período">×</button>
+          )}
+        </div>
       </div>
 
       {/* Tabela agrupada */}
@@ -476,62 +521,65 @@ export default function Desembolsos() {
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
                 <th className="w-6"/>
-                <th className="text-left px-3 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Imóvel / Mês</th>
+                <th className="text-left px-3 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Mês / Imóvel</th>
                 <th className="text-left px-3 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Inquilino</th>
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Lançamentos</th>
                 <th className="text-right px-3 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Total</th>
               </tr>
             </thead>
             <tbody>
-              {gruposFiltrados.map(g => (
+              {gruposFiltrados.map(mg => (
                 <>
-                  {/* ── Linha do contrato ── */}
-                  <tr key={g.contratoId}
-                    onClick={() => toggleCtr(g.contratoId)}
+                  {/* ── Linha do mês ── */}
+                  <tr key={mg.mesRef}
+                    onClick={() => toggleMesRow(mg.mesRef)}
                     className="border-b border-slate-100 bg-slate-50 hover:bg-slate-100 cursor-pointer transition">
-                    <td className="pl-3 pr-1 py-3 text-slate-400 text-xs">{expanded[g.contratoId] ? '▾' : '▸'}</td>
-                    <td className="px-3 py-3 font-semibold text-slate-800">{g.imovel}</td>
-                    <td className="px-3 py-3 text-slate-500 text-xs">{g.inquilino}</td>
-                    <td className="px-3 py-3 text-right text-slate-400 text-xs">{g.count}</td>
-                    <td className="px-3 py-3 text-right font-bold text-violet-700">{fmt(g.total)}</td>
+                    <td className="pl-3 pr-1 py-3 text-slate-400 text-xs">{isMesExpanded(mg.mesRef) ? '▾' : '▸'}</td>
+                    <td className="px-3 py-3 font-bold text-slate-800">{fmtMes(mg.mesRef)}</td>
+                    <td className="px-3 py-3 text-slate-400 text-xs">—</td>
+                    <td className="px-3 py-3 text-right text-slate-400 text-xs">{mg.count}</td>
+                    <td className="px-3 py-3 text-right font-bold text-violet-700">{fmt(mg.total)}</td>
                   </tr>
 
-                  {/* ── Linhas de mês (visíveis quando contrato expandido) ── */}
-                  {expanded[g.contratoId] && g.meses.map(m => {
-                    const mesKey = `${g.contratoId}__${m.mesRef}`
-                    return (
-                      <>
-                        <tr key={mesKey}
-                          onClick={() => toggleMes(mesKey)}
-                          className="border-b border-slate-50 hover:bg-violet-50 cursor-pointer transition">
-                          <td className="pl-6 pr-1 py-2.5 text-violet-400 text-xs">{expanded[mesKey] ? '▾' : '▸'}</td>
-                          <td className="px-3 py-2.5 text-slate-700 font-medium text-sm">
-                            <span className="text-violet-500 mr-2">↳</span>{fmtMes(m.mesRef)}
-                          </td>
-                          <td className="px-3 py-2.5 text-slate-400 text-xs">—</td>
-                          <td className="px-3 py-2.5 text-right text-slate-400 text-xs">{m.count}</td>
-                          <td className="px-3 py-2.5 text-right font-semibold text-violet-600">{fmt(m.total)}</td>
-                        </tr>
+                  {/* ── Linhas de contrato (visíveis quando mês expandido) ── */}
+                  {isMesExpanded(mg.mesRef) && mg.contratos.map(c => (
+                    <>
+                      <tr key={`${mg.mesRef}__${c.contratoId}`}
+                        onClick={() => toggleCtrRow(mg.mesRef, c.contratoId)}
+                        className="border-b border-slate-50 hover:bg-violet-50 cursor-pointer transition">
+                        <td className="pl-6 pr-1 py-2.5 text-violet-400 text-xs">{isCtrExpanded(mg.mesRef, c.contratoId) ? '▾' : '▸'}</td>
+                        <td className="px-3 py-2.5 text-slate-700 font-medium text-sm">
+                          <span className="text-violet-400 mr-2">↳</span>{c.imovel}
+                        </td>
+                        <td className="px-3 py-2.5 text-slate-500 text-xs">{c.inquilino}</td>
+                        <td className="px-3 py-2.5 text-right text-slate-400 text-xs">{c.count}</td>
+                        <td className="px-3 py-2.5 text-right font-semibold text-violet-600">{fmt(c.total)}</td>
+                      </tr>
 
-                        {/* ── Lançamentos do mês ── */}
-                        {expanded[mesKey] && m.lancamentos.map(l => (
-                          <tr key={l.id} className="border-b border-slate-50 bg-violet-50/40">
-                            <td className="pl-12"/>
-                            <td colSpan={4} className="px-3 py-2">
-                              <div className="flex items-center gap-3 text-xs text-slate-600">
-                                <span className="text-slate-400 shrink-0">{fmtDate(l.data)}</span>
-                                {l.classificacao !== '—' && (
-                                  <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium shrink-0">
-                                    {l.classificacao}
-                                  </span>
+                      {/* ── Lançamentos do contrato no mês ── */}
+                      {isCtrExpanded(mg.mesRef, c.contratoId) && c.lancamentos.map(l => (
+                        <tr key={l.id} className="border-b border-slate-50 bg-violet-50/40">
+                          <td className="pl-12"/>
+                          <td colSpan={4} className="px-3 py-2.5">
+                            <div className="flex items-start gap-3 text-xs">
+                              <div className="flex flex-col gap-1 flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-slate-400 shrink-0">{fmtDate(l.data)}</span>
+                                  {l.classificacao !== '—'
+                                    ? <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 font-medium">{l.classificacao}</span>
+                                    : <span className="text-slate-300 italic">Sem classificação</span>
+                                  }
+                                  <span className="capitalize text-slate-400 shrink-0">{l.tipo}</span>
+                                </div>
+                                {l.obs && (
+                                  <p className="text-slate-500 text-[11px] leading-snug">{l.obs}</p>
                                 )}
-                                <span className="capitalize text-slate-500 shrink-0">{l.tipo}</span>
-                                {l.obs && <span className="text-slate-400 truncate">{l.obs}</span>}
-                                <span className="ml-auto font-semibold text-violet-700 shrink-0">{fmt(l.valor)}</span>
                               </div>
-                            </td>
-                          </tr>
-                        ))}
+                              <span className="font-semibold text-violet-700 shrink-0 text-sm">{fmt(l.valor)}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
                       </>
                     )
                   })}
