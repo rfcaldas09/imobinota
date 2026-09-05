@@ -580,9 +580,8 @@ export default function Desembolsos() {
                           </td>
                         </tr>
                       ))}
-                      </>
-                    )
-                  })}
+                    </>
+                  ))}
                 </>
               ))}
             </tbody>
