@@ -1742,6 +1742,7 @@ export default function Cobrancas() {
   const [filter, setFilter]       = useState('Todos')
   const [showBatch, setShowBatch] = useState(false)
   const [updatingId, setUpdatingId] = useState(null)
+  const [autoGerou, setAutoGerou]   = useState(0)  // qtd cobranças auto-geradas
   const [pixKey, setPixKey]       = useState(null)
   const [boletoCob, setBoletoCob] = useState(null)
   const [nfseCob, setNfseCob]       = useState(null) // cobrança selecionada para NFS-e
@@ -1885,9 +1886,43 @@ export default function Cobrancas() {
   const load = async () => {
     if (!user) return
     setLoading(true)
-    const ref = mesStr(mesRef)
+    const ref    = mesStr(mesRef)
+    const curRef = mesStr(new Date())
 
-    // Query principal — sem join nfse_emissoes (exige FK formal no banco)
+    // 1. Busca contratos ativos primeiro (necessário para auto-gerar cobranças)
+    const { data: ctrs } = await supabase
+      .from('contratos')
+      .select('id, inquilino_id, imovel, valor_aluguel, seguro_financeiro, seguro_incendio, iptu, dia_vencimento, status, discriminacao_servico, solicitar_discriminacao_mensal, inquilinos(nome)')
+      .eq('user_id', user.id)
+      .eq('status', 'Ativo')
+      .order('inquilinos(nome)', { ascending: true })
+
+    const mappedCtrs = (ctrs || []).map(r => ({
+      id:               r.id,
+      inquilino_id:     r.inquilino_id,
+      tenant:           r.inquilinos?.nome || '',
+      property:         r.imovel           || '',
+      value:            Number(r.valor_aluguel)     || 0,
+      seguroFinanceiro: Number(r.seguro_financeiro) || 0,
+      seguroIncendio:   Number(r.seguro_incendio)   || 0,
+      iptu:             Number(r.iptu)              || 0,
+      dueDay:           r.dia_vencimento,
+      totalValue:       (Number(r.valor_aluguel)||0) + (Number(r.seguro_financeiro)||0) +
+                        (Number(r.seguro_incendio)||0) + (Number(r.iptu)||0),
+      discriminacaoServico:        r.discriminacao_servico          || '',
+      solicitarDiscriminacaoMensal: !!r.solicitar_discriminacao_mensal,
+    }))
+    setContracts(mappedCtrs)
+
+    // 2. Auto-gera cobranças para meses futuros (idempotente — já existentes são ignoradas)
+    if (ref > curRef && mappedCtrs.length > 0) {
+      const { created } = await emitirCobrancas(user.id, mappedCtrs, mesRef)
+      if (created > 0) setAutoGerou(created)
+    } else {
+      setAutoGerou(0)
+    }
+
+    // 3. Query principal — sem join nfse_emissoes (exige FK formal no banco)
     const { data, error } = await supabase
       .from('cobrancas')
       .select('*, situacao_cobranca, valor_atualizado, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss, toma_logradouro, toma_numero, toma_bairro, toma_cep, toma_cod_mun, toma_mun_nome, imovel_cib, imovel_inscricao_fiscal, imovel_finalidade, imovel_logradouro, imovel_numero, imovel_complemento, imovel_bairro, imovel_cep, imovel_cod_mun, imovel_mun_nome, cod_nbs, cert_pfx_path, cert_senha, pct_multa, pct_juros_mes, situacao_locacao), inquilinos(nome, cpf, email)')
@@ -1895,7 +1930,7 @@ export default function Cobrancas() {
       .eq('mes_referencia', ref)
       .order('created_at', { ascending: false })
 
-    // Query separada para NFS-e emitidas no mês
+    // 4. Query separada para NFS-e emitidas no mês
     const cobIds = (data || []).map(c => c.id)
     let nfseMap = {}
     if (cobIds.length) {
@@ -1912,29 +1947,6 @@ export default function Cobrancas() {
     }
 
     if (!error) setCobrancas((data || []).map(row => mapCob(row, nfseMap[row.id] || null)))
-
-    const { data: ctrs } = await supabase
-      .from('contratos')
-      .select('id, inquilino_id, imovel, valor_aluguel, seguro_financeiro, seguro_incendio, iptu, dia_vencimento, status, discriminacao_servico, solicitar_discriminacao_mensal, inquilinos(nome)')
-      .eq('user_id', user.id)
-      .neq('status', 'Inativo')
-      .order('inquilinos(nome)', { ascending: true })
-
-    setContracts((ctrs || []).map(r => ({
-      id:               r.id,
-      inquilino_id:     r.inquilino_id,
-      tenant:           r.inquilinos?.nome || '',
-      property:         r.imovel           || '',
-      value:            Number(r.valor_aluguel)     || 0,
-      seguroFinanceiro: Number(r.seguro_financeiro) || 0,
-      seguroIncendio:   Number(r.seguro_incendio)   || 0,
-      iptu:             Number(r.iptu)              || 0,
-      dueDay:           r.dia_vencimento,
-      totalValue:       (Number(r.valor_aluguel)||0) + (Number(r.seguro_financeiro)||0) +
-                        (Number(r.seguro_incendio)||0) + (Number(r.iptu)||0),
-      discriminacaoServico:        r.discriminacao_servico          || '',
-      solicitarDiscriminacaoMensal: !!r.solicitar_discriminacao_mensal,
-    })))
 
     setLoading(false)
   }
@@ -2022,6 +2034,17 @@ export default function Cobrancas() {
           {loading ? 'Carregando…' : `${kpi.total} contrato${kpi.total !== 1 ? 's' : ''} · ${currentMonth}`}
         </p>
       </div>
+
+      {/* Aviso de cobranças auto-geradas */}
+      {autoGerou > 0 && (
+        <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-2.5 text-sm text-indigo-800">
+          <span className="text-base">✨</span>
+          <span>
+            <strong>{autoGerou} cobrança{autoGerou !== 1 ? 's' : ''}</strong> gerada{autoGerou !== 1 ? 's' : ''} automaticamente para os contratos ativos.
+          </span>
+          <button onClick={() => setAutoGerou(0)} className="ml-auto text-indigo-400 hover:text-indigo-700 text-lg leading-none">×</button>
+        </div>
+      )}
 
       {/* ── KPI Cards ──────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

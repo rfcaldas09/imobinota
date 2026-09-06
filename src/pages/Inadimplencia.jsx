@@ -31,26 +31,35 @@ const SITUACAO_LOCACAO_OPTS = ['Andamento', 'Em desocupação', 'Desocupado']
 // ── Modal de Desembolso ───────────────────────────────────────────
 function DesembolsoModal({ cob, onClose, onSaved }) {
   const { user } = useAuth()
-  const [valor, setValor]   = useState('')
-  const [data, setData]     = useState(new Date().toISOString().slice(0, 10))
-  const [tipo, setTipo]     = useState('parcial')
-  const [obs, setObs]       = useState('')
-  const [saving, setSaving] = useState(false)
-  const [lista, setLista]   = useState([])
+  const [valor,           setValor]           = useState('')
+  const [data,            setData]            = useState(new Date().toISOString().slice(0, 10))
+  const [tipo,            setTipo]            = useState('parcial')
+  const [obs,             setObs]             = useState('')
+  const [classificacaoId, setClassificacaoId] = useState('')
+  const [classificacoes,  setClassificacoes]  = useState([])
+  const [saving,          setSaving]          = useState(false)
+  const [lista,           setLista]           = useState([])
 
   useEffect(() => {
+    if (!user) return
     supabase.from('desembolsos')
       .select('*')
       .eq('cobranca_id', cob.id)
       .order('data', { ascending: false })
       .then(({ data: d }) => setLista(d || []))
-  }, [cob.id])
+    supabase.from('classificacoes_desembolso')
+      .select('id, nome')
+      .eq('user_id', user.id)
+      .order('nome')
+      .then(({ data: cls }) => setClassificacoes(cls || []))
+  }, [cob.id, user])
 
   const salvar = async () => {
     if (!valor || !data) return
     setSaving(true)
     await supabase.from('desembolsos').insert({
       user_id: user.id, cobranca_id: cob.id,
+      classificacao_id: classificacaoId || null,
       valor: parseFloat(valor.replace(',', '.')),
       data, tipo, obs: obs || null,
     })
@@ -89,6 +98,16 @@ function DesembolsoModal({ cob, onClose, onSaved }) {
               <input value={data} onChange={e => setData(e.target.value)} type="date"
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-400"/>
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Classificação</label>
+            <select value={classificacaoId} onChange={e => setClassificacaoId(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400">
+              <option value="">— Sem classificação —</option>
+              {classificacoes.map(cl => (
+                <option key={cl.id} value={cl.id}>{cl.nome}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="text-xs font-medium text-slate-500 block mb-1">Tipo</label>
