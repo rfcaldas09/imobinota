@@ -72,15 +72,85 @@ exports.handler = async (event) => {
     }
   }
 
-  // ── 2. Detecta se é pagamento de PLANO ou de COBRANÇA de aluguel ──────────────
-  // correlationID de plano (novo formato): "plano-{userId}_{planId}_{YYYYMM}[_{CUPOMCODE}]"
-  // correlationID de plano (formato legado): "plano-{userId}-{planId}-{YYYYMM}"
-  const isPlanPayment = correlationID && /^plano-/.test(correlationID)
+  // ── 2. Detecta o tipo de pagamento pelo prefixo do correlationID ──────────────
+  // "plano-..."  → ativação de assinatura
+  // "grupo-..."  → PIX de garantidora (múltiplas cobranças)
+  // UUID puro    → cobrança individual de aluguel
+  const isPlanPayment  = correlationID && /^plano-/.test(correlationID)
+  const isGrupoPayment = correlationID && /^grupo-/.test(correlationID)
 
   let supabaseResult = null
   if (SUPABASE_URL && SUPABASE_SVC_KEY && correlationID) {
     try {
-      if (isPlanPayment) {
+      if (isGrupoPayment) {
+        // ── Marca grupo PIX e todas as cobranças vinculadas como Pago ──
+        // correlationID = "grupo-{pix_grupo.id}"
+        const grupoId = correlationID.replace(/^grupo-/, '')
+        const now = new Date().toISOString()
+
+        // 1. Busca o pix_grupo para obter cobranca_ids
+        const grupoGet = await fetch(
+          `${SUPABASE_URL}/rest/v1/pix_grupos?id=eq.${grupoId}&select=id,cobranca_ids`,
+          {
+            headers: {
+              'apikey':        SUPABASE_SVC_KEY,
+              'Authorization': `Bearer ${SUPABASE_SVC_KEY}`,
+            },
+          }
+        )
+        const grupoRows = await grupoGet.json()
+        const grupo = Array.isArray(grupoRows) ? grupoRows[0] : null
+
+        if (!grupo) {
+          supabaseResult = { ok: false, error: `pix_grupo ${grupoId} não encontrado` }
+          console.error('[openpix-webhook] grupo PIX não encontrado:', grupoId)
+        } else {
+          // 2. Marca o grupo como Pago
+          await fetch(
+            `${SUPABASE_URL}/rest/v1/pix_grupos?id=eq.${grupoId}`,
+            {
+              method: 'PATCH',
+              headers: {
+                'apikey':        SUPABASE_SVC_KEY,
+                'Authorization': `Bearer ${SUPABASE_SVC_KEY}`,
+                'Content-Type':  'application/json',
+                'Prefer':        'return=minimal',
+              },
+              body: JSON.stringify({ status: 'Pago', data_pagamento: now }),
+            }
+          )
+
+          // 3. Marca cada cobrança do array como Pago
+          // PostgREST aceita filtragem por array usando "id=in.(id1,id2,...)"
+          const ids = (grupo.cobranca_ids || []).join(',')
+          if (ids) {
+            const cobPatch = await fetch(
+              `${SUPABASE_URL}/rest/v1/cobrancas?id=in.(${ids})`,
+              {
+                method: 'PATCH',
+                headers: {
+                  'apikey':        SUPABASE_SVC_KEY,
+                  'Authorization': `Bearer ${SUPABASE_SVC_KEY}`,
+                  'Content-Type':  'application/json',
+                  'Prefer':        'return=minimal',
+                },
+                body: JSON.stringify({ status: 'Pago', data_pagamento: now }),
+              }
+            )
+            supabaseResult = {
+              ok:   cobPatch.ok,
+              status: cobPatch.status,
+              type: 'grupo',
+              grupoId,
+              cobrancasCount: grupo.cobranca_ids?.length || 0,
+            }
+            console.log('[openpix-webhook] Grupo PIX pago:', { grupoId, ids, ok: cobPatch.ok })
+          } else {
+            supabaseResult = { ok: true, type: 'grupo', grupoId, cobrancasCount: 0 }
+          }
+        }
+
+      } else if (isPlanPayment) {
         // ── Ativa assinatura do usuário ──────────────────────────────
         // Novo formato: plano-{userId}_{planId}_{YYYYMM}[_{CUPOMCODE}]
         // Legado:       plano-{userId}-{planId}-{YYYYMM}  (UUID tem traços, parsing era bugado)

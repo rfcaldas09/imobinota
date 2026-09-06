@@ -969,6 +969,189 @@ const BATCH_ACTIONS = [
   { id: 'nfse', label: 'Somente NFS-e', icon: '📄', desc: 'Emite notas fiscais de serviço' },
 ]
 
+// ── Modal Boleto PIX Garantidora (seleção múltipla) ───────────────
+// Recebe um array de cobranças selecionadas, cria um pix_grupo no Supabase
+// e gera um único PIX pelo valor somado de seguro_financeiro.
+function GarantidoraPixModal({ cobrancas, pixKey, user, onClose }) {
+  const [state, setState]     = useState('loading') // loading | ok | error | noPix
+  const [chargeData, setChargeData] = useState(null)
+  const [errMsg, setErrMsg]   = useState('')
+  const [copied, setCopied]   = useState(false)
+
+  const totalCents = Math.round(cobrancas.reduce((s, c) => s + (c.seguroFinanceiro || 0), 0) * 100)
+  const totalBrl   = cobrancas.reduce((s, c) => s + (c.seguroFinanceiro || 0), 0)
+
+  useEffect(() => {
+    if (!pixKey) { setState('noPix'); return }
+    generate()
+  }, [])
+
+  const generate = async () => {
+    setState('loading')
+    setErrMsg('')
+
+    try {
+      // 1. Cria o pix_grupo no Supabase
+      const { data: grupo, error: grupoErr } = await supabase
+        .from('pix_grupos')
+        .insert({
+          user_id:      user.id,
+          cobranca_ids: cobrancas.map(c => c.id),
+          valor_total:  totalBrl,
+          status:       'Pendente',
+        })
+        .select('id')
+        .single()
+
+      if (grupoErr || !grupo) {
+        setErrMsg(grupoErr?.message || 'Erro ao criar grupo PIX')
+        setState('error')
+        return
+      }
+
+      // 2. Chama OpenPIX com correlationID = "grupo-{pix_grupo.id}"
+      const correlationID = `grupo-${grupo.id}`
+      const additionalInfo = cobrancas.map(c => ({
+        key:   c.tenant || c.property || 'Contrato',
+        value: `R$ ${(c.seguroFinanceiro || 0).toFixed(2).replace('.', ',')}`,
+      }))
+      const comment = `Garantidora ${cobrancas.length} contratos`.replace(/[^\x00-\x7F]/g, '')
+
+      const res = await fetch('/.netlify/functions/openpix-create-charge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          value:         totalCents,
+          correlationID,
+          comment,
+          additionalInfo,
+          clientPixKey:  pixKey,
+          expiresIn:     30 * 24 * 3600,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        setErrMsg(data.error || 'Erro ao gerar PIX')
+        setState('error')
+        return
+      }
+
+      setChargeData(data)
+      setState('ok')
+    } catch (err) {
+      setErrMsg(err.message)
+      setState('error')
+    }
+  }
+
+  const copy = () => {
+    if (!chargeData?.brCode) return
+    navigator.clipboard.writeText(chargeData.brCode)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2500)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-violet-100 rounded-xl flex items-center justify-center text-lg">🏦</div>
+            <div>
+              <p className="font-bold text-slate-900 text-sm">Boleto / PIX Garantidora</p>
+              <p className="text-xs text-slate-400">{cobrancas.length} contrato{cobrancas.length !== 1 ? 's' : ''} · {fmt(totalBrl)}</p>
+            </div>
+          </div>
+          {state !== 'loading' && (
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">
+              <IcClose c="w-4 h-4"/>
+            </button>
+          )}
+        </div>
+
+        {/* Loading */}
+        {state === 'loading' && (
+          <div className="flex flex-col items-center justify-center py-16 gap-4">
+            <div className="w-10 h-10 border-2 border-violet-200 border-t-violet-600 rounded-full animate-spin"/>
+            <p className="text-sm text-slate-500">Gerando cobrança…</p>
+          </div>
+        )}
+
+        {/* Sem chave PIX */}
+        {state === 'noPix' && (
+          <div className="p-6 text-center">
+            <p className="text-4xl mb-3">🔑</p>
+            <p className="font-semibold text-slate-800 mb-1">Chave PIX não configurada</p>
+            <p className="text-sm text-slate-500 mb-4">Configure sua chave PIX em <strong>Configurações → Integrações</strong>.</p>
+            <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-violet-600 text-white font-semibold text-sm">Fechar</button>
+          </div>
+        )}
+
+        {/* Erro */}
+        {state === 'error' && (
+          <div className="p-6 space-y-4">
+            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+              <p className="font-semibold mb-1">Erro ao gerar PIX</p>
+              <p className="text-xs">{errMsg}</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50">Fechar</button>
+              <button onClick={generate} className="flex-1 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700">Tentar novamente</button>
+            </div>
+          </div>
+        )}
+
+        {/* Sucesso */}
+        {state === 'ok' && chargeData && (
+          <div className="p-5 space-y-4">
+            {/* Lista de contratos */}
+            <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 space-y-1.5">
+              <p className="text-xs font-semibold text-violet-700 mb-2">Contratos incluídos</p>
+              {cobrancas.map(c => (
+                <div key={c.id} className="flex justify-between text-xs text-slate-700">
+                  <span className="truncate max-w-[60%]">{c.tenant}</span>
+                  <span className="font-semibold text-violet-600">{fmt(c.seguroFinanceiro)}</span>
+                </div>
+              ))}
+              <div className="border-t border-violet-200 pt-2 mt-2 flex justify-between text-xs font-bold text-slate-900">
+                <span>Total</span>
+                <span>{fmt(totalBrl)}</span>
+              </div>
+            </div>
+
+            {/* PIX copia-e-cola */}
+            <div>
+              <p className="text-xs font-semibold text-slate-500 mb-1.5">PIX Copia e Cola</p>
+              <div className="bg-slate-50 rounded-xl p-3 font-mono text-[10px] text-slate-600 break-all select-all leading-relaxed">
+                {chargeData.brCode}
+              </div>
+            </div>
+
+            <button
+              onClick={copy}
+              className={`w-full py-2.5 rounded-xl font-semibold text-sm transition-colors ${
+                copied
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-violet-600 hover:bg-violet-700 text-white'
+              }`}>
+              {copied ? '✓ Copiado!' : '📋 Copiar código PIX'}
+            </button>
+
+            <p className="text-[11px] text-slate-400 text-center">
+              Ao pagar, todas as {cobrancas.length} cobranças serão marcadas como <strong>Pago</strong> automaticamente.
+            </p>
+
+            <button onClick={onClose} className="w-full py-2 text-slate-500 text-xs hover:text-slate-700">Fechar</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Modal Gerar e Enviar em Massa ─────────────────────────────────
 function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilidade, controlaGarantidora, onClose, onDone }) {
   const { isActive } = useSubscription()
@@ -1750,6 +1933,8 @@ export default function Cobrancas() {
   const [autoGerou, setAutoGerou]   = useState(0)  // qtd cobranças auto-geradas
   const [pixKey, setPixKey]       = useState(null)
   const [boletoCob, setBoletoCob] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(new Set()) // IDs selecionados para boleto garantidora
+  const [showGarantidora, setShowGarantidora] = useState(false)
   const [nfseCob, setNfseCob]       = useState(null) // cobrança selecionada para NFS-e
   const [nfseViewCob, setNfseViewCob] = useState(null) // cobrança para "Logs de envio"
   const [addCob, setAddCob]       = useState(false) // abrir modal de adicionar cobrança
@@ -2100,7 +2285,7 @@ export default function Cobrancas() {
             <select
               value={filterLocacao}
               onChange={e => setFilterLocacao(e.target.value)}
-              className="px-3 py-2 text-xs font-semibold border border-slate-200 rounded-xl bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+              className="px-3 py-1.5 text-xs font-medium border border-slate-200 rounded-xl bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400">
               <option value="">Todas as situações</option>
               <option value="Andamento">Andamento</option>
               <option value="Em desocupação">Em desocupação</option>
@@ -2114,18 +2299,27 @@ export default function Cobrancas() {
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setAddCob(true)}
-            className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-semibold text-sm hover:bg-slate-50 shadow-sm whitespace-nowrap">
-            <IcPlus c="w-4 h-4"/> Adicionar contrato para cobrança
+            className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 px-3 py-2 rounded-xl font-semibold text-xs hover:bg-slate-50 shadow-sm whitespace-nowrap">
+            <IcPlus c="w-3.5 h-3.5"/> Adicionar contrato para cobrança
           </button>
           <button onClick={() => isActive ? setShowBatch(true) : navigate('/plano')}
             title={!isActive ? 'Assine um plano para usar esta função' : ''}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm shadow-md whitespace-nowrap ${
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-semibold text-xs shadow-md whitespace-nowrap ${
               isActive
                 ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700 shadow-indigo-200'
                 : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
             }`}>
-            {isActive ? <IcZap c="w-4 h-4"/> : '🔒'} Gerar e enviar notas do mês
+            {isActive ? <IcZap c="w-3.5 h-3.5"/> : '🔒'} Gerar notas do mês
           </button>
+
+          {/* Boleto Garantidora — só aparece quando ambas as flags estão ativas */}
+          {isContabilidade && controlaGarantidora && selectedIds.size > 0 && (
+            <button
+              onClick={() => setShowGarantidora(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-semibold text-xs shadow-md whitespace-nowrap bg-violet-600 hover:bg-violet-700 text-white shadow-violet-200 transition-colors">
+              🏦 Gerar Boleto ({selectedIds.size})
+            </button>
+          )}
         </div>
       </div>
 
@@ -2177,6 +2371,22 @@ export default function Cobrancas() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
+                {/* Checkbox de seleção — visível apenas no modo garantidora */}
+                {isContabilidade && controlaGarantidora && (
+                  <th className="px-3 py-3 w-10">
+                    <input
+                      type="checkbox"
+                      title="Selecionar todos"
+                      checked={lista.filter(c => c.seguroFinanceiro > 0).length > 0 &&
+                               lista.filter(c => c.seguroFinanceiro > 0).every(c => selectedIds.has(c.id))}
+                      onChange={e => {
+                        const elegíveis = lista.filter(c => c.seguroFinanceiro > 0).map(c => c.id)
+                        setSelectedIds(e.target.checked ? new Set(elegíveis) : new Set())
+                      }}
+                      className="w-4 h-4 accent-violet-600 cursor-pointer"
+                    />
+                  </th>
+                )}
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Cliente</th>
                 <th className="text-left px-3 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden md:table-cell w-40">Referência</th>
                 <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden lg:table-cell">Venc.</th>
@@ -2188,7 +2398,28 @@ export default function Cobrancas() {
             </thead>
             <tbody className="divide-y divide-slate-50">
               {lista.map(c => (
-                <tr key={c.id} className="hover:bg-slate-50/60 transition-colors">
+                <tr key={c.id} className={`hover:bg-slate-50/60 transition-colors ${selectedIds.has(c.id) ? 'bg-violet-50/60' : ''}`}>
+                  {/* Checkbox garantidora */}
+                  {isContabilidade && controlaGarantidora && (
+                    <td className="px-3 py-3.5">
+                      {c.seguroFinanceiro > 0 ? (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(c.id)}
+                          onChange={e => {
+                            setSelectedIds(prev => {
+                              const next = new Set(prev)
+                              e.target.checked ? next.add(c.id) : next.delete(c.id)
+                              return next
+                            })
+                          }}
+                          className="w-4 h-4 accent-violet-600 cursor-pointer"
+                        />
+                      ) : (
+                        <span className="w-4 h-4 inline-block"/>
+                      )}
+                    </td>
+                  )}
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-2.5">
                       <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 text-xs font-bold flex-shrink-0">
@@ -2454,6 +2685,14 @@ export default function Cobrancas() {
           cob={boletoCob}
           pixKey={pixKey}
           onClose={() => setBoletoCob(null)}
+        />
+      )}
+      {showGarantidora && (
+        <GarantidoraPixModal
+          cobrancas={lista.filter(c => selectedIds.has(c.id))}
+          pixKey={pixKey}
+          user={user}
+          onClose={() => { setShowGarantidora(false); setSelectedIds(new Set()); load() }}
         />
       )}
       {nfseCob && (
