@@ -457,13 +457,20 @@ export default function Config() {
         email_body:    f.emailBody,
       })
     } else if (tab === 'api') {
+      // Normaliza a chave: remove formatação de CPF/CNPJ (pontos, traços, barras)
+      const pixKeyNorm = f.pixKeyRecebimento
+        ? (['cpf', 'cnpj'].includes(f.pixKeyType)
+            ? f.pixKeyRecebimento.replace(/\D/g, '')
+            : f.pixKeyRecebimento.trim())
+        : ''
+
       // Se a chave PIX foi preenchida, cria/atualiza a subconta no OpenPIX
-      if (f.pixKeyRecebimento) {
+      if (pixKeyNorm) {
         try {
           const subRes = await fetch('/.netlify/functions/openpix-create-subaccount', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: f.company || 'Cliente NotaFacil', pixKey: f.pixKeyRecebimento }),
+            body: JSON.stringify({ name: f.company || 'Cliente NotaFacil', pixKey: pixKeyNorm }),
           })
           const subData = await subRes.json()
           if (!subRes.ok && subRes.status !== 404) {
@@ -476,10 +483,11 @@ export default function Config() {
           Object.assign(payload, { openpix_subaccount_created: true })
         } catch {
           // offline ou dev local — salva mesmo assim
+          Object.assign(payload, { openpix_subaccount_created: true })
         }
       }
       Object.assign(payload, {
-        pix_key_recebimento: f.pixKeyRecebimento,
+        pix_key_recebimento: pixKeyNorm || null,
         pix_key_type:        f.pixKeyType,
       })
     }
@@ -489,6 +497,11 @@ export default function Config() {
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
     refreshNfse()   // atualiza o banner de pendências
+
+    // Atualiza state local da aba API após salvar com sucesso
+    if (tab === 'api' && f.pixKeyRecebimento && payload.openpix_subaccount_created) {
+      set('subaccountCreated', true)
+    }
   }
 
   const sendTest = async () => {
