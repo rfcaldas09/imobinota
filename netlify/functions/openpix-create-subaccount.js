@@ -1,4 +1,4 @@
-// Netlify Function — cria uma subconta no OpenPIX para um cliente
+// Netlify Function — cria ou atualiza subconta no OpenPIX para um cliente
 // Chamada automaticamente quando o cliente salva sua chave PIX na aba Integrações
 // O token do OpenPIX é do operador (TechLinker) — nunca exposto ao cliente
 exports.handler = async (event) => {
@@ -34,16 +34,29 @@ exports.handler = async (event) => {
 
     const data = await res.json()
 
-    if (!res.ok) {
-      // Chave PIX inválida ou subconta já existe
-      const msg = data?.error || data?.message || `Erro OpenPIX: ${res.status}`
-      return { statusCode: 400, body: JSON.stringify({ error: msg }) }
+    if (res.ok) {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ ok: true, subAccount: data.subAccount }),
+      }
     }
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ ok: true, subAccount: data.subAccount }),
+    // Trata "subconta já existe" como sucesso — a chave já está cadastrada,
+    // basta continuar usando ela normalmente
+    const msg = (data?.error || data?.message || '').toLowerCase()
+    const jaExiste = /already exist|j.{1,4}existe|duplicate|pixkey/i.test(msg)
+      || res.status === 409
+    if (jaExiste) {
+      console.log('[openpix-create-subaccount] Subconta já existe para pixKey:', pixKey, '— tratando como OK')
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ ok: true, existing: true }),
+      }
     }
+
+    // Erro real (chave PIX inválida, formato incorreto, etc.)
+    return { statusCode: 400, body: JSON.stringify({ error: data?.error || data?.message || `Erro OpenPIX: ${res.status}` }) }
+
   } catch (err) {
     return { statusCode: 500, body: JSON.stringify({ error: err.message }) }
   }

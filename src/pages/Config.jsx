@@ -464,8 +464,8 @@ export default function Config() {
             : f.pixKeyRecebimento.trim())
         : ''
 
-      // Se a chave PIX foi preenchida, cria/atualiza a subconta no OpenPIX
       if (pixKeyNorm) {
+        // Chave preenchida — cria ou atualiza subconta no OpenPIX
         try {
           const subRes = await fetch('/.netlify/functions/openpix-create-subaccount', {
             method: 'POST',
@@ -474,7 +474,7 @@ export default function Config() {
           })
           const subData = await subRes.json()
           if (!subRes.ok && subRes.status !== 404) {
-            // 404 = function não deployada ainda (dev local) — ignora
+            // 404 = function não deployada (dev local) — ignora
             setSaving(false)
             setSaved(false)
             alert(`Erro ao validar chave PIX: ${subData.error || 'Verifique a chave e tente novamente.'}`)
@@ -485,7 +485,11 @@ export default function Config() {
           // offline ou dev local — salva mesmo assim
           Object.assign(payload, { openpix_subaccount_created: true })
         }
+      } else {
+        // Chave apagada — desmarca a subconta
+        Object.assign(payload, { openpix_subaccount_created: false })
       }
+
       Object.assign(payload, {
         pix_key_recebimento: pixKeyNorm || null,
         pix_key_type:        f.pixKeyType,
@@ -499,8 +503,11 @@ export default function Config() {
     refreshNfse()   // atualiza o banner de pendências
 
     // Atualiza state local da aba API após salvar com sucesso
-    if (tab === 'api' && f.pixKeyRecebimento && payload.openpix_subaccount_created) {
-      set('subaccountCreated', true)
+    if (tab === 'api') {
+      set('subaccountCreated', !!payload.openpix_subaccount_created)
+      if (payload.pix_key_recebimento !== undefined) {
+        set('pixKeyRecebimento', payload.pix_key_recebimento || '')
+      }
     }
   }
 
