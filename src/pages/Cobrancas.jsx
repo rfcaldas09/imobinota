@@ -970,7 +970,7 @@ const BATCH_ACTIONS = [
 ]
 
 // ── Modal Gerar e Enviar em Massa ─────────────────────────────────
-function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDone }) {
+function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilidade, controlaGarantidora, onClose, onDone }) {
   const { isActive } = useSubscription()
   const [step, setStep]         = useState('pick') // pick | selecao | discriminacao | running | done
   const [action, setAction]     = useState('nfse')
@@ -1057,9 +1057,13 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, onClose, onDo
       cpf:             cob.inquilinos?.cpf   || '',
       email:           cob.inquilinos?.email || '',
       property:        cob.contratos?.imovel || '',
-      totalValue:      Number(cob.valor_total) || 0,
-      value:           Number(cob.valor_total) || 0,
       seguroFinanceiro:Number(cob.contratos?.seguro_financeiro) || 0,
+      totalValue:      (isContabilidade && controlaGarantidora)
+                         ? Number(cob.contratos?.seguro_financeiro) || 0
+                         : Number(cob.valor_total) || 0,
+      value:           (isContabilidade && controlaGarantidora)
+                         ? Number(cob.contratos?.seguro_financeiro) || 0
+                         : Number(cob.valor_total) || 0,
       seguroIncendio:  Number(cob.contratos?.seguro_incendio)   || 0,
       iptu:            Number(cob.contratos?.iptu)              || 0,
       codServicoLc116:             cob.contratos?.cod_servico_lc116             || null,
@@ -1731,7 +1735,7 @@ function AdicionarCobrancaModal({ contracts, user, onClose, onDone }) {
 
 // ── Página principal ──────────────────────────────────────────────
 export default function Cobrancas() {
-  const { user, isContabilidade }    = useAuth()
+  const { user, isContabilidade, controlaGarantidora } = useAuth()
   const { isActive } = useSubscription()
   const navigate    = useNavigate()
   const { certSet, loading: onboardingLoading } = useOnboarding()
@@ -1739,8 +1743,9 @@ export default function Cobrancas() {
   const [cobrancas, setCobrancas] = useState([])
   const [contracts, setContracts] = useState([])
   const [loading, setLoading]     = useState(true)
-  const [filter, setFilter]       = useState('Todos')
-  const [showBatch, setShowBatch] = useState(false)
+  const [filter, setFilter]           = useState('Todos')
+  const [filterLocacao, setFilterLocacao] = useState('')  // '' = todos
+  const [showBatch, setShowBatch]     = useState(false)
   const [updatingId, setUpdatingId] = useState(null)
   const [autoGerou, setAutoGerou]   = useState(0)  // qtd cobranças auto-geradas
   const [pixKey, setPixKey]       = useState(null)
@@ -1946,7 +1951,14 @@ export default function Cobrancas() {
       }
     }
 
-    if (!error) setCobrancas((data || []).map(row => mapCob(row, nfseMap[row.id] || null)))
+    if (!error) {
+      let mapped = (data || []).map(row => mapCob(row, nfseMap[row.id] || null))
+      // Modo garantidora: valor da NFS-e = seguro_financeiro
+      if (isContabilidade && controlaGarantidora) {
+        mapped = mapped.map(c => ({ ...c, totalValue: c.seguroFinanceiro }))
+      }
+      setCobrancas(mapped)
+    }
 
     setLoading(false)
   }
@@ -1971,7 +1983,8 @@ export default function Cobrancas() {
 
   // ── Filtro ─────────────────────────────────────────────────────
   const lista = useMemo(() => {
-    const base = filter === 'Todos' ? cobrancas : cobrancas.filter(c => c.status === filter)
+    let base = filter === 'Todos' ? cobrancas : cobrancas.filter(c => c.status === filter)
+    if (filterLocacao) base = base.filter(c => c.situacaoLocacao === filterLocacao)
     // 1º: NFS-e emitida vem antes; 2º: alfabético por nome do cliente
     return [...base].sort((a, b) => {
       const aEmit = a.nfseStatus === 'emitida' ? 0 : 1
@@ -2082,6 +2095,18 @@ export default function Cobrancas() {
             ))}
           </div>
           <MonthPicker value={mesRef} onChange={v => { setMesRef(v); setFilter('Todos') }}/>
+          {/* Filtro situação da locação — visível somente no modo garantidora */}
+          {isContabilidade && controlaGarantidora && (
+            <select
+              value={filterLocacao}
+              onChange={e => setFilterLocacao(e.target.value)}
+              className="px-3 py-2 text-xs font-semibold border border-slate-200 rounded-xl bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+              <option value="">Todas as situações</option>
+              <option value="Andamento">Andamento</option>
+              <option value="Em desocupação">Em desocupação</option>
+              <option value="Desocupado">Desocupado</option>
+            </select>
+          )}
           <button onClick={load} disabled={loading} title="Atualizar"
             className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40">
             <IcRefresh c={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}/>
@@ -2418,6 +2443,8 @@ export default function Cobrancas() {
           user={user}
           pixKey={pixKey}
           mesRef={mesRef}
+          isContabilidade={isContabilidade}
+          controlaGarantidora={controlaGarantidora}
           onClose={() => { setShowBatch(false); load() }}
           onDone={() => load()}
         />

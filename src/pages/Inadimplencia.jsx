@@ -150,12 +150,19 @@ function DesembolsoModal({ cob, onClose, onSaved }) {
 
 // ── Aba 1: Lançamentos ────────────────────────────────────────────
 function AbaLancamentos({ lancamentos, onUpdateCob, onDesembolso }) {
-  const [search, setSearch] = useState('')
+  const [search,         setSearch]         = useState('')
+  const [filtroLocacao,  setFiltroLocacao]  = useState('')
+  const [filtroCobranca, setFiltroCobranca] = useState('')
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
-    return lancamentos.filter(l => !q || l.tenant.toLowerCase().includes(q) || l.property.toLowerCase().includes(q))
-  }, [lancamentos, search])
+    return lancamentos.filter(l => {
+      if (q && !l.tenant.toLowerCase().includes(q) && !l.property.toLowerCase().includes(q)) return false
+      if (filtroLocacao  && l.situacaoLocacao  !== filtroLocacao)  return false
+      if (filtroCobranca && l.situacaoCobranca !== filtroCobranca) return false
+      return true
+    })
+  }, [lancamentos, search, filtroLocacao, filtroCobranca])
 
   const diasAtraso = (dataVenc) => {
     if (!dataVenc) return null
@@ -174,11 +181,27 @@ function AbaLancamentos({ lancamentos, onUpdateCob, onDesembolso }) {
 
   return (
     <div className="space-y-4">
-      <div className="relative">
-        <input type="text" placeholder="Filtrar por cliente ou imóvel…" value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400 bg-white"/>
-        <svg className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <input type="text" placeholder="Filtrar por cliente ou imóvel…" value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400 bg-white"/>
+          <svg className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </div>
+        <select value={filtroLocacao} onChange={e => setFiltroLocacao(e.target.value)}
+          className="px-3 py-2 text-xs font-medium border border-slate-200 rounded-xl bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-red-400 whitespace-nowrap">
+          <option value="">Situação da Locação</option>
+          {SITUACAO_LOCACAO_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={filtroCobranca} onChange={e => setFiltroCobranca(e.target.value)}
+          className="px-3 py-2 text-xs font-medium border border-slate-200 rounded-xl bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-red-400 whitespace-nowrap">
+          <option value="">Situação da Cobrança</option>
+          {SITUACAO_COBRANCA_OPTS.filter(Boolean).map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        {(filtroLocacao || filtroCobranca) && (
+          <button onClick={() => { setFiltroLocacao(''); setFiltroCobranca('') }}
+            className="text-slate-400 hover:text-slate-600 text-lg leading-none px-1" title="Limpar filtros">×</button>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
