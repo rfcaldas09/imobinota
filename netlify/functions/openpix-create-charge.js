@@ -2,7 +2,7 @@
 // O QR code fica válido até a data de vencimento + 3 dias de carência.
 // A maioria dos bancos (Itaú, Bradesco, Nubank, C6, etc.) permite agendar o
 // pagamento ao ler um QR code com vencimento futuro.
-const FEE_CENTS = 299 // R$ 2,99 por cobrança paga
+const FEE_CENTS = 100 // R$ 1,00 por cobrança paga
 
 exports.handler = async (event) => {
   try {
