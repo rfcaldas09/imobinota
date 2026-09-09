@@ -277,7 +277,7 @@ function PixPanel({ plan, userId, couponApplied, onCouponApplied, onClose, a1Cou
 }
 
 // ── Painel Cartão (Stripe Elements) ───────────────────────────────
-function CardPanel({ plan, userId, userEmail, couponApplied, onCouponApplied, effectivePrice }) {
+function CardPanel({ plan, userId, userEmail, couponApplied, onCouponApplied, effectivePrice, a1Count }) {
   const [step, setStep]             = useState('idle') // idle | loading | form | paying | success | error
   const [clientSecret, setClientSecret] = useState(null)
   const [publishableKey, setPubKey] = useState(null)
@@ -310,7 +310,7 @@ function CardPanel({ plan, userId, userEmail, couponApplied, onCouponApplied, ef
     try {
       const res  = await fetch('/.netlify/functions/stripe-create-subscription', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId: plan.id, userId, userEmail, cupomCodigo }),
+        body: JSON.stringify({ planId: plan.id, userId, userEmail, cupomCodigo, a1Count }),
       })
       const data = await res.json()
       if (!res.ok || data.error) { setStep('error'); setPayError(data.error || 'Erro ao iniciar pagamento'); return }
@@ -581,6 +581,7 @@ function PaymentPanel({ plan, userId, userEmail, onClose, a1Count, effectivePric
             couponApplied={couponApplied}
             onCouponApplied={setCouponApplied}
             effectivePrice={effectivePrice}
+            a1Count={a1Count}
           />
       }
 
@@ -629,7 +630,7 @@ export default function Plano() {
       .then(({ count }) => setA1Count(count || 0))
   }, [user?.id])
 
-  // Busca stripe_subscription_id quando há plano pago ativo
+  // Busca stripe_subscription_id quando há plano pago ativo e sincroniza o valor
   const loadStripeSubId = useCallback(async () => {
     if (!user?.id || !planKey) { setStripeSubId(null); return }
     const { data } = await supabase
@@ -637,7 +638,17 @@ export default function Plano() {
       .select('stripe_subscription_id')
       .eq('id', user.id)
       .maybeSingle()
-    setStripeSubId(data?.stripe_subscription_id || null)
+    const subId = data?.stripe_subscription_id || null
+    setStripeSubId(subId)
+    // Sincroniza valor da subscription em background (corrige cupom e A1)
+    if (subId) {
+      fetch('/.netlify/functions/stripe-sync-plan', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      }).then(r => r.json()).then(d => {
+        if (d.updated) console.log('[Plano] Subscription Stripe sincronizada:', d)
+      }).catch(() => {})
+    }
   }, [user?.id, planKey])
 
   useEffect(() => { loadStripeSubId() }, [loadStripeSubId])

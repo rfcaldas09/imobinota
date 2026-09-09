@@ -125,18 +125,20 @@ exports.handler = async (event) => {
           expand: ['items.data.price'],
         })
 
-        // Deriva planId a partir do price.id da assinatura (mais confiável que metadata)
+        // Deriva planId — usa metadata (mais confiável com dynamic pricing)
+        // Fallback: tenta derivar do Price ID base caso metadata não tenha
         const PRICES = {
           essencial: process.env.STRIPE_PRICE_ESSENCIAL,
           pro:       process.env.STRIPE_PRICE_PRO,
         }
-        const subPriceId = sub.items?.data?.[0]?.price?.id
-        let planId = sub.metadata?.plan_id  // tenta metadata primeiro
+        const subPriceId   = sub.items?.data?.[0]?.price?.id
+        const priceMetaPlanId = sub.items?.data?.[0]?.price?.metadata?.plan_id
+        let planId = sub.metadata?.plan_id || priceMetaPlanId
         if (!planId || !['essencial', 'pro'].includes(planId)) {
-          // Deriva pelo price ID — fonte mais confiável
-          if (subPriceId === PRICES.pro)       planId = 'pro'
+          // Fallback para subscriptions antigas (price ID fixo)
+          if (subPriceId === PRICES.pro)            planId = 'pro'
           else if (subPriceId === PRICES.essencial) planId = 'essencial'
-          else planId = 'essencial' // fallback
+          else                                       planId = 'essencial'
         }
 
         console.log('[stripe-webhook] planId derivado:', { planId, subPriceId, metadataPlanId: sub.metadata?.plan_id })
@@ -158,10 +160,7 @@ exports.handler = async (event) => {
           stripe_subscription_id: subscriptionId,
         })
 
-        // Incrementa uso do cupom apenas na primeira invoice (billing_reason = subscription_create)
-        if (invoice.billing_reason === 'subscription_create') {
-          await incrementarCupomStripe(subscriptionId)
-        }
+        // Nota: incremento de uso do cupom é feito em stripe-create-subscription.js (não aqui)
 
         console.log('[stripe-webhook] Plano ativado:', { userId, planId, fim })
         break

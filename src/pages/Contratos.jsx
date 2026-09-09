@@ -2106,6 +2106,11 @@ export default function Contratos() {
       setIsRenewal(false)
       toast(`Contrato de ${data.tenant} atualizado!`, 'success')
       load()
+      // Sincroniza valor do plano Stripe em background (caso A1 tenha mudado)
+      fetch('/.netlify/functions/stripe-sync-plan', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      }).catch(() => {})
     } catch (err) {
       toast(err.message || 'Erro ao atualizar contrato', 'error')
     } finally { setSaving(false) }
