@@ -112,6 +112,18 @@ exports.handler = async (event) => {
       stripeCustomerId = profRows?.[0]?.stripe_customer_id || null
     }
 
+    // Valida se o customer ainda existe no Stripe (pode ter sido deletado/reset no teste)
+    if (stripeCustomerId) {
+      try {
+        await stripe.customers.retrieve(stripeCustomerId)
+      } catch (err) {
+        if (err.statusCode === 404 || /no such customer/i.test(err.message)) {
+          console.warn('[stripe-create-subscription] Customer inválido no Stripe, recriando:', stripeCustomerId)
+          stripeCustomerId = null // força criação de novo customer
+        } else throw err
+      }
+    }
+
     if (!stripeCustomerId) {
       const customer = await stripe.customers.create({
         email: userEmail,
@@ -125,7 +137,7 @@ exports.handler = async (event) => {
             'apikey': SUPABASE_SVC, 'Authorization': `Bearer ${SUPABASE_SVC}`,
             'Content-Type': 'application/json', 'Prefer': 'return=minimal',
           },
-          body: JSON.stringify({ stripe_customer_id: stripeCustomerId }),
+          body: JSON.stringify({ stripe_customer_id: stripeCustomerId, stripe_subscription_id: null }),
         })
       }
     }

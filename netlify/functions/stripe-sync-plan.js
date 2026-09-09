@@ -72,14 +72,15 @@ exports.handler = async (event) => {
         expand: ['items.data.price'],
       })
     } catch (err) {
-      if (err.statusCode === 404) {
-        // Subscription não existe mais no Stripe — limpa do Supabase
+      if (err.statusCode === 404 || /no such (subscription|customer)/i.test(err.message)) {
+        // Subscription/customer não existe mais no Stripe (ex: reset do ambiente de teste)
+        // Limpa IDs do Supabase para permitir nova assinatura
         await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}`, {
           method: 'PATCH',
           headers: { 'apikey': SUPABASE_SVC, 'Authorization': `Bearer ${SUPABASE_SVC}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-          body: JSON.stringify({ stripe_subscription_id: null }),
+          body: JSON.stringify({ stripe_subscription_id: null, stripe_customer_id: null }),
         })
-        return { statusCode: 200, body: JSON.stringify({ ok: true, skipped: true, reason: 'Subscription não encontrada — removida do Supabase' }) }
+        return { statusCode: 200, body: JSON.stringify({ ok: true, skipped: true, reason: 'Subscription/customer não encontrado — IDs limpos do Supabase' }) }
       }
       throw err
     }
