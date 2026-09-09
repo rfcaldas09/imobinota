@@ -12,7 +12,7 @@ const PLANS = {
     color:    'indigo',
     features: [
       'Até 50 contratos ativos',
-      'R$ 2,99 por cobrança paga',
+      'R$ 1,85 por cobrança paga',
       'Emissão e envio de cobrança via PIX',
       'NFS-e integrado (API Nacional)',
       'Envio de e-mails automático',
@@ -28,7 +28,7 @@ const PLANS = {
     features: [
       'Tudo do Essencial',
       'Contratos ilimitados',
-      'R$ 2,99 por cobrança paga',
+      'R$ 1,85 por cobrança paga',
       'Suporte prioritário via WhatsApp',
     ],
   },
@@ -66,7 +66,7 @@ function QRCodeImg({ brCode, size = 160 }) {
 }
 
 // ── Card de plano ─────────────────────────────────────────────────
-function PlanCard({ plan, isCurrent, isPaying, onAssinar }) {
+function PlanCard({ plan, isCurrent, isPaying, onAssinar, effectivePrice }) {
   const accent = plan.color === 'purple'
     ? { ring: 'ring-purple-500', bg: 'bg-purple-600', bgLight: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', dot: 'bg-purple-500' }
     : { ring: 'ring-indigo-500', bg: 'bg-indigo-600', bgLight: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', dot: 'bg-indigo-500' }
@@ -82,12 +82,17 @@ function PlanCard({ plan, isCurrent, isPaying, onAssinar }) {
           </span>
         )}
         <p className="font-bold text-slate-900 text-lg leading-tight">{plan.name}</p>
-        <div className="flex items-baseline gap-1 mt-1 mb-4">
+        <div className="flex items-baseline gap-1 mt-1 mb-2">
           <span className="text-3xl font-black text-slate-900">
-            {fmtBRL(plan.price)}
+            {fmtBRL(effectivePrice)}
           </span>
           <span className="text-sm text-slate-400">/mês</span>
         </div>
+        {effectivePrice !== plan.price && (
+          <p className="text-xs text-slate-400 mb-3">
+            R$ {plan.price},00 + {Math.round((effectivePrice - plan.price) / 35)} certif. A1 × R$ 35
+          </p>
+        )}
         <ul className="space-y-2">
           {plan.features.map(f => (
             <li key={f} className="flex items-start gap-2 text-sm text-slate-600">
@@ -117,12 +122,12 @@ function PlanCard({ plan, isCurrent, isPaying, onAssinar }) {
 }
 
 // ── Painel PIX ────────────────────────────────────────────────────
-function PixPanel({ plan, userId, couponApplied, onCouponApplied, onClose }) {
+function PixPanel({ plan, userId, couponApplied, onCouponApplied, onClose, a1Count, effectivePrice }) {
   const [brCode, setBrCode]   = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
   const [copied, setCopied]   = useState(false)
-  const [displayAmount, setDisplayAmount] = useState(plan.price)
+  const [displayAmount, setDisplayAmount] = useState(effectivePrice)
 
   const [couponInput, setCouponInput]     = useState(couponApplied?.codigo || '')
   const [couponLoading, setCouponLoading] = useState(false)
@@ -139,13 +144,13 @@ function PixPanel({ plan, userId, couponApplied, onCouponApplied, onClose }) {
     try {
       const res  = await fetch('/.netlify/functions/plano-pagar', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId: plan.id, userId, cupomCodigo }),
+        body: JSON.stringify({ planId: plan.id, userId, cupomCodigo, a1Count }),
       })
       const data = await res.json()
       if (cancelRef.current) return
       if (!res.ok || data.error) { setError(data.error || 'Erro ao gerar cobrança'); return }
       setBrCode(data.brCode)
-      setDisplayAmount((data.amount || plan.price * 100) / 100)
+      setDisplayAmount((data.amount || effectivePrice * 100) / 100)
     } catch (err) {
       if (!cancelRef.current) setError(err.message)
     } finally {
@@ -242,8 +247,13 @@ function PixPanel({ plan, userId, couponApplied, onCouponApplied, onClose }) {
           <div className="flex-1 space-y-3">
             <div className={`rounded-xl px-4 py-3 ${accent.bgLight} border ${accent.border}`}>
               <p className={`text-xs font-semibold mb-0.5 ${accent.text}`}>Valor a pagar</p>
-              {couponApplied && <p className="text-xs text-slate-400 line-through">{fmtBRL(plan.price)}</p>}
+              {couponApplied && <p className="text-xs text-slate-400 line-through">{fmtBRL(effectivePrice)}</p>}
               <p className="text-2xl font-black text-slate-900">{fmtBRL(displayAmount)}</p>
+              {!couponApplied && a1Count > 0 && (
+                <p className="text-xs text-slate-400 mt-0.5">
+                  R$ {plan.price},00 base + {a1Count}× A1 (R$ 35)
+                </p>
+              )}
             </div>
             {brCode && (
               <div>
@@ -267,7 +277,7 @@ function PixPanel({ plan, userId, couponApplied, onCouponApplied, onClose }) {
 }
 
 // ── Painel Cartão (Stripe Elements) ───────────────────────────────
-function CardPanel({ plan, userId, userEmail, couponApplied, onCouponApplied }) {
+function CardPanel({ plan, userId, userEmail, couponApplied, onCouponApplied, effectivePrice }) {
   const [step, setStep]             = useState('idle') // idle | loading | form | paying | success | error
   const [clientSecret, setClientSecret] = useState(null)
   const [publishableKey, setPubKey] = useState(null)
@@ -396,7 +406,7 @@ function CardPanel({ plan, userId, userEmail, couponApplied, onCouponApplied }) 
     }
   }
 
-  const displayPrice = couponApplied ? couponApplied.valorMensal : plan.price
+  const displayPrice = couponApplied ? couponApplied.valorMensal : effectivePrice
 
   if (step === 'success') {
     return (
@@ -446,7 +456,7 @@ function CardPanel({ plan, userId, userEmail, couponApplied, onCouponApplied }) 
         {/* Valor + botão iniciar */}
         <div className={`rounded-xl px-4 py-3 ${accent.bgLight} border ${accent.border}`}>
           <p className={`text-xs font-semibold mb-0.5 ${accent.text}`}>Valor mensal (recorrente)</p>
-          {couponApplied && <p className="text-xs text-slate-400 line-through">{fmtBRL(plan.price)}</p>}
+          {couponApplied && <p className="text-xs text-slate-400 line-through">{fmtBRL(effectivePrice)}</p>}
           <p className="text-2xl font-black text-slate-900">{fmtBRL(displayPrice)}</p>
           <p className="text-xs text-slate-500 mt-1">Cobrado automaticamente todo mês. Cancele quando quiser.</p>
         </div>
@@ -466,7 +476,7 @@ function CardPanel({ plan, userId, userEmail, couponApplied, onCouponApplied }) 
       {/* Resumo do valor */}
       <div className={`rounded-xl px-4 py-3 ${accent.bgLight} border ${accent.border}`}>
         <p className={`text-xs font-semibold mb-0.5 ${accent.text}`}>Valor mensal (recorrente)</p>
-        {couponApplied && <p className="text-xs text-slate-400 line-through">{fmtBRL(plan.price)}</p>}
+        {couponApplied && <p className="text-xs text-slate-400 line-through">{fmtBRL(effectivePrice)}</p>}
         <p className="text-2xl font-black text-slate-900">{fmtBRL(displayPrice)}</p>
       </div>
 
@@ -515,7 +525,7 @@ function CardPanel({ plan, userId, userEmail, couponApplied, onCouponApplied }) 
 }
 
 // ── Painel de pagamento (wrapper com abas PIX / Cartão) ───────────
-function PaymentPanel({ plan, userId, userEmail, onClose }) {
+function PaymentPanel({ plan, userId, userEmail, onClose, a1Count, effectivePrice }) {
   const [tab, setTab]                   = useState('pix') // 'pix' | 'card'
   const [couponApplied, setCouponApplied] = useState(null)
 
@@ -531,8 +541,8 @@ function PaymentPanel({ plan, userId, userEmail, onClose }) {
           <p className="font-bold text-slate-900">Pagamento — {plan.name}</p>
           <p className="text-xs text-slate-400 mt-0.5">
             {couponApplied
-              ? <><span className="line-through">{fmtBRL(plan.price)}</span> → <span className="text-emerald-600 font-semibold">{fmtBRL(couponApplied.valorMensal)}</span> /mês</>
-              : `${fmtBRL(plan.price)} /mês`}
+              ? <><span className="line-through">{fmtBRL(effectivePrice)}</span> → <span className="text-emerald-600 font-semibold">{fmtBRL(couponApplied.valorMensal)}</span> /mês</>
+              : `${fmtBRL(effectivePrice)} /mês`}
           </p>
         </div>
         <button onClick={onClose} className="text-slate-300 hover:text-slate-500 text-xl leading-none">×</button>
@@ -563,11 +573,14 @@ function PaymentPanel({ plan, userId, userEmail, onClose }) {
             couponApplied={couponApplied}
             onCouponApplied={setCouponApplied}
             onClose={onClose}
+            a1Count={a1Count}
+            effectivePrice={effectivePrice}
           />
         : <CardPanel
             plan={plan} userId={userId} userEmail={userEmail}
             couponApplied={couponApplied}
             onCouponApplied={setCouponApplied}
+            effectivePrice={effectivePrice}
           />
       }
 
@@ -584,6 +597,7 @@ export default function Plano() {
   const { user }  = useAuth()
   const sub       = useSubscription()
   const [payingPlan, setPayingPlan] = useState(null)
+  const [a1Count, setA1Count]       = useState(0)
 
   // Dados de assinatura Stripe (para permitir cancelamento)
   const [stripeSubId, setStripeSubId]         = useState(null)
@@ -598,6 +612,22 @@ export default function Plano() {
   const planKey  = (sub.plan === 'essencial' || sub.plan === 'pro') ? sub.plan : null
 
   const fmtDate = d => d ? new Date(d).toLocaleDateString('pt-BR') : '—'
+
+  // Preço efetivo = base + R$35 por contrato com A1 configurado
+  const effectivePriceOf = (planId) => PLANS[planId]
+    ? PLANS[planId].price + a1Count * 35
+    : 0
+
+  // Carrega quantidade de A1 configurados nos contratos do usuário
+  useEffect(() => {
+    if (!user?.id) return
+    supabase
+      .from('contratos')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .not('cert_pfx_path', 'is', null)
+      .then(({ count }) => setA1Count(count || 0))
+  }, [user?.id])
 
   // Busca stripe_subscription_id quando há plano pago ativo
   const loadStripeSubId = useCallback(async () => {
@@ -663,7 +693,7 @@ export default function Plano() {
             </p>
             {sub.planoFim && !cancelResult && (
               <p className="text-slate-500 text-sm mt-0.5">
-                Renova em {fmtDate(sub.planoFim)} · {planKey ? fmtBRL(PLANS[planKey].price) : '—'}/mês
+                Renova em {fmtDate(sub.planoFim)} · {planKey ? fmtBRL(effectivePriceOf(planKey)) : '—'}/mês
               </p>
             )}
             {cancelResult?.cancelAt && (
@@ -746,6 +776,7 @@ export default function Plano() {
             isCurrent={sub.plan === plan.id}
             isPaying={payingPlan === plan.id}
             onAssinar={() => setPayingPlan(prev => prev === plan.id ? null : plan.id)}
+            effectivePrice={effectivePriceOf(plan.id)}
           />
         ))}
       </div>
@@ -757,6 +788,8 @@ export default function Plano() {
           userId={user?.id}
           userEmail={user?.email}
           onClose={() => setPayingPlan(null)}
+          a1Count={a1Count}
+          effectivePrice={effectivePriceOf(payingPlan)}
         />
       )}
     </div>

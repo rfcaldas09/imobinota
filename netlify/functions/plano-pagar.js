@@ -6,9 +6,10 @@
 // Usa _ como separador interno para não conflitar com traços do UUID.
 
 const PLANOS = {
-  essencial: { nome: 'NotaFacil Essencial', valor: 19700 }, // R$ 197,00 em centavos
-  pro:       { nome: 'NotaFacil Pro',       valor: 29700 }, // R$ 297,00
+  essencial: { nome: 'NotaFacil Essencial', valorBase: 19700 }, // R$ 197,00 em centavos
+  pro:       { nome: 'NotaFacil Pro',       valorBase: 29700 }, // R$ 297,00
 }
+const A1_PRICE_CENTS = 3500 // R$ 35,00 por certificado A1 configurado
 
 exports.handler = async (event) => {
   try {
@@ -29,7 +30,7 @@ async function handle(event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Body inválido' }) }
   }
 
-  const { planId, userId, cupomCodigo } = body
+  const { planId, userId, cupomCodigo, a1Count } = body
   if (!planId || !userId) {
     return { statusCode: 400, body: JSON.stringify({ error: 'planId e userId são obrigatórios' }) }
   }
@@ -39,6 +40,8 @@ async function handle(event) {
     return { statusCode: 400, body: JSON.stringify({ error: `Plano inválido: ${planId}` }) }
   }
 
+  const a1Qty = Math.max(0, parseInt(a1Count) || 0)
+
   const APP_ID           = process.env.OPENPIX_APP_ID
   const SUPABASE_URL     = process.env.SUPABASE_URL
   const SUPABASE_SVC_KEY = process.env.SUPABASE_SERVICE_KEY
@@ -47,8 +50,8 @@ async function handle(event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'OPENPIX_APP_ID não configurado' }) }
   }
 
-  // ── Valida cupom (se informado) ────────────────────────────────────────────
-  let valorCentavos = plano.valor
+  // ── Calcula valor base + surcharge A1 ─────────────────────────────────────
+  let valorCentavos = plano.valorBase + a1Qty * A1_PRICE_CENTS
   let cupomAplicado = null
 
   if (cupomCodigo && typeof cupomCodigo === 'string' && cupomCodigo.trim()) {
@@ -91,12 +94,13 @@ async function handle(event) {
   const ultimoDia = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
   const expiresIn = Math.max(3600, Math.floor((ultimoDia - now) / 1000))
 
+  const a1Suffix  = a1Qty > 0 && !cupomAplicado ? ` + ${a1Qty} A1` : ''
   const chargeBody = {
     value:         valorCentavos,
     correlationID,
     comment:       cupomAplicado
       ? `Assinatura ${plano.nome} - ${yyyymm.slice(0, 4)}/${yyyymm.slice(4)} (cupom: ${cupomAplicado})`
-      : `Assinatura ${plano.nome} - ${yyyymm.slice(0, 4)}/${yyyymm.slice(4)}`,
+      : `Assinatura ${plano.nome}${a1Suffix} - ${yyyymm.slice(0, 4)}/${yyyymm.slice(4)}`,
     expiresIn,
   }
 
