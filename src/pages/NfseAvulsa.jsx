@@ -178,6 +178,14 @@ function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, 
     } catch { /* silencia */ } finally { setCepLoading(false) }
   }
 
+  // Re-dispara busca do CEP ao abrir modal com endereço incompleto (tamaCep preenchido mas tamaCodMun vazio)
+  useEffect(() => {
+    if (f.tamaCep && !f.tamaCodMun) {
+      buscarCep(f.tamaCep)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const handleSave = () => {
     if (!f.nome.trim())        { setErr('Informe o nome do tomador.'); return }
     const v = parseBRL(f.valor)
@@ -265,10 +273,23 @@ function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, 
                     </div>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-slate-500 block mb-1">Município (código IBGE)</label>
-                    <input value={f.tamaMunNome ? `${f.tamaMunNome} (${f.tamaCodMun})` : f.tamaCodMun}
-                      readOnly placeholder="Preenchido pelo CEP"
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 text-slate-500 font-mono text-xs"/>
+                    <label className="text-xs font-medium text-slate-500 block mb-1">
+                      Município (código IBGE)
+                      {f.tamaMunNome && <span className="ml-1 text-slate-400 font-normal normal-case">— {f.tamaMunNome}</span>}
+                    </label>
+                    <input
+                      value={f.tamaCodMun}
+                      onChange={e => setF(p => ({ ...p, tamaCodMun: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
+                      placeholder="Preenchido pelo CEP (ou insira manualmente)"
+                      maxLength={7}
+                      className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono text-xs ${
+                        f.issRetido && !f.tamaCodMun ? 'border-red-300 bg-red-50' : 'border-slate-200'
+                      }`}
+                    />
+                    {cepLoading && <p className="text-xs text-slate-400 mt-1">Buscando CEP…</p>}
+                    {f.issRetido && !f.tamaCodMun && !cepLoading &&
+                      <p className="text-xs text-red-500 mt-1">Obrigatório quando ISS é retido pelo tomador. Digite o CEP para preencher automaticamente.</p>
+                    }
                   </div>
                   <div className="col-span-2">
                     <label className="text-xs font-medium text-slate-500 block mb-1">Logradouro *</label>
@@ -1049,6 +1070,23 @@ export default function NfseAvulsa() {
   // ── Emissão em lote ───────────────────────────────────────────
   const handleEmitirTudo = async () => {
     if (!pending.length) return
+
+    // ── Validação pré-voo: ISS retido exige endereço completo ──
+    const semEndereco = pending
+      .map((item, i) => ({ item, i }))
+      .filter(({ item }) =>
+        item.issRetido && (!item.tamaCodMun || !item.tomaLogradouro || !item.tamaCep)
+      )
+    if (semEndereco.length > 0) {
+      const nomes = semEndereco.map(({ item }) => item.nome || 'Sem nome').join('\n• ')
+      alert(
+        `Não é possível emitir: os itens abaixo têm ISS retido pelo tomador mas ` +
+        `falta endereço completo (CEP + Município IBGE + Logradouro).\n\n• ${nomes}\n\n` +
+        `Clique no lápis para editar cada item e preencher o endereço.`
+      )
+      return
+    }
+
     const snapshot = [...pending]   // congela a lista no momento do clique
     setEmitSnapshot(snapshot)
     setEmitting(true)
@@ -1157,6 +1195,15 @@ export default function NfseAvulsa() {
     }
     setReprocessingId(em.id)
     try {
+      // Relê o registro do banco para garantir que usa cob_data_json atualizado
+      // (evita usar versão em cache do estado React após um UPDATE manual no banco)
+      const { data: fresh } = await supabase
+        .from('nfse_emissoes')
+        .select('cob_data_json')
+        .eq('id', em.id)
+        .single()
+      const cobData = fresh?.cob_data_json || em.cob_data_json
+
       const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
       const res = await fetch('/.netlify/functions/nfse-emitir', {
         method: 'POST',
@@ -1167,7 +1214,7 @@ export default function NfseAvulsa() {
         body: JSON.stringify({
           userId:     user.id,
           cobId:      null,
-          cobData:    em.cob_data_json,
+          cobData,
           homologacao: false,
         }),
       })

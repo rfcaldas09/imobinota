@@ -721,6 +721,16 @@ function buildDpsXml(cfg, cob, homologacao) {
       `</end>\n`
     : ''
 
+  // Validação E0237: quando ISS é retido pelo tomador (tpRetISSQN = 2),
+  // o endereço nacional completo é obrigatório pela API do SEFIN.
+  if (tpRetISSQN === 2 && !endTomaXml) {
+    throw new Error(
+      `Endereço do tomador obrigatório quando ISS é retido pelo tomador. ` +
+      `Informe CEP, município IBGE e logradouro de "${cob.tenant || 'tomador'}" antes de emitir. ` +
+      `(E0237)`
+    )
+  }
+
   const ns = 'http://www.sped.fazenda.gov.br/nfse'
 
   // ATENÇÃO: ordem dos elementos é xs:sequence — NÃO alterar a ordem!
