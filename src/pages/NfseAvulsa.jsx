@@ -621,6 +621,254 @@ function parseXlsRows(data, fallbackMesRef, retDefaults = NAT_RET_DEFAULT) {
 }
 
 // ── Modal: importar de planilha XLS ───────────────────────────────
+// ── Helpers OFX ──────────────────────────────────────────────────────────────
+function parseOfxText(text) {
+  // Extrai mês de referência do DTSTART  (ex: "20260701..." → "2026-07")
+  const dtStartRaw = (text.match(/<DTSTART>(\d{6})/i) || [])[1] || ''
+  const mesRef = dtStartRaw ? `${dtStartRaw.slice(0,4)}-${dtStartRaw.slice(4,6)}` : nowMonth()
+
+  // Extrai todos os blocos <STMTTRN>…</STMTTRN>
+  const blockRx = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi
+  const txns = []
+  let m
+  while ((m = blockRx.exec(text)) !== null) {
+    const b   = m[1]
+    const get = tag => (b.match(new RegExp(`<${tag}>([^<\\n\\r]+)`, 'i')) || [])[1]?.trim() || ''
+    const type = get('TRNTYPE')
+    if (type !== 'CREDIT') continue
+    const amount = parseFloat(get('TRNAMT').replace(',', '.')) || 0
+    if (amount <= 0) continue
+    const memo = get('MEMO')
+    // MEMO: "RECEBIMENTO PIX-PIX_CRED  61550141000172 YELUM SEGUROS S A"
+    const cpfCnpjMatch = memo.match(/\b(\d{11}|\d{14})\b/)
+    const cnpj = cpfCnpjMatch ? cpfCnpjMatch[1] : ''
+    const nome = cnpj
+      ? memo.slice(memo.indexOf(cnpj) + cnpj.length).trim()
+      : memo.replace(/^[^-]+-[^-]+-\s*/i, '').trim()
+    txns.push({ cnpj, nome, amount })
+  }
+
+  // Agrupa por CNPJ (ou nome se CNPJ ausente)
+  const map = new Map()
+  for (const t of txns) {
+    const key = t.cnpj || t.nome
+    if (!map.has(key)) map.set(key, { cnpj: t.cnpj, nome: t.nome, total: 0, count: 0 })
+    const g = map.get(key)
+    g.total += t.amount
+    g.count += 1
+    if (!g.nome && t.nome) g.nome = t.nome
+  }
+
+  return { mesRef, groups: [...map.values()] }
+}
+
+function fmtCnpj(s) {
+  if (!s) return ''
+  if (s.length === 14) return s.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')
+  if (s.length === 11) return s.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
+  return s
+}
+
+function ImportOfxModal({ onImport, onClose, defaultLc116 = '' }) {
+  const [step,          setStep]          = useState('upload')
+  const [mesRef,        setMesRef]        = useState(nowMonth())
+  const [discriminacao, setDiscriminacao] = useState('')
+  const [lc116,         setLc116]         = useState(defaultLc116)
+  const [grupos,        setGrupos]        = useState([])       // grupos por CNPJ
+  const [nomes,         setNomes]         = useState({})       // {cnpj: nomeEditado}
+  const [selectedKeys,  setSelectedKeys]  = useState(new Set())
+  const [fileName,      setFileName]      = useState('')
+  const [err,           setErr]           = useState('')
+  const [dragOver,      setDragOver]      = useState(false)
+  const fileRef = useRef(null)
+
+  const processFile = file => {
+    if (!file) return
+    setErr('')
+    const reader = new FileReader()
+    reader.onload = e => {
+      try {
+        // OFX pode ser latin-1; tenta UTF-8 primeiro, fallback visual apenas
+        const text = e.target.result
+        const { mesRef: mfx, groups } = parseOfxText(text)
+        if (!groups.length) { setErr('Nenhum recebimento (CREDIT) encontrado no arquivo OFX.'); return }
+        setMesRef(mfx)
+        setGrupos(groups)
+        // Sugestão de discriminação com mês por extenso
+        const [ano, mes] = mfx.split('-')
+        const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro']
+        setDiscriminacao(`Comissão de corretagem - ${meses[parseInt(mes,10)-1]}/${ano}`)
+        const nomesInit = {}
+        const keys = new Set()
+        groups.forEach(g => { nomesInit[g.cnpj || g.nome] = g.nome; keys.add(g.cnpj || g.nome) })
+        setNomes(nomesInit)
+        setSelectedKeys(keys)
+        setFileName(file.name)
+        setStep('preview')
+      } catch (ex) { setErr('Erro ao ler OFX: ' + ex.message) }
+    }
+    reader.readAsText(file, 'latin1')
+  }
+
+  const toggleKey = key => setSelectedKeys(prev => {
+    const next = new Set(prev)
+    next.has(key) ? next.delete(key) : next.add(key)
+    return next
+  })
+
+  const handleImport = () => {
+    const rows = grupos
+      .filter(g => selectedKeys.has(g.cnpj || g.nome))
+      .map(g => ({
+        _id:          crypto.randomUUID?.() || Math.random().toString(36).slice(2),
+        nome:         nomes[g.cnpj || g.nome] || g.nome,
+        cpfCnpj:      g.cnpj ? fmtCnpj(g.cnpj) : '',
+        email:        '',
+        valor:        maskBRL(String(Math.round(g.total * 100))),
+        mesRef,
+        discriminacao,
+        codLc116:     lc116,
+        issRetido:    false,
+        tamaCep: '', tomaLogradouro: '', tomaNumero: '', tamaBairro: '', tamaCodMun: '', tamaMunNome: '',
+        pIRRF: '', pCSLL: '', pCOFINS: '', pPIS: '', pINSS: '',
+        prestMunicipioIbge: '', prestInscricaoMunicipal: null,
+      }))
+    onImport(rows)
+  }
+
+  // ── Upload step ───────────────────────────────────────────────
+  if (step === 'upload') return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold text-slate-800">Importar NFS-e de extrato OFX</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+        <p className="text-xs text-slate-500">
+          Selecione o arquivo <strong>.ofx</strong> exportado do seu banco. Apenas os <strong>recebimentos (créditos)</strong> serão importados, agrupados por CNPJ do pagador.
+        </p>
+        <div
+          onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={e => { e.preventDefault(); setDragOver(false); processFile(e.dataTransfer.files[0]) }}
+          onClick={() => fileRef.current?.click()}
+          className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${dragOver ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300'}`}>
+          <p className="text-sm font-medium text-slate-600">Arraste o arquivo OFX aqui</p>
+          <p className="text-xs text-slate-400 mt-1">ou clique para selecionar</p>
+          <input ref={fileRef} type="file" accept=".ofx,.OFX" className="hidden"
+            onChange={e => processFile(e.target.files[0])}/>
+        </div>
+        {err && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{err}</p>}
+      </div>
+    </div>
+  )
+
+  // ── Preview step ──────────────────────────────────────────────
+  const totalSelecionado = grupos
+    .filter(g => selectedKeys.has(g.cnpj || g.nome))
+    .reduce((s, g) => s + g.total, 0)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
+          <div>
+            <h2 className="text-base font-bold text-slate-800">Revisão — {fileName}</h2>
+            <p className="text-xs text-slate-400 mt-0.5">{grupos.length} seguradora(s) encontrada(s) · apenas créditos</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+
+        {/* Campos globais */}
+        <div className="px-6 py-4 border-b border-slate-100 grid grid-cols-2 gap-3 shrink-0">
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Competência (mês/ano)</label>
+            <input type="month" value={mesRef} onChange={e => setMesRef(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">Código LC 116</label>
+            <input value={lc116} onChange={e => setLc116(e.target.value)}
+              placeholder="ex: 6.04" maxLength={10}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono"/>
+          </div>
+          <div className="col-span-2">
+            <label className="text-xs font-medium text-slate-500 block mb-1">Discriminação do serviço (aplicada a todas as notas)</label>
+            <input value={discriminacao} onChange={e => setDiscriminacao(e.target.value)}
+              placeholder="Comissão de corretagem - julho/2026"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"/>
+          </div>
+        </div>
+
+        {/* Tabela de grupos */}
+        <div className="overflow-y-auto flex-1">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-white border-b border-slate-100">
+              <tr className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                <th className="px-4 py-2.5 w-10">
+                  <input type="checkbox"
+                    checked={selectedKeys.size === grupos.length}
+                    onChange={() => setSelectedKeys(
+                      selectedKeys.size === grupos.length ? new Set() : new Set(grupos.map(g => g.cnpj || g.nome))
+                    )}
+                    className="accent-indigo-600"/>
+                </th>
+                <th className="px-4 py-2.5 text-left">Nome (editável)</th>
+                <th className="px-4 py-2.5 text-left">CNPJ/CPF</th>
+                <th className="px-3 py-2.5 text-center">Lançamentos</th>
+                <th className="px-4 py-2.5 text-right">Total (R$)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {grupos.map(g => {
+                const key = g.cnpj || g.nome
+                const sel = selectedKeys.has(key)
+                return (
+                  <tr key={key} className={`border-t border-slate-50 ${sel ? '' : 'opacity-40'}`}>
+                    <td className="px-4 py-3 text-center">
+                      <input type="checkbox" checked={sel} onChange={() => toggleKey(key)} className="accent-indigo-600"/>
+                    </td>
+                    <td className="px-4 py-3">
+                      <input
+                        value={nomes[key] || ''}
+                        onChange={e => setNomes(p => ({ ...p, [key]: e.target.value }))}
+                        className="w-full px-2 py-1 text-sm border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400"/>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{fmtCnpj(g.cnpj)}</td>
+                    <td className="px-3 py-3 text-center text-xs text-slate-500">{g.count}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-slate-800">
+                      {g.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-3 shrink-0">
+          <p className="text-sm text-slate-600">
+            <span className="font-semibold">{selectedKeys.size}</span> nota(s) · Total:{' '}
+            <span className="font-semibold">R$ {totalSelecionado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+          </p>
+          <div className="flex gap-2">
+            <button onClick={onClose}
+              className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50">
+              Cancelar
+            </button>
+            <button onClick={handleImport} disabled={selectedKeys.size === 0}
+              className="px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-40">
+              Adicionar {selectedKeys.size} à fila
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ImportXlsModal({ onImport, onClose, retDefaults = NAT_RET_DEFAULT }) {
   const [step, setStep]           = useState('upload')
   const [defaultMes, setDefaultMes] = useState(nowMonth())
@@ -951,10 +1199,11 @@ export default function NfseAvulsa() {
   const [issAliquota, setIssAliquota] = useState(0) // alíquota ISS próprio do perfil (%)
   const [reformaDefaults, setReformaDefaults] = useState({}) // NBS/CST/cIndOp/cClassTrib do perfil
   const [nfseDefaults, setNfseDefaults] = useState({}) // município e IM do prestador (defaults por nota)
+  const [profileLc116, setProfileLc116] = useState('')  // código LC116 padrão do perfil
   useEffect(() => {
     if (!user) return
     supabase.from('profiles')
-      .select('ret_irrf, ret_csll, ret_cofins, ret_pis, ret_inss, aliquota_iss, nfse_nbs, nfse_cst, nfse_cindop, nfse_cclasstrib, nfse_municipio_ibge, inscricao_municipal')
+      .select('ret_irrf, ret_csll, ret_cofins, ret_pis, ret_inss, aliquota_iss, nfse_nbs, nfse_cst, nfse_cindop, nfse_cclasstrib, nfse_municipio_ibge, inscricao_municipal, nfse_codigo_servico')
       .eq('id', user.id)
       .maybeSingle()
       .then(({ data }) => {
@@ -971,6 +1220,7 @@ export default function NfseAvulsa() {
             municipioIbge:      data.nfse_municipio_ibge   || '',
             inscricaoMunicipal: data.inscricao_municipal   || '',
           })
+          setProfileLc116(data.nfse_codigo_servico || '')
         }
       })
   }, [user])
@@ -979,7 +1229,8 @@ export default function NfseAvulsa() {
   const [pending, setPending]       = useState([])
   const [showModal, setShowModal]   = useState(false)
   const [editIdx, setEditIdx]       = useState(null)
-  const [showImportModal, setShowImportModal] = useState(false)
+  const [showImportModal,    setShowImportModal]    = useState(false)
+  const [showImportOfxModal, setShowImportOfxModal] = useState(false)
   const [selectedPending, setSelectedPending] = useState(new Set())
 
   // Estado de emissão em lote
@@ -1296,6 +1547,89 @@ export default function NfseAvulsa() {
   const [cancelConfirmId, setCancelConfirmId] = useState(null) // id da emissão aguardando confirmação
   const [cancellingId,    setCancellingId]    = useState(null) // id em processo de cancelamento
 
+  // ── Cancelamento em lote por range ───────────────────────────
+  const [showBulkCancel,    setShowBulkCancel]    = useState(false)
+  const [bulkCancelDe,      setBulkCancelDe]      = useState('')
+  const [bulkCancelAte,     setBulkCancelAte]     = useState('')
+  const [bulkCancelRunning, setBulkCancelRunning] = useState(false)
+  const [bulkCancelStop,    setBulkCancelStop]    = useState(false)
+  const [bulkCancelLog,     setBulkCancelLog]     = useState([])  // { numero, ok, msg }
+  const [bulkCancelCurrent, setBulkCancelCurrent] = useState(null)
+  const bulkCancelStopRef = useRef(false)
+
+  const handleBulkCancel = async () => {
+    const de  = parseInt(bulkCancelDe,  10)
+    const ate = parseInt(bulkCancelAte, 10)
+    if (!de || !ate || de > ate) {
+      alert('Informe um range válido (De ≤ Até).')
+      return
+    }
+    if (!window.confirm(
+      `Vai cancelar todas as NFS-e com número entre ${de} e ${ate} com status "emitida".\n\nIsso NÃO pode ser desfeito. Confirma?`
+    )) return
+
+    setBulkCancelRunning(true)
+    setBulkCancelStop(false)
+    bulkCancelStopRef.current = false
+    setBulkCancelLog([])
+    setBulkCancelCurrent(null)
+
+    // Busca todas as emissões no range do banco
+    const { data: rows, error } = await supabase
+      .from('nfse_emissoes')
+      .select('id, numero_nfse, tomador_nome, status')
+      .eq('user_id', user.id)
+      .eq('status', 'emitida')
+      .gte('numero_nfse', de)
+      .lte('numero_nfse', ate)
+      .order('numero_nfse', { ascending: true })
+
+    if (error) {
+      alert(`Erro ao buscar notas: ${error.message}`)
+      setBulkCancelRunning(false)
+      return
+    }
+    if (!rows?.length) {
+      alert(`Nenhuma nota com status "emitida" encontrada no range ${de}–${ate}.`)
+      setBulkCancelRunning(false)
+      return
+    }
+
+    const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
+    const delay = ms => new Promise(r => setTimeout(r, ms))
+
+    for (const row of rows) {
+      if (bulkCancelStopRef.current) {
+        setBulkCancelLog(p => [...p, { numero: row.numero_nfse, ok: null, msg: 'Interrompido pelo usuário' }])
+        break
+      }
+      setBulkCancelCurrent(row.numero_nfse)
+      try {
+        const res = await fetch('/.netlify/functions/nfse-cancelar', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
+          },
+          body: JSON.stringify({ userId: user.id, emissaoId: row.id }),
+        })
+        const data = await res.json()
+        if (res.ok) {
+          setBulkCancelLog(p => [...p, { numero: row.numero_nfse, ok: true,  msg: `${row.tomador_nome} — cancelada` }])
+        } else {
+          setBulkCancelLog(p => [...p, { numero: row.numero_nfse, ok: false, msg: data.error || 'Erro desconhecido' }])
+        }
+      } catch (e) {
+        setBulkCancelLog(p => [...p, { numero: row.numero_nfse, ok: false, msg: e.message }])
+      }
+      await delay(1500) // respeita rate limit do SEFIN
+    }
+
+    setBulkCancelCurrent(null)
+    setBulkCancelRunning(false)
+    loadHistory()
+  }
+
   const handleCancelar = async (em) => {
     if (cancelConfirmId !== em.id) {
       // Primeiro clique → pede confirmação
@@ -1500,6 +1834,12 @@ export default function NfseAvulsa() {
                 </button>
               )}
               <button
+                onClick={() => setShowImportOfxModal(true)}
+                disabled={emitting}
+                className="flex items-center gap-1.5 border border-blue-200 text-blue-700 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-50 disabled:opacity-50">
+                <IcUpload c="w-3.5 h-3.5"/> Importar OFX
+              </button>
+              <button
                 onClick={() => setShowImportModal(true)}
                 disabled={emitting}
                 className="flex items-center gap-1.5 border border-emerald-200 text-emerald-700 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-emerald-50 disabled:opacity-50">
@@ -1586,6 +1926,11 @@ export default function NfseAvulsa() {
               <div className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"/>
             )}
           </div>
+          <button
+            onClick={() => { setShowBulkCancel(v => !v); setBulkCancelLog([]); setBulkCancelRunning(false) }}
+            className="flex items-center gap-1.5 border border-red-200 text-red-600 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-50">
+            🚫 Cancelar em Lote por Range
+          </button>
           {filteredHistory.some(em => em.status === 'emitida') && (
             <button
               onClick={downloadZipMes}
@@ -1605,6 +1950,78 @@ export default function NfseAvulsa() {
             </button>
           )}
         </div>
+        {/* ── Painel cancelamento em lote ── */}
+        {showBulkCancel && (
+          <div className="border-b border-red-100 bg-red-50 px-5 py-4 space-y-3">
+            <p className="text-sm font-semibold text-red-700">Cancelar NFS-e em lote — informe o range de número da nota</p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-red-600 font-medium whitespace-nowrap">De (nº):</label>
+                <input
+                  type="number" min="1" value={bulkCancelDe}
+                  onChange={e => setBulkCancelDe(e.target.value)}
+                  disabled={bulkCancelRunning}
+                  className="w-28 px-3 py-1.5 text-sm border border-red-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400 font-mono disabled:opacity-50"/>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-red-600 font-medium whitespace-nowrap">Até (nº):</label>
+                <input
+                  type="number" min="1" value={bulkCancelAte}
+                  onChange={e => setBulkCancelAte(e.target.value)}
+                  disabled={bulkCancelRunning}
+                  className="w-28 px-3 py-1.5 text-sm border border-red-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400 font-mono disabled:opacity-50"/>
+              </div>
+              {!bulkCancelRunning ? (
+                <button
+                  onClick={handleBulkCancel}
+                  disabled={!bulkCancelDe || !bulkCancelAte}
+                  className="px-4 py-1.5 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 disabled:opacity-40">
+                  Iniciar Cancelamento
+                </button>
+              ) : (
+                <button
+                  onClick={() => { bulkCancelStopRef.current = true; setBulkCancelStop(true) }}
+                  disabled={bulkCancelStop}
+                  className="px-4 py-1.5 bg-slate-700 text-white text-sm font-semibold rounded-lg hover:bg-slate-800 disabled:opacity-50">
+                  {bulkCancelStop ? 'Parando após esta nota…' : '⏹ Parar'}
+                </button>
+              )}
+              {bulkCancelRunning && bulkCancelCurrent && (
+                <span className="text-xs text-red-600 flex items-center gap-1.5">
+                  <div className="w-3 h-3 border-2 border-red-400 border-t-transparent rounded-full animate-spin"/>
+                  Cancelando nº {bulkCancelCurrent}…
+                </span>
+              )}
+            </div>
+
+            {/* Log de resultados */}
+            {bulkCancelLog.length > 0 && (
+              <div className="mt-2 max-h-48 overflow-y-auto border border-red-200 rounded-lg bg-white text-xs font-mono divide-y divide-red-50">
+                {[...bulkCancelLog].reverse().map((entry, i) => (
+                  <div key={i} className={`px-3 py-1.5 flex items-center gap-2 ${
+                    entry.ok === true  ? 'text-green-700' :
+                    entry.ok === false ? 'text-red-700'   : 'text-slate-500'
+                  }`}>
+                    <span className="shrink-0">
+                      {entry.ok === true ? '✓' : entry.ok === false ? '✗' : '—'}
+                    </span>
+                    <span className="font-semibold">NF {entry.numero}</span>
+                    <span className="truncate">{entry.msg}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!bulkCancelRunning && bulkCancelLog.length > 0 && (
+              <p className="text-xs text-slate-500">
+                {bulkCancelLog.filter(e => e.ok).length} canceladas,{' '}
+                {bulkCancelLog.filter(e => e.ok === false).length} com erro,{' '}
+                {bulkCancelLog.filter(e => e.ok === null).length} interrompidas.
+              </p>
+            )}
+          </div>
+        )}
+
         {filteredHistory.length === 0 && !loadingHistory ? (
           <p className="text-center text-sm text-slate-400 py-10">Nenhuma emissão neste período.</p>
         ) : (
@@ -1760,6 +2177,15 @@ export default function NfseAvulsa() {
           issAliquota={issAliquota}
           reformaDefaults={reformaDefaults}
           nfseDefaults={nfseDefaults}
+        />
+      )}
+
+      {/* Modal — importar de OFX */}
+      {showImportOfxModal && (
+        <ImportOfxModal
+          onImport={rows => { setPending(p => [...p, ...rows]); setShowImportOfxModal(false) }}
+          onClose={() => setShowImportOfxModal(false)}
+          defaultLc116={profileLc116}
         />
       )}
 
