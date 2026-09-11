@@ -1262,7 +1262,11 @@ export default function NfseAvulsa() {
   }, [pending, lsKey])
 
   // ── Histórico ────────────────────────────────────────────────
-  const loadHistory = useCallback(async () => {
+  const HIST_PAGE_SIZE = 200
+  const [histOffset, setHistOffset] = useState(0)
+  const [histHasMore, setHistHasMore] = useState(false)
+
+  const loadHistory = useCallback(async (offset = 0, append = false) => {
     if (!user) return
     setLoadingHistory(true)
     const { data } = await supabase
@@ -1271,10 +1275,18 @@ export default function NfseAvulsa() {
       .eq('user_id', user.id)
       .is('cobranca_id', null)
       .order('created_at', { ascending: false })
-      .limit(100)
-    setHistory(data || [])
+      .range(offset, offset + HIST_PAGE_SIZE - 1)
+    const rows = data || []
+    setHistory(prev => append ? [...prev, ...rows] : rows)
+    setHistHasMore(rows.length === HIST_PAGE_SIZE)
+    setHistOffset(offset)
     setLoadingHistory(false)
   }, [user])
+
+  const loadMoreHistory = () => {
+    const nextOffset = histOffset + HIST_PAGE_SIZE
+    loadHistory(nextOffset, true)
+  }
 
   useEffect(() => { loadHistory() }, [loadHistory])
 
@@ -1579,14 +1591,13 @@ export default function NfseAvulsa() {
     setBulkCancelLog([])
     setBulkCancelCurrent(null)
 
-    // Busca todas as emissões no range do banco
-    const { data: rows, error } = await supabase
+    // Busca todas as emitidas do usuário e filtra o range em JS
+    // (evita comparação string vs. inteiro no Supabase quando numero_nfse é TEXT)
+    const { data: allRows, error } = await supabase
       .from('nfse_emissoes')
       .select('id, numero_nfse, tomador_nome, status')
       .eq('user_id', user.id)
       .eq('status', 'emitida')
-      .gte('numero_nfse', de)
-      .lte('numero_nfse', ate)
       .order('numero_nfse', { ascending: true })
 
     if (error) {
@@ -1594,7 +1605,13 @@ export default function NfseAvulsa() {
       setBulkCancelRunning(false)
       return
     }
-    if (!rows?.length) {
+
+    const rows = (allRows || []).filter(r => {
+      const n = parseInt(r.numero_nfse, 10)
+      return n >= de && n <= ate
+    })
+
+    if (!rows.length) {
       alert(`Nenhuma nota com status "emitida" encontrada no range ${de}–${ate}.`)
       setBulkCancelRunning(false)
       return
@@ -2176,6 +2193,21 @@ export default function NfseAvulsa() {
               ))}
             </tbody>
           </table>
+        )}
+
+        {/* Botão carregar mais registros */}
+        {histHasMore && (
+          <div className="flex justify-center pt-4 pb-2">
+            <button
+              onClick={loadMoreHistory}
+              disabled={loadingHistory}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50">
+              {loadingHistory
+                ? <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"/>
+                : null}
+              Carregar mais
+            </button>
+          </div>
         )}
       </div>
 
