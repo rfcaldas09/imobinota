@@ -1239,6 +1239,7 @@ export default function NfseAvulsa() {
   const [emitResults, setEmitResults] = useState([])
   const [emitCurrent, setEmitCurrent] = useState(null)
   const [emitDone, setEmitDone]       = useState(false)
+  const emitStopRef = useRef(false)  // sinaliza interrupção da fila
 
   // Histórico de avulsas emitidas
   const [history, setHistory]         = useState([])
@@ -1343,6 +1344,7 @@ export default function NfseAvulsa() {
     setEmitting(true)
     setEmitResults([])
     setEmitDone(false)
+    emitStopRef.current = false
 
     const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
 
@@ -1401,6 +1403,9 @@ export default function NfseAvulsa() {
       } catch (e) {
         setEmitResults(p => [...p, { index: i, ok: false, erro: e.message }])
       }
+
+      // Para aqui se o usuário clicou em Parar
+      if (emitStopRef.current) break
 
       // Aguarda 2s entre notas para evitar rate limiting do SEFIN
       if (i < snapshot.length - 1) await delay(2000)
@@ -1831,6 +1836,13 @@ export default function NfseAvulsa() {
                 <button onClick={handleEmitirTudo}
                   className="flex items-center gap-1.5 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-700">
                   <IcSend c="w-3.5 h-3.5"/> Gerar e Enviar Tudo ({pending.length})
+                </button>
+              )}
+              {emitting && (
+                <button
+                  onClick={() => { emitStopRef.current = true }}
+                  className="flex items-center gap-1.5 bg-red-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-red-700 animate-pulse">
+                  ⏹ Parar após esta nota
                 </button>
               )}
               <button
