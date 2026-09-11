@@ -1456,6 +1456,38 @@ export default function NfseAvulsa() {
     }
   }
 
+  // ── Seleção múltipla no histórico ────────────────────────────
+  const [selectedHistIds, setSelectedHistIds] = useState(new Set())
+  const [deletingSelected, setDeletingSelected] = useState(false)
+
+  const toggleHistSelect = (id) => {
+    setSelectedHistIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const handleDeleteSelected = async () => {
+    if (selectedHistIds.size === 0) return
+    if (!window.confirm(
+      `Excluir ${selectedHistIds.size} registro(s) selecionado(s)? Esta ação não pode ser desfeita.`
+    )) return
+    setDeletingSelected(true)
+    try {
+      await supabase
+        .from('nfse_emissoes')
+        .delete()
+        .in('id', [...selectedHistIds])
+      setSelectedHistIds(new Set())
+      loadHistory()
+    } catch (e) {
+      alert('Erro ao excluir registros.')
+    } finally {
+      setDeletingSelected(false)
+    }
+  }
+
   const handleReprocess = async (em) => {
     if (!em.cob_data_json) {
       alert('Dados da emissão original não disponíveis. Esta nota foi emitida antes do suporte a reprocessamento.')
@@ -1955,11 +1987,24 @@ export default function NfseAvulsa() {
               <div className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"/>
             )}
           </div>
-          <button
-            onClick={() => { setShowBulkCancel(v => !v); setBulkCancelLog([]); setBulkCancelRunning(false) }}
-            className="flex items-center gap-1.5 border border-red-200 text-red-600 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-50">
-            🚫 Cancelar em Lote por Range
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {selectedHistIds.size > 0 && (
+              <button
+                onClick={handleDeleteSelected}
+                disabled={deletingSelected}
+                className="flex items-center gap-1.5 bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-700 disabled:opacity-50">
+                {deletingSelected
+                  ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
+                  : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>}
+                Excluir selecionadas ({selectedHistIds.size})
+              </button>
+            )}
+            <button
+              onClick={() => { setShowBulkCancel(v => !v); setBulkCancelLog([]); setBulkCancelRunning(false) }}
+              className="flex items-center gap-1.5 border border-red-200 text-red-600 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-50">
+              🚫 Cancelar em Lote por Range
+            </button>
+          </div>
           {filteredHistory.some(em => em.status === 'emitida') && (
             <button
               onClick={downloadZipMes}
@@ -2057,6 +2102,28 @@ export default function NfseAvulsa() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-50">
+                <th className="pl-4 pr-2 py-2.5 w-8">
+                  <input
+                    type="checkbox"
+                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-400 cursor-pointer"
+                    checked={filteredHistory.length > 0 && filteredHistory.every(em => selectedHistIds.has(em.id))}
+                    onChange={e => {
+                      if (e.target.checked) {
+                        setSelectedHistIds(prev => {
+                          const next = new Set(prev)
+                          filteredHistory.forEach(em => next.add(em.id))
+                          return next
+                        })
+                      } else {
+                        setSelectedHistIds(prev => {
+                          const next = new Set(prev)
+                          filteredHistory.forEach(em => next.delete(em.id))
+                          return next
+                        })
+                      }
+                    }}
+                  />
+                </th>
                 <th className="px-5 py-2.5 text-left">Tomador</th>
                 <th className="px-4 py-2.5 text-left">Competência</th>
                 <th className="px-4 py-2.5 text-right">Valor</th>
@@ -2068,7 +2135,15 @@ export default function NfseAvulsa() {
             </thead>
             <tbody>
               {filteredHistory.map(em => (
-                <tr key={em.id} className="border-t border-slate-50 hover:bg-slate-50/50">
+                <tr key={em.id} className={`border-t border-slate-50 hover:bg-slate-50/50 ${selectedHistIds.has(em.id) ? 'bg-indigo-50/40' : ''}`}>
+                  <td className="pl-4 pr-2 py-2.5 w-8">
+                    <input
+                      type="checkbox"
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-400 cursor-pointer"
+                      checked={selectedHistIds.has(em.id)}
+                      onChange={() => toggleHistSelect(em.id)}
+                    />
+                  </td>
                   <td className="px-5 py-2.5 font-medium text-slate-800">{em.tomador_nome || '—'}</td>
                   <td className="px-4 py-2.5 text-slate-500">{em.competencia || '—'}</td>
                   <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{fmtBRL(em.valor_servico)}</td>
