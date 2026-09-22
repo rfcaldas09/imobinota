@@ -280,8 +280,7 @@ export default function Desembolsos() {
       supabase
         .from('contratos')
         .select('id, imovel, inquilinos(nome)')
-        .eq('user_id', user.id)
-        .order('imovel'),
+        .eq('user_id', user.id),
 
       supabase
         .from('classificacoes_desembolso')
@@ -296,7 +295,7 @@ export default function Desembolsos() {
       id:     c.id,
       imovel: c.imovel || '—',
       tenant: c.inquilinos?.nome || '—',
-    })))
+    })).sort((a, b) => a.tenant.localeCompare(b.tenant, 'pt-BR', { sensitivity: 'base' })))
     setClassificacoes(cls || [])
     setLoading(false)
   }
