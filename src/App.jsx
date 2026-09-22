@@ -27,6 +27,19 @@ function PrivateRoute({ children }) {
   return user ? children : <Navigate to="/" replace />
 }
 
+// Rota acessível apenas para usuários NÃO afiliados (ex: tela de plano/pagamento)
+function DirectClientRoute({ children }) {
+  const { user, loading, isAffiliate } = useAuth()
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+  if (!user) return <Navigate to="/" replace />
+  if (isAffiliate) return <Navigate to="/dashboard" replace />
+  return children
+}
+
 function AppContent() {
   const { wizardOpen, closeWizard, termsOnly } = useOnboarding()
   return (
@@ -53,7 +66,7 @@ function AppRoutes() {
       <Route path="/relatorios" element={<PrivateRoute><Layout><Relatorios /></Layout></PrivateRoute>} />
       <Route path="/inquilinos" element={<PrivateRoute><Layout><Inquilinos /></Layout></PrivateRoute>} />
       <Route path="/config"     element={<PrivateRoute><Layout><Config /></Layout></PrivateRoute>} />
-      <Route path="/plano"      element={<PrivateRoute><Layout><Plano /></Layout></PrivateRoute>} />
+      <Route path="/plano"      element={<DirectClientRoute><Layout><Plano /></Layout></DirectClientRoute>} />
       <Route path="/nfse-avulsa"   element={<PrivateRoute><Layout><NfseAvulsa /></Layout></PrivateRoute>} />
       <Route path="/inadimplencia" element={<PrivateRoute><Layout><Inadimplencia /></Layout></PrivateRoute>} />
       <Route path="/desembolsos"   element={<PrivateRoute><Layout><Desembolsos /></Layout></PrivateRoute>} />

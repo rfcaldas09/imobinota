@@ -56,13 +56,15 @@ exports.handler = async (event) => {
   if (event.httpMethod === 'PATCH') {
     let body
     try { body = JSON.parse(event.body || '{}') } catch (_) { body = {} }
-    const { userId, admin_ativo, is_contabilidade } = body
+    const { userId, admin_ativo, is_contabilidade, parent_user_id } = body
     if (!userId) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'userId é obrigatório' }) }
     }
     const patch = {}
     if (typeof admin_ativo      === 'boolean') patch.admin_ativo      = admin_ativo
     if (typeof is_contabilidade === 'boolean') patch.is_contabilidade = is_contabilidade
+    // parent_user_id: string (UUID do pai) ou null (remove vínculo)
+    if ('parent_user_id' in body) patch.parent_user_id = parent_user_id ?? null
     if (Object.keys(patch).length === 0) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: 'Nenhum campo válido para atualizar' }) }
     }
@@ -80,7 +82,7 @@ exports.handler = async (event) => {
   // Busca todos os perfis
   const { data: profiles, error: profErr } = await supabase
     .from('profiles')
-    .select('id, company_name, cnpj, email_contato, nfse_cert_path, plano_tipo, plano_fim, created_at, admin_ativo, is_contabilidade')
+    .select('id, company_name, cnpj, email_contato, nfse_cert_path, plano_tipo, plano_fim, created_at, admin_ativo, is_contabilidade, parent_user_id')
     .order('created_at', { ascending: false })
 
   if (profErr) return { statusCode: 500, headers, body: JSON.stringify({ error: profErr.message }) }
@@ -120,6 +122,10 @@ exports.handler = async (event) => {
     }
   }
 
+  // Mapa id → email para exibir o pai pelo email na interface
+  const emailById = {}
+  for (const p of profiles || []) emailById[p.id] = emailByUid[p.id] || p.email_contato || p.id
+
   const usuarios = (profiles || []).map(p => ({
     id:          p.id,
     email:       emailByUid[p.id] || p.email_contato || '—',
@@ -131,6 +137,8 @@ exports.handler = async (event) => {
     created_at:  p.created_at,
     admin_ativo:      p.admin_ativo !== false, // default true
     is_contabilidade: !!p.is_contabilidade,
+    parent_user_id:   p.parent_user_id || null,
+    parent_email:     p.parent_user_id ? (emailById[p.parent_user_id] || p.parent_user_id) : null,
     ...(statsById[p.id] || {
       avulsa_ok: 0, avulsa_erro: 0, avulsa_erros: [],
       rec_ok: 0, rec_erro: 0, total_emitido: 0,

@@ -15,16 +15,18 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const [isContabilidade, setIsContabilidade] = useState(false)
   const [controlaGarantidora, setControlaGarantidora] = useState(false)
+  const [parentUserId, setParentUserId] = useState(null) // afiliado: id do usuário pai
 
   const loadProfile = async (userId) => {
     if (!userId || !supabaseConfigured) return
     const { data } = await supabase
       .from('profiles')
-      .select('is_contabilidade, controla_garantidora')
+      .select('is_contabilidade, controla_garantidora, parent_user_id')
       .eq('id', userId)
       .maybeSingle()
     setIsContabilidade(!!data?.is_contabilidade)
     setControlaGarantidora(!!data?.controla_garantidora)
+    setParentUserId(data?.parent_user_id ?? null)
   }
 
   useEffect(() => {
@@ -46,6 +48,7 @@ export function AuthProvider({ children }) {
         setUser(null)
         setIsContabilidade(false)
         setControlaGarantidora(false)
+        setParentUserId(null)
       } else if (session?.user) {
         const isNew = !user || user.id !== session.user.id
         setUser(prev => prev?.id === session.user.id ? prev : session.user)
@@ -80,8 +83,16 @@ export function AuthProvider({ children }) {
     return supabase.auth.signOut()
   }
 
+  // isAffiliate: usuário cujo acesso é gerenciado por um pai (contabilidade revendedora)
+  const isAffiliate = !!parentUserId
+
   return (
-    <AuthContext.Provider value={{ user, loading, isContabilidade, controlaGarantidora, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{
+      user, loading,
+      isContabilidade, controlaGarantidora,
+      parentUserId, isAffiliate,
+      signIn, signUp, signOut,
+    }}>
       {children}
     </AuthContext.Provider>
   )

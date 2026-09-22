@@ -8,18 +8,21 @@ export const TRIAL_DAYS = 2
 const SubscriptionContext = createContext(null)
 
 export function SubscriptionProvider({ children }) {
-  const { user } = useAuth()
-  const [sub, setSub]       = useState(null)  // dados crus do profiles
+  const { user, parentUserId } = useAuth()
+  const [sub, setSub]         = useState(null)  // dados crus do profiles
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
     if (!user) { setSub(null); setLoading(false); return }
     setLoading(true)
 
+    // Afiliados herdam o plano do pai — busca o profile do pai em vez do próprio
+    const targetId = parentUserId ?? user.id
+
     const { data, error } = await supabase
       .from('profiles')
       .select('plano_tipo, plano_fim')
-      .eq('id', user.id)
+      .eq('id', targetId)
       .maybeSingle()
 
     // Se retornou null mas o usuário está autenticado, pode ser JWT expirado.
@@ -30,7 +33,7 @@ export function SubscriptionProvider({ children }) {
         const { data: retried } = await supabase
           .from('profiles')
           .select('plano_tipo, plano_fim')
-          .eq('id', user.id)
+          .eq('id', targetId)
           .maybeSingle()
         setSub(retried)
         setLoading(false)
@@ -40,7 +43,7 @@ export function SubscriptionProvider({ children }) {
 
     setSub(data)
     setLoading(false)
-  }, [user?.id])  // depende só do ID — novo objeto com mesmo ID não re-busca
+  }, [user?.id, parentUserId])  // re-busca se o user ou o pai mudar
 
   useEffect(() => { load() }, [load])
 
@@ -50,7 +53,22 @@ export function SubscriptionProvider({ children }) {
 
     const now = new Date()
 
-    // Verificar trial (baseado no created_at do auth)
+    // Afiliados nunca entram em trial próprio — dependem inteiramente do pai
+    if (parentUserId) {
+      if (!sub?.plano_tipo || sub.plano_tipo === 'trial') {
+        // Pai ainda em trial: afiliado também considera ativo durante o trial do pai
+        const createdAt = user?.created_at ? new Date(user.created_at) : now
+        const trialEnd  = new Date(createdAt.getTime() + TRIAL_DAYS * 24 * 3600 * 1000)
+        const daysLeft  = Math.max(0, Math.ceil((trialEnd - now) / 86400000))
+        return { loading: false, isActive: daysLeft > 0, isTrial: true, plan: 'trial', daysLeft, trialEnd }
+      }
+      const fim      = sub.plano_fim ? new Date(sub.plano_fim) : null
+      const isActive = fim ? fim > now : false
+      const daysLeft = fim ? Math.max(0, Math.ceil((fim - now) / 86400000)) : 0
+      return { loading: false, isActive, isTrial: false, plan: sub.plano_tipo, daysLeft, planoFim: fim }
+    }
+
+    // ── Usuário direto (sem pai) — lógica original ──────────────────
     if (!sub?.plano_tipo || sub.plano_tipo === 'trial') {
       const createdAt = user?.created_at ? new Date(user.created_at) : now
       const trialEnd  = new Date(createdAt.getTime() + TRIAL_DAYS * 24 * 3600 * 1000)

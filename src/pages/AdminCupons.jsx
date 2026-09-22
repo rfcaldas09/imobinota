@@ -198,6 +198,8 @@ function TabUsuarios() {
   const [busca, setBusca]           = useState('')
   const [filtroAtivo, setFiltroAtivo] = useState('ativos') // 'ativos' | 'inativos' | 'todos'
   const [toggling, setToggling]     = useState(null) // '<id>-ativo' | '<id>-contab'
+  const [editParent, setEditParent] = useState(null) // id do usuário cujo parent está sendo editado
+  const [parentInput, setParentInput] = useState('') // email digitado para o pai
 
   const getToken = async () => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -248,6 +250,27 @@ function TabUsuarios() {
     try {
       await patchUser(u.id, { is_contabilidade: !u.is_contabilidade })
       setUsuarios(prev => prev.map(x => x.id === u.id ? { ...x, is_contabilidade: !u.is_contabilidade } : x))
+    } catch (e) { alert(e.message) }
+    finally { setToggling(null) }
+  }
+
+  const handleSetParent = async (childUser) => {
+    const email = parentInput.trim().toLowerCase()
+    // Resolver email → id (busca na lista já carregada)
+    const parent = email ? usuarios.find(u => u.email.toLowerCase() === email) : null
+    if (email && !parent) {
+      alert(`Usuário "${email}" não encontrado. Verifique o e-mail.`)
+      return
+    }
+    setToggling(`${childUser.id}-parent`)
+    try {
+      const newParentId = parent ? parent.id : null
+      await patchUser(childUser.id, { parent_user_id: newParentId })
+      setUsuarios(prev => prev.map(x => x.id === childUser.id
+        ? { ...x, parent_user_id: newParentId, parent_email: parent ? parent.email : null }
+        : x))
+      setEditParent(null)
+      setParentInput('')
     } catch (e) { alert(e.message) }
     finally { setToggling(null) }
   }
@@ -358,6 +381,7 @@ function TabUsuarios() {
                 <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Total emitido</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Cadastro</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Contabil.</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Afiliado de</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
@@ -411,6 +435,40 @@ function TabUsuarios() {
                       }`}>
                       {toggling === `${u.id}-contab` ? '…' : u.is_contabilidade ? '✓ Ativo' : '— Off'}
                     </button>
+                  </td>
+                  <td className="px-4 py-3 text-center min-w-[160px]">
+                    {editParent === u.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={parentInput}
+                          onChange={e => setParentInput(e.target.value)}
+                          placeholder="email do pai…"
+                          className="flex-1 min-w-0 text-xs px-2 py-1 border border-indigo-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                          onKeyDown={e => { if (e.key === 'Enter') handleSetParent(u); if (e.key === 'Escape') { setEditParent(null); setParentInput('') } }}
+                        />
+                        <button onClick={() => handleSetParent(u)} disabled={toggling === `${u.id}-parent`}
+                          className="text-xs px-1.5 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40">
+                          {toggling === `${u.id}-parent` ? '…' : '✓'}
+                        </button>
+                        <button onClick={() => { setEditParent(null); setParentInput('') }}
+                          className="text-xs px-1.5 py-1 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200">
+                          ✕
+                        </button>
+                      </div>
+                    ) : u.parent_email ? (
+                      <button onClick={() => { setEditParent(u.id); setParentInput(u.parent_email) }}
+                        title="Clique para alterar ou remover o vínculo"
+                        className="max-w-full truncate text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-lg hover:bg-indigo-100 transition-colors">
+                        🔗 {u.parent_email}
+                      </button>
+                    ) : (
+                      <button onClick={() => { setEditParent(u.id); setParentInput('') }}
+                        className="text-xs text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 px-2 py-1 rounded-lg transition-colors">
+                        + Vincular pai
+                      </button>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button

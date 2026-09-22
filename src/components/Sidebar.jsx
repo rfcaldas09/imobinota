@@ -24,7 +24,7 @@ const NAV = [
 ]
 
 export default function Sidebar() {
-  const { user, signOut, isContabilidade, controlaGarantidora } = useAuth()
+  const { user, signOut, isContabilidade, controlaGarantidora, isAffiliate } = useAuth()
   const navigate = useNavigate()
   const sub = useSubscription()
   const [showUserMenu, setShowUserMenu] = useState(false)
@@ -96,24 +96,26 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Licença */}
-      <div className="px-3 pb-2">
-        <button onClick={() => navigate('/plano')}
-          className={'w-full rounded-xl p-3 text-left transition-all border ' + widgetColor}>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-semibold text-slate-600 truncate">{planName}</span>
-            <span className={'text-xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ml-1 ' + badgeColor}>
-              {remaining}d
-            </span>
-          </div>
-          <div className="h-1.5 bg-white/70 rounded-full overflow-hidden mb-1">
-            <div className={'h-full rounded-full transition-all ' + barColor} style={{ width: pct + '%' }} />
-          </div>
-          <p className={'text-[10px] ' + textColor}>
-            {urgent ? '⚠️ Renove em breve!' : 'Encerra em ' + fmtDate(endDate)}
-          </p>
-        </button>
-      </div>
+      {/* Licença — oculto para afiliados (acesso gerenciado pelo pai) */}
+      {!isAffiliate && (
+        <div className="px-3 pb-2">
+          <button onClick={() => navigate('/plano')}
+            className={'w-full rounded-xl p-3 text-left transition-all border ' + widgetColor}>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-semibold text-slate-600 truncate">{planName}</span>
+              <span className={'text-xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ml-1 ' + badgeColor}>
+                {remaining}d
+              </span>
+            </div>
+            <div className="h-1.5 bg-white/70 rounded-full overflow-hidden mb-1">
+              <div className={'h-full rounded-full transition-all ' + barColor} style={{ width: pct + '%' }} />
+            </div>
+            <p className={'text-[10px] ' + textColor}>
+              {urgent ? '⚠️ Renove em breve!' : 'Encerra em ' + fmtDate(endDate)}
+            </p>
+          </button>
+        </div>
+      )}
 
       {/* Suporte WhatsApp */}
       <div className="px-3 pb-2">
@@ -150,13 +152,15 @@ export default function Sidebar() {
 
         {showUserMenu && (
           <div className="absolute bottom-full left-3 right-3 mb-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-50">
-            <button onClick={() => { navigate('/plano'); setShowUserMenu(false) }}
-              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
-              🏷️ Meu Plano
-            </button>
+            {!isAffiliate && (
+              <button onClick={() => { navigate('/plano'); setShowUserMenu(false) }}
+                className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                🏷️ Meu Plano
+              </button>
+            )}
             <button
               onClick={handleLogout}
-              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors border-t border-slate-100"
+              className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors ${!isAffiliate ? 'border-t border-slate-100' : ''}`}
             >
               <IcLogout c="w-4 h-4" /> Sair
             </button>
