@@ -82,6 +82,12 @@ export const CINDOP_OPTIONS = [
   { value: '100200', label: '100200 — Zona Franca de Manaus — Venda a não-contribuinte' },
   { value: '100300', label: '100300 — Área de Livre Comércio' },
 
+  // 10. Demais bens móveis imateriais / direitos — Inc. X (art. 11 LC 214/2025)
+  // Fonte: Anexo C-IndOp / AnexoVII-IndOp_IBSCBS (cIndOp NFS-e Nacional)
+  { value: '100501', label: '100501 — Demais bens móveis imateriais — Domicílio principal do adquirente (onerosas)' },
+  { value: '100502', label: '100502 — Demais bens móveis imateriais — Domicílio do destinatário — adquirente no exterior (onerosas)' },
+  { value: '100503', label: '100503 — Demais bens móveis imateriais — Endereço do destinatário (onerosas)' },
+
   // 11. Outros
   { value: '990100', label: '990100 — Outros' },
 ];
