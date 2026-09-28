@@ -293,17 +293,9 @@ export default function Inquilinos() {
               <h2 className="font-bold text-slate-900">
                 {editMode ? 'Editar Cliente' : 'Perfil do Cliente'}
               </h2>
-              <div className="flex items-center gap-2">
-                {!editMode && (
-                  <button onClick={startEdit} title="Editar"
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
-                    <IcEdit c="w-4 h-4"/>
-                  </button>
-                )}
-                <button onClick={closeDrawer} className="text-slate-400 hover:text-slate-700">
-                  <IcX c="w-5 h-5"/>
-                </button>
-              </div>
+              <button onClick={closeDrawer} className="text-slate-400 hover:text-slate-700">
+                <IcX c="w-5 h-5"/>
+              </button>
             </div>
 
             <div className="p-5 space-y-5 flex-1">
@@ -401,34 +393,43 @@ export default function Inquilinos() {
               )}
             </div>
 
-            {/* ── Rodapé: Excluir (só sem contratos) ───────── */}
-            {!editMode && selected.contracts.length === 0 && (
-              <div className="px-5 py-4 border-t border-slate-100">
-                {confirmDel ? (
-                  <div className="space-y-2">
-                    <p className="text-sm text-slate-700 font-medium text-center">
-                      Confirmar exclusão de <span className="font-bold">{selected.name}</span>?
-                    </p>
-                    <div className="flex gap-2">
-                      <button onClick={() => setConfirmDel(false)} disabled={saving}
-                        className="flex-1 py-2 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40">
-                        Cancelar
-                      </button>
-                      <button onClick={handleDelete} disabled={saving}
-                        className="flex-1 py-2 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-40 flex items-center justify-center gap-2">
-                        {saving
-                          ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Excluindo…</>
-                          : <><IcTrash c="w-4 h-4"/> Excluir</>
-                        }
-                      </button>
+            {/* ── Rodapé: Editar + Excluir ─────────────────── */}
+            {!editMode && (
+              <div className="px-5 py-4 border-t border-slate-100 space-y-2">
+
+                {/* Botão Editar — sempre visível */}
+                <button onClick={startEdit}
+                  className="w-full flex items-center justify-center gap-2 bg-slate-100 text-slate-700 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-200 transition-colors">
+                  <IcEdit c="w-4 h-4"/> Editar Cliente
+                </button>
+
+                {/* Botão Excluir — só sem contratos */}
+                {selected.contracts.length === 0 && (
+                  confirmDel ? (
+                    <div className="space-y-2 pt-1">
+                      <p className="text-sm text-slate-700 font-medium text-center">
+                        Confirmar exclusão de <span className="font-bold">{selected.name}</span>?
+                      </p>
+                      <div className="flex gap-2">
+                        <button onClick={() => setConfirmDel(false)} disabled={saving}
+                          className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40">
+                          Cancelar
+                        </button>
+                        <button onClick={handleDelete} disabled={saving}
+                          className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-40 flex items-center justify-center gap-2">
+                          {saving
+                            ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Excluindo…</>
+                            : <><IcTrash c="w-4 h-4"/> Excluir</>
+                          }
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <button onClick={() => { setConfirmDel(true); setError('') }}
-                    className="w-full py-2 rounded-xl border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50 flex items-center justify-center gap-2 transition-colors">
-                    <IcTrash c="w-4 h-4"/>
-                    Excluir cliente
-                  </button>
+                  ) : (
+                    <button onClick={() => { setConfirmDel(true); setError('') }}
+                      className="w-full flex items-center justify-center gap-2 bg-red-50 text-red-600 py-2.5 rounded-xl font-semibold text-sm hover:bg-red-100 transition-colors">
+                      <IcTrash c="w-4 h-4"/> Excluir Cliente
+                    </button>
+                  )
                 )}
               </div>
             )}
