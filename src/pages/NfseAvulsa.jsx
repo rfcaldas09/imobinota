@@ -79,6 +79,8 @@ const mkBlankForm = (retDefaults = NAT_RET_DEFAULT, reformaDefaults = {}, nfseDe
   // NFS-e por nota: município emissor e IM do prestador (pré-preenchidos com valores do perfil)
   prestMunicipioIbge:      nfseDefaults.municipioIbge      || '',
   prestInscricaoMunicipal: nfseDefaults.inscricaoMunicipal || '',
+  // Local da prestação do serviço (cLocPrestacao no DPS) — separado do município emissor
+  locPrestacaoIbge: '', locPrestacaoNome: '',
   // Reforma Tributária (IBS/CBS) — informativos, pré-preenchidos com defaults do perfil
   nbs:        reformaDefaults.nbs        || '',
   cst:        reformaDefaults.cst        || '',
@@ -185,6 +187,18 @@ function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, 
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Auto-marca ISS retido quando: tomador é PJ (CNPJ) + mesmo município do prestador + serviço médico (LC 4.xx)
+  useEffect(() => {
+    const isPj     = digits(f.cpfCnpj || '').length === 14
+    const prestMun = nfseDefaults.municipioIbge || f.prestMunicipioIbge
+    const sameMun  = f.tamaCodMun && prestMun && f.tamaCodMun === prestMun
+    const isMedic  = /^0?4\./.test(f.codLc116 || '')
+    if (isPj && sameMun && isMedic && !f.issRetido) {
+      setF(p => ({ ...p, issRetido: true }))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f.cpfCnpj, f.tamaCodMun, f.codLc116])
 
   const handleSave = () => {
     if (!f.nome.trim())        { setErr('Informe o nome do tomador.'); return }
@@ -523,6 +537,42 @@ function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, 
             </div>
           </div>
 
+          {/* ── Local da Prestação do Serviço ── */}
+          <div className="border border-teal-200 bg-teal-50 rounded-xl px-4 py-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-teal-700">📍 Local da Prestação do Serviço</span>
+              <span className="text-xs text-slate-400">(onde o serviço foi realizado — campo cLocPrestacao)</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-slate-500 block mb-1">IBGE do município (7 dígitos)</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={7}
+                  value={f.locPrestacaoIbge}
+                  onChange={e => setF(p => ({ ...p, locPrestacaoIbge: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
+                  placeholder="Vazio = usa município emissor"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 block mb-1">Nome do município</label>
+                <input
+                  type="text"
+                  value={f.locPrestacaoNome}
+                  onChange={e => setF(p => ({ ...p, locPrestacaoNome: e.target.value }))}
+                  placeholder="Opcional"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-teal-700 leading-snug">
+              Preencha quando o serviço foi realizado em município diferente do seu (ex: ambulatório em outra cidade).
+              Deixe vazio para usar o município emissor ({nfseDefaults.municipioIbge || 'do perfil'}).
+            </p>
+          </div>
+
           {err && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{err}</p>}
         </div>
 
@@ -616,6 +666,7 @@ function parseXlsRows(data, fallbackMesRef, retDefaults = NAT_RET_DEFAULT) {
       ...retDefaults,
       tamaCep,
       tomaLogradouro: '', tomaNumero: '', tamaBairro: '', tamaCodMun: '', tamaMunNome: '',
+      locPrestacaoIbge: '', locPrestacaoNome: '',
     }
   }).filter(r => r.nome && parseFloat(r.valor) > 0)
 }
@@ -732,6 +783,7 @@ function ImportOfxModal({ onImport, onClose, defaultLc116 = '' }) {
         tamaCep: '', tomaLogradouro: '', tomaNumero: '', tamaBairro: '', tamaCodMun: '', tamaMunNome: '',
         pIRRF: '', pCSLL: '', pCOFINS: '', pPIS: '', pINSS: '',
         prestMunicipioIbge: '', prestInscricaoMunicipal: null,
+        locPrestacaoIbge: '', locPrestacaoNome: '',
       }))
     onImport(rows)
   }
@@ -1402,6 +1454,8 @@ export default function NfseAvulsa() {
               // Por nota: município emissor e IM do prestador (sobrepõem o perfil se preenchidos)
               prestMunicipioIbge:      item.prestMunicipioIbge      || null,
               prestInscricaoMunicipal: item.prestInscricaoMunicipal ?? null,
+              // Local da prestação do serviço (cLocPrestacao) — vazio = usa município emissor
+              locPrestacaoIbge: item.locPrestacaoIbge || null,
             },
             homologacao: false,
           }),

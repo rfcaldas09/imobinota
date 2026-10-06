@@ -756,7 +756,7 @@ ${tomadorTag}
 ${endTomaXml}</toma>
 <serv>
 <locPrest>
-<cLocPrestacao>${ibge7}</cLocPrestacao>
+<cLocPrestacao>${cob.locPrestacaoIbge ? String(cob.locPrestacaoIbge).replace(/\D/g,'').slice(0,7) : ibge7}</cLocPrestacao>
 </locPrest>
 <cServ>
 <cTribNac>${cfg.cTribNac}</cTribNac>
