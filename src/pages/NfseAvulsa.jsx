@@ -142,7 +142,7 @@ function StatusBadge({ status }) {
 const PRAZO_CANCEL_MS = 48 * 60 * 60 * 1000
 
 // ── Modal: adicionar/editar tomador ────────────────────────────────
-function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, reformaDefaults = {}, nfseDefaults = {} }) {
+function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, reformaDefaults = {}, nfseDefaults = {}, saveLabel = 'Salvar', saveBusy = false }) {
   const [f, setF]       = useState(initial || mkBlankForm(retDefaults, reformaDefaults, nfseDefaults))
   const set = k => e   => setF(p => ({ ...p, [k]: e.target.value }))
   const setPct = k => e => setF(p => ({ ...p, [k]: maskPct(e.target.value) }))
@@ -577,13 +577,15 @@ function TomadorModal({ initial, onSave, onClose, retDefaults, issAliquota = 0, 
         </div>
 
         <div className="flex gap-2 px-6 pb-6">
-          <button onClick={onClose}
-            className="flex-1 py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50">
+          <button onClick={onClose} disabled={saveBusy}
+            className="flex-1 py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
             Cancelar
           </button>
-          <button onClick={handleSave}
-            className="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700">
-            Salvar
+          <button onClick={handleSave} disabled={saveBusy}
+            className="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
+            {saveBusy
+              ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"/> Processando...</>
+              : saveLabel}
           </button>
         </div>
       </div>
@@ -1497,6 +1499,10 @@ export default function NfseAvulsa() {
   const [reprocessingId, setReprocessingId] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
 
+  // ── Corrigir e Reemitir ──────────────────────────────────────
+  const [reemitirTarget, setReemitirTarget] = useState(null) // { em, formData }
+  const [reemitirLoading, setReemitirLoading] = useState(false)
+
   const handleDeleteErro = async (em) => {
     if (!window.confirm(`Excluir registro de erro da nota "${em.tomador_nome}"? Esta ação não pode ser desfeita.`)) return
     setDeletingId(em.id)
@@ -1584,6 +1590,111 @@ export default function NfseAvulsa() {
       alert(`Erro: ${e.message}`)
     } finally {
       setReprocessingId(null)
+    }
+  }
+
+  // ── Corrigir e Reemitir ──────────────────────────────────────
+  const handleOpenReemitir = (em) => {
+    if (!em.cob_data_json) {
+      alert('Dados da emissão não disponíveis para reemissão.')
+      return
+    }
+    const cob = em.cob_data_json
+    const ret = cob.retencoes || {}
+    const te  = cob.tomadorEnd || {}
+    const pctFmt = v => (v != null && v > 0) ? String(v).replace('.', ',') : ''
+
+    const formData = {
+      nome:            cob.tenant   || '',
+      cpfCnpj:         cob.cpf      || '',
+      email:           cob.email    || '',
+      valor:           cob.totalValue > 0 ? maskBRL(String(Math.round(cob.totalValue * 100))) : '',
+      discriminacao:   cob.discriminacao   || '',
+      mesRef:          cob.mesRef          || nowMonth(),
+      codLc116:        cob.codServicoLc116 || '',
+      issRetido:       (ret.tpRetISSQN || 1) === 2,
+      pIRRF:           pctFmt(ret.pIRRF),
+      pCSLL:           pctFmt(ret.pCSLL),
+      pCOFINS:         pctFmt(ret.pCOFINS),
+      pPIS:            pctFmt(ret.pPIS),
+      pINSS:           pctFmt(ret.pINSS),
+      tomaLogradouro:  te.logradouro || '',
+      tomaNumero:      te.numero     || '',
+      tamaBairro:      te.bairro     || '',
+      tamaCep:         te.cep        || '',
+      tamaCodMun:      te.codMun     || '',
+      tamaMunNome:     te.munNome    || '',
+      prestMunicipioIbge:      cob.prestMunicipioIbge      || nfseDefaults.municipioIbge      || '',
+      prestInscricaoMunicipal: cob.prestInscricaoMunicipal ?? nfseDefaults.inscricaoMunicipal ?? '',
+      locPrestacaoIbge:  cob.locPrestacaoIbge || '',
+      locPrestacaoNome:  '',
+      nbs: '', cst: '', cindop: '', cclasstrib: '',
+    }
+    setReemitirTarget({ em, formData })
+  }
+
+  const handleConfirmReemitir = async (formData) => {
+    const em = reemitirTarget.em
+    setReemitirLoading(true)
+    try {
+      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
+      }
+
+      // 1. Cancela a nota original
+      const cancelRes = await fetch('/.netlify/functions/nfse-cancelar', {
+        method: 'POST', headers,
+        body: JSON.stringify({ userId: user.id, emissaoId: em.id }),
+      })
+      const cancelData = await cancelRes.json()
+      if (!cancelRes.ok) throw new Error(`Erro ao cancelar: ${cancelData.error || 'Falha no cancelamento'}`)
+
+      // 2. Emite nova nota com os dados corrigidos
+      const cobData = {
+        tenant:          formData.nome,
+        cpf:             formData.cpfCnpj,
+        email:           formData.email || '',
+        totalValue:      parseBRL(formData.valor),
+        mesRef:          formData.mesRef,
+        discriminacao:   formData.discriminacao || null,
+        codServicoLc116: formData.codLc116 || null,
+        retencoes: {
+          tpRetISSQN: formData.issRetido ? 2 : 1,
+          pIRRF:   parsePct(formData.pIRRF)   || null,
+          pCSLL:   parsePct(formData.pCSLL)   || null,
+          pCOFINS: parsePct(formData.pCOFINS) || null,
+          pPIS:    parsePct(formData.pPIS)    || null,
+          pINSS:   parsePct(formData.pINSS)   || null,
+        },
+        tomadorEnd: formData.tamaCep && formData.tamaCodMun ? {
+          logradouro: formData.tomaLogradouro || '',
+          numero:     formData.tomaNumero     || 'S/N',
+          bairro:     formData.tamaBairro     || '',
+          cep:        formData.tamaCep        || '',
+          codMun:     formData.tamaCodMun     || '',
+          munNome:    formData.tamaMunNome    || '',
+        } : null,
+        prestMunicipioIbge:      formData.prestMunicipioIbge      || null,
+        prestInscricaoMunicipal: formData.prestInscricaoMunicipal ?? null,
+        locPrestacaoIbge:        formData.locPrestacaoIbge         || null,
+      }
+
+      const emitRes = await fetch('/.netlify/functions/nfse-emitir', {
+        method: 'POST', headers,
+        body: JSON.stringify({ userId: user.id, cobId: null, cobData, homologacao: false }),
+      })
+      const emitData = await emitRes.json()
+      if (!emitRes.ok || !emitData.ok) throw new Error(`Erro ao emitir nova nota: ${emitData.error || 'Falha na emissão'}`)
+
+      setReemitirTarget(null)
+      await new Promise(r => setTimeout(r, 1500))
+      loadHistory()
+    } catch (e) {
+      alert(`Erro na reemissão: ${e.message}`)
+    } finally {
+      setReemitirLoading(false)
     }
   }
 
@@ -2279,6 +2390,18 @@ export default function NfseAvulsa() {
                             XML
                           </button>
 
+                          {/* Botão corrigir e reemitir */}
+                          {dentroDosPrazo && em.cob_data_json && (
+                            <button
+                              onClick={() => handleOpenReemitir(em)}
+                              disabled={cancelando || !!downloadingId}
+                              title="Corrigir dados e reemitir (cancela esta e emite nova)"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 transition-colors disabled:opacity-40 whitespace-nowrap">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
+                              Corrigir ↻
+                            </button>
+                          )}
+
                           {/* Botão cancelar */}
                           {dentroDosPrazo ? (
                             confirmando ? (
@@ -2350,6 +2473,21 @@ export default function NfseAvulsa() {
           issAliquota={issAliquota}
           reformaDefaults={reformaDefaults}
           nfseDefaults={nfseDefaults}
+        />
+      )}
+
+      {/* Modal — corrigir e reemitir nota do histórico */}
+      {reemitirTarget && (
+        <TomadorModal
+          initial={reemitirTarget.formData}
+          onSave={handleConfirmReemitir}
+          onClose={() => !reemitirLoading && setReemitirTarget(null)}
+          retDefaults={retDefaults}
+          issAliquota={issAliquota}
+          reformaDefaults={reformaDefaults}
+          nfseDefaults={nfseDefaults}
+          saveLabel="Cancelar original e emitir nova"
+          saveBusy={reemitirLoading}
         />
       )}
 
