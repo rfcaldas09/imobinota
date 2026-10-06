@@ -1636,6 +1636,8 @@ export default function NfseAvulsa() {
   const handleConfirmReemitir = async (formData) => {
     const em = reemitirTarget.em
     setReemitirLoading(true)
+    let cancelouOriginal = false
+    let avisoPrazo = ''
     try {
       const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
       const headers = {
@@ -1643,13 +1645,19 @@ export default function NfseAvulsa() {
         ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
       }
 
-      // 1. Cancela a nota original
-      const cancelRes = await fetch('/.netlify/functions/nfse-cancelar', {
-        method: 'POST', headers,
-        body: JSON.stringify({ userId: user.id, emissaoId: em.id }),
-      })
-      const cancelData = await cancelRes.json()
-      if (!cancelRes.ok) throw new Error(`Erro ao cancelar: ${cancelData.error || 'Falha no cancelamento'}`)
+      // 1. Tenta cancelar a nota original (pode falhar se prazo expirado)
+      const dentroDosPrazo = (new Date() - new Date(em.created_at)) < PRAZO_CANCEL_MS
+      if (dentroDosPrazo) {
+        const cancelRes = await fetch('/.netlify/functions/nfse-cancelar', {
+          method: 'POST', headers,
+          body: JSON.stringify({ userId: user.id, emissaoId: em.id }),
+        })
+        const cancelData = await cancelRes.json()
+        if (!cancelRes.ok) throw new Error(`Erro ao cancelar: ${cancelData.error || 'Falha no cancelamento'}`)
+        cancelouOriginal = true
+      } else {
+        avisoPrazo = `⚠️ Prazo de cancelamento expirado. A nota original (NFS-e ${em.numero_nfse}) NÃO foi cancelada automaticamente — cancele-a manualmente no portal da prefeitura.\n\n`
+      }
 
       // 2. Emite nova nota com os dados corrigidos
       const cobData = {
@@ -1689,6 +1697,7 @@ export default function NfseAvulsa() {
       if (!emitRes.ok || !emitData.ok) throw new Error(`Erro ao emitir nova nota: ${emitData.error || 'Falha na emissão'}`)
 
       setReemitirTarget(null)
+      if (avisoPrazo) alert(`${avisoPrazo}Nova nota emitida com sucesso (NFS-e ${emitData.numeroNfse || ''}).`)
       await new Promise(r => setTimeout(r, 1500))
       loadHistory()
     } catch (e) {
@@ -2390,12 +2399,14 @@ export default function NfseAvulsa() {
                             XML
                           </button>
 
-                          {/* Botão corrigir e reemitir */}
-                          {dentroDosPrazo && em.cob_data_json && (
+                          {/* Botão corrigir e reemitir — disponível para todas as notas emitidas com dados */}
+                          {em.cob_data_json && (
                             <button
                               onClick={() => handleOpenReemitir(em)}
                               disabled={cancelando || !!downloadingId}
-                              title="Corrigir dados e reemitir (cancela esta e emite nova)"
+                              title={dentroDosPrazo
+                                ? 'Corrigir dados e reemitir (cancela esta e emite nova)'
+                                : 'Corrigir e emitir nova (prazo expirado: cancele a original manualmente no portal)'}
                               className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 transition-colors disabled:opacity-40 whitespace-nowrap">
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
                               Corrigir ↻
