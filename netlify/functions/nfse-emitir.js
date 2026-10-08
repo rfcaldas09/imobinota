@@ -777,7 +777,6 @@ ${endTomaXml}</toma>
 <cTribNac>${cfg.cTribNac}</cTribNac>
 ${cfg.cTribMun ? `<cTribMun>${cfg.cTribMun}</cTribMun>\n` : ''}<xDescServ>${escXml(xDescServ.slice(0, 150))}</xDescServ>
 </cServ>
-${cfg.nbs    ? `<cNBS>${escXml(cfg.nbs)}</cNBS>\n`    : ''}${cfg.cindop ? `<cIndOp>${escXml(cfg.cindop)}</cIndOp>\n` : ''}
 ${cfg.imovel ? `<infObra>\n<BemImovel>\n` +
   (cfg.imovel.cib            ? `<nCib>${escXml(cfg.imovel.cib.toUpperCase())}</nCib>\n`                 : '') +
   (cfg.imovel.inscricaoFiscal? `<nInscImMunic>${escXml(cfg.imovel.inscricaoFiscal)}</nInscImMunic>\n`   : '') +
@@ -799,8 +798,13 @@ ${cfg.imovel ? `<infObra>\n<BemImovel>\n` +
 <tribISSQN>1</tribISSQN>
 <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
 ${tpRetISSQN === 2 && isSimples ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</tribMun>
-${hasRetFed ? `<tribFed>\n${tribFedInnerXml}</tribFed>\n` : ''}${cfg.cst && cfg.cclasstrib
-  ? `<ibsCbs>\n<CST>${escXml(cfg.cst)}</CST>\n<cClassTrib>${escXml(cfg.cclasstrib)}</cClassTrib>\n</ibsCbs>\n`
+${hasRetFed ? `<tribFed>\n${tribFedInnerXml}</tribFed>\n` : ''}${cfg.cst
+  ? `<ibsCbs>\n` +
+    `${cfg.nbs     ? `<cNBS>${escXml(cfg.nbs)}</cNBS>\n`         : ''}` +
+    `${cfg.cindop  ? `<indOp>${escXml(cfg.cindop)}</indOp>\n`    : ''}` +
+    `<cCST>${escXml(cfg.cst)}</cCST>\n` +
+    `${cfg.cclasstrib ? `<cClassTrib>${escXml(cfg.cclasstrib)}</cClassTrib>\n` : ''}` +
+    `</ibsCbs>\n`
   : ''}${totTribXml}
 </trib>
 </valores>
