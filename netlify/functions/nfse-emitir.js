@@ -801,14 +801,17 @@ ${tpRetISSQN === 2 && isSimples ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</trib
 ${hasRetFed ? `<tribFed>\n${tribFedInnerXml}</tribFed>\n` : ''}${totTribXml}
 </trib>
 </valores>
-${!isSimples && cfg.cst && cfg.cclasstrib ? (
+${!isSimples && cfg.cst && cfg.cclasstrib && cfg.cindop ? (
 `<IBSCBS>
 <finNFSe>0</finNFSe>
-<indFinal>0</indFinal>
-${cfg.cindop ? `<cIndOp>${cfg.cindop}</cIndOp>\n` : ''}<valores>
+<cIndOp>${cfg.cindop}</cIndOp>
+<indDest>0</indDest>
+<valores>
 <trib>
+<gIBSCBS>
 <CST>${cfg.cst}</CST>
 <cClassTrib>${cfg.cclasstrib}</cClassTrib>
+</gIBSCBS>
 </trib>
 </valores>
 </IBSCBS>
