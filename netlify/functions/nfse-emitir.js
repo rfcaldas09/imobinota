@@ -751,7 +751,7 @@ function buildDpsXml(cfg, cob, homologacao) {
   // ATENÇÃO: ordem dos elementos é xs:sequence — NÃO alterar a ordem!
   // infDPS NÃO tem atributo versao (só DPS tem)
   return `<?xml version="1.0" encoding="UTF-8"?>
-<DPS xmlns="${ns}" versao="1.00">
+<DPS xmlns="${ns}" versao="1.01">
 <infDPS Id="${id}">
 <tpAmb>${tpAmb}</tpAmb>
 <dhEmi>${dhEmi}</dhEmi>
