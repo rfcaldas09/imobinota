@@ -776,7 +776,7 @@ ${endTomaXml}</toma>
 <cServ>
 <cTribNac>${cfg.cTribNac}</cTribNac>
 ${cfg.cTribMun ? `<cTribMun>${cfg.cTribMun}</cTribMun>\n` : ''}<xDescServ>${escXml(xDescServ.slice(0, 150))}</xDescServ>
-${cfg.nbs ? `<cNBS>${cfg.nbs}</cNBS>\n` : ''}</cServ>
+${cfg.nbs ? `<cNBS>${String(cfg.nbs).replace(/\D/g,'')}</cNBS>\n` : ''}</cServ>
 ${cfg.imovel ? `<infObra>\n<BemImovel>\n` +
   (cfg.imovel.cib            ? `<nCib>${escXml(cfg.imovel.cib.toUpperCase())}</nCib>\n`                 : '') +
   (cfg.imovel.inscricaoFiscal? `<nInscImMunic>${escXml(cfg.imovel.inscricaoFiscal)}</nInscImMunic>\n`   : '') +
