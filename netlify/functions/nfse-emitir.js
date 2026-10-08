@@ -794,20 +794,25 @@ ${cfg.imovel ? `<infObra>\n<BemImovel>\n` +
 <vServ>${vServ}</vServ>
 </vServPrest>
 <trib>
-${cfg.cst
-  ? `<ibsCbs>\n` +
-    `${cfg.nbs     ? `<cNBS>${escXml(cfg.nbs)}</cNBS>\n`         : ''}` +
-    `${cfg.cindop  ? `<indOp>${escXml(cfg.cindop)}</indOp>\n`    : ''}` +
-    `<cCST>${escXml(cfg.cst)}</cCST>\n` +
-    `${cfg.cclasstrib ? `<cClassTrib>${escXml(cfg.cclasstrib)}</cClassTrib>\n` : ''}` +
-    `</ibsCbs>\n`
-  : ''}<tribMun>
+<tribMun>
 <tribISSQN>1</tribISSQN>
 <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
 ${tpRetISSQN === 2 && isSimples ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</tribMun>
 ${hasRetFed ? `<tribFed>\n${tribFedInnerXml}</tribFed>\n` : ''}${totTribXml}
 </trib>
 </valores>
+${!isSimples && cfg.cst && cfg.cclasstrib ? (
+`<IBSCBS>
+<indFinal>0</indFinal>
+${cfg.cindop ? `<cIndOp>${cfg.cindop}</cIndOp>\n` : ''}<valores>
+<trib>
+<CST>${cfg.cst}</CST>
+<cClassTrib>${cfg.cclasstrib}</cClassTrib>
+</trib>
+</valores>
+</IBSCBS>
+`
+) : ''}
 </infDPS>
 </DPS>`
 }
