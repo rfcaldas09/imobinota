@@ -1639,7 +1639,10 @@ export default function NfseAvulsa() {
       prestInscricaoMunicipal: cob.prestInscricaoMunicipal ?? nfseDefaults.inscricaoMunicipal ?? '',
       locPrestacaoIbge:  cob.locPrestacaoIbge || '',
       locPrestacaoNome:  '',
-      nbs: '', cst: '', cindop: '', cclasstrib: '',
+      nbs:        reformaDefaults.nbs        || '',
+      cst:        reformaDefaults.cst        || '',
+      cindop:     reformaDefaults.cindop     || '',
+      cclasstrib: reformaDefaults.cclasstrib || '',
     }
     setReemitirTarget({ em, formData })
   }

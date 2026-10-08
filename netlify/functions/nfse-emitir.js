@@ -775,8 +775,9 @@ ${endTomaXml}</toma>
 </locPrest>
 <cServ>
 <cTribNac>${cfg.cTribNac}</cTribNac>
-${cfg.cTribMun ? `<cTribMun>${cfg.cTribMun}</cTribMun>\n` : ''}${cfg.nbs    ? `<cNBS>${escXml(cfg.nbs)}</cNBS>\n`         : ''}${cfg.cindop ? `<cIndOp>${escXml(cfg.cindop)}</cIndOp>\n`     : ''}<xDescServ>${escXml(xDescServ.slice(0, 150))}</xDescServ>
+${cfg.cTribMun ? `<cTribMun>${cfg.cTribMun}</cTribMun>\n` : ''}<xDescServ>${escXml(xDescServ.slice(0, 150))}</xDescServ>
 </cServ>
+${cfg.nbs    ? `<cNBS>${escXml(cfg.nbs)}</cNBS>\n`    : ''}${cfg.cindop ? `<cIndOp>${escXml(cfg.cindop)}</cIndOp>\n` : ''}
 ${cfg.imovel ? `<infObra>\n<BemImovel>\n` +
   (cfg.imovel.cib            ? `<nCib>${escXml(cfg.imovel.cib.toUpperCase())}</nCib>\n`                 : '') +
   (cfg.imovel.inscricaoFiscal? `<nInscImMunic>${escXml(cfg.imovel.inscricaoFiscal)}</nInscImMunic>\n`   : '') +
