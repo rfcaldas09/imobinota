@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import Lc116Picker from '../components/Lc116Picker'
 import MonthPicker from '../components/MonthPicker'
 import * as XLSX from 'xlsx'
-import { CST_OPTIONS, CINDOP_OPTIONS } from '../lib/reforma-tributaria'
+import { CST_OPTIONS, CINDOP_OPTIONS, CST_MIGRATION } from '../lib/reforma-tributaria'
 import { getReformaByLc116, CCLASSTRIB_OPTIONS } from '../lib/lc116-reforma'
 import NbsPicker from '../components/NbsPicker'
 
@@ -1264,9 +1264,12 @@ export default function NfseAvulsa() {
         if (data) {
           setRetDefaults(mkRetDefaults(data))
           setIssAliquota(parseFloat(data.aliquota_iss || 0) || 0)
+          // Migração automática: CST antigo (2 dígitos ex: '01') → novo (3 dígitos ex: '000')
+          const savedCst = data.nfse_cst || ''
+          const migratedCst = savedCst.length === 2 ? (CST_MIGRATION[savedCst] || '') : savedCst
           setReformaDefaults({
             nbs:        data.nfse_nbs        || '',
-            cst:        data.nfse_cst        || '',
+            cst:        migratedCst,
             cindop:     data.nfse_cindop     || '',
             cclasstrib: data.nfse_cclasstrib || '',
           })

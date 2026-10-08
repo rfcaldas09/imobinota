@@ -5,92 +5,76 @@
  *   - Lucro Real / Presumido: obrigatório a partir de 03/08/2026
  *   - Simples Nacional / MEI: obrigatório a partir de 01/01/2027
  *
- * Referência: Manual de Orientação do Contribuinte — NFS-e Nacional (SEFIN/CGNFS-e)
+ * Referência:
+ *   - Manual de Orientação do Contribuinte — NFS-e Nacional (SEFIN/CGNFS-e)
+ *   - AnexoVII-IndOp_IBSCBS_V1.00.00 (cIndOp) — fonte: portal SEFIN NFS-e
+ *   - AnexoVIII-CorrelacaoItemNBSIndOpCClassTrib_IBSCBS_V1.00.00.xlsx
+ *
+ * ATENÇÃO — Formato correto dos códigos:
+ *   CST:    3 dígitos  (ex: '000', '040')  — portal exibe ex: "000 - Tributação integral"
+ *   cIndOp: 6 dígitos  (ex: '030101')      — conforme AnexoVII oficial
  */
 
 // ─── CST — Código de Situação Tributária (IBS/CBS) ───────────────────────────
-// 18 códigos conforme Tabela de CST do SEFIN
+// Tabela oficial SEFIN — 3 dígitos (NFS-e Nacional, LC 214/2025)
 export const CST_OPTIONS = [
-  { value: '01', label: '01 — Tributada integralmente' },
-  { value: '02', label: '02 — Tributada com redução de base de cálculo' },
-  { value: '03', label: '03 — Tributada com redução de alíquota' },
-  { value: '04', label: '04 — Tributada com redução de base de cálculo e de alíquota' },
-  { value: '05', label: '05 — Tributada com crédito presumido' },
-  { value: '06', label: '06 — Tributada com redução de base de cálculo e crédito presumido' },
-  { value: '07', label: '07 — Tributada com redução de alíquota e crédito presumido' },
-  { value: '08', label: '08 — Tributada com redução de base e de alíquota e crédito presumido' },
-  { value: '40', label: '40 — Imune' },
-  { value: '41', label: '41 — Não tributada' },
-  { value: '50', label: '50 — Suspensão' },
-  { value: '60', label: '60 — Diferimento' },
-  { value: '70', label: '70 — Exportação' },
-  { value: '80', label: '80 — Regime Específico — Simples Nacional' },
-  { value: '81', label: '81 — Regime Específico — Profissionais liberais (Decreto-lei 406/68)' },
-  { value: '82', label: '82 — Regime Específico — Plano de saúde e seguro' },
-  { value: '83', label: '83 — Regime Específico — Construção civil' },
-  { value: '90', label: '90 — Outros' },
+  { value: '000', label: '000 — Tributação integral pelo IBS e CBS' },
+  { value: '020', label: '020 — Tributada com redução de base de cálculo' },
+  { value: '040', label: '040 — Imune' },
+  { value: '041', label: '041 — Não tributada — Fora do campo de incidência' },
+  { value: '050', label: '050 — Suspensão' },
+  { value: '060', label: '060 — Diferimento' },
+  { value: '070', label: '070 — Exportação de serviços' },
+  { value: '080', label: '080 — Regime Específico — Simples Nacional' },
+  { value: '081', label: '081 — Regime Específico — Profissionais liberais (Decreto-lei 406/68)' },
+  { value: '082', label: '082 — Regime Específico — Plano de saúde e seguro' },
+  { value: '083', label: '083 — Regime Específico — Construção civil' },
+  { value: '090', label: '090 — Outros' },
 ];
 
 // ─── cIndOp — Indicador de Operação ──────────────────────────────────────────
-// Conforme Tabela de cIndOp do SEFIN
+// Fonte: AnexoVII-IndOp_IBSCBS_V1.00.00 (SEFIN/CGNFS-e)
+// Códigos extraídos do AnexoVIII (correlação LC116 × NBS × IndOp)
 export const CINDOP_OPTIONS = [
-  // 1. Regime Regular
-  { value: '010100', label: '010100 — Regime Regular — Tributação integral' },
-  { value: '010200', label: '010200 — Regime Regular — Redução de base de cálculo' },
-  { value: '010300', label: '010300 — Regime Regular — Redução de alíquota' },
-  { value: '010400', label: '010400 — Regime Regular — Redução de base e de alíquota' },
-  { value: '010500', label: '010500 — Regime Regular — Crédito presumido' },
-  { value: '010600', label: '010600 — Regime Regular — Redução de base e crédito presumido' },
-  { value: '010700', label: '010700 — Regime Regular — Redução de alíquota e crédito presumido' },
-  { value: '010800', label: '010800 — Regime Regular — Redução de base, alíquota e crédito presumido' },
+  // ── Serviços prestados PRESENCIALMENTE sobre a pessoa (art. 11, LC 214/2025)
+  { value: '030101', label: '030101 — Serviço prestado fisicamente sobre a pessoa ou fruído presencialmente por PF — Local: estabelecimento do fornecedor' },
+  { value: '030104', label: '030104 — Serviço prestado fisicamente sobre a pessoa (clínica/hospital/educação) — Local: onde ocorre o atendimento' },
 
-  // 2. Não incidência / imunidade / isenção
-  { value: '020100', label: '020100 — Imune — Entidade beneficente' },
-  { value: '020200', label: '020200 — Imune — Outra imunidade' },
-  { value: '020300', label: '020300 — Não tributada — Fora do campo de incidência' },
+  // ── Bens imóveis (locação, cessão, arrendamento)
+  { value: '020101', label: '020101 — Bens imóveis — Locação / cessão onerosa / arrendamento (tipo I)' },
+  { value: '020201', label: '020201 — Bens imóveis — Locação / cessão onerosa / arrendamento (tipo II)' },
 
-  // 3. Suspensão / diferimento
-  { value: '030100', label: '030100 — Suspensão' },
-  { value: '030200', label: '030200 — Diferimento' },
+  // ── Eventos, espetáculos, entretenimento (presencial)
+  { value: '040101', label: '040101 — Espetáculos, eventos, atividades de entretenimento — Presencial' },
 
-  // 4. Exportação
-  { value: '040100', label: '040100 — Exportação de serviços' },
+  // ── Regime regular — serviços a pessoas jurídicas / tomadores no país (mais comum)
+  { value: '100301', label: '100301 — Serviço a destinatário no país — Regime regular' },
 
-  // 5. Regime Específico — Simples Nacional
+  // ── Bens imateriais / direitos (domicílio do adquirente)
+  { value: '100501', label: '100501 — Bens imateriais / direitos — Domicílio principal do adquirente no país' },
+
+  // ── Serviços agropecuários / insumos
+  { value: '050101', label: '050101 — Serviços agropecuários e aquícolas — Insumos (tipo I)' },
+  { value: '050104', label: '050104 — Serviços profissionais / agropecuários — Estabelecimento ou domicílio do tomador' },
+
+  // ── Exportação de serviços
+  { value: '070100', label: '070100 — Exportação de serviços — Tomador no exterior' },
+
+  // ── Regimes específicos
   { value: '050100', label: '050100 — Simples Nacional — DASMEI (alíquota fixa)' },
-  { value: '050200', label: '050200 — Simples Nacional — Tributação unificada' },
-  { value: '050300', label: '050300 — Simples Nacional — Sublimite ultrapassado' },
-
-  // 6. Regime Específico — Profissionais liberais (Dec-lei 406/68)
-  { value: '060100', label: '060100 — Profissionais liberais (Dec-lei 406/68) — Tributação por valor fixo' },
-
-  // 7. Regime Específico — Plano de saúde e seguro
-  { value: '070100', label: '070100 — Plano de saúde / seguro — Prêmio bruto' },
-  { value: '070200', label: '070200 — Plano de saúde / seguro — Margem de contribuição' },
-
-  // 8. Regime Específico — Construção civil
-  { value: '080100', label: '080100 — Construção civil — Serviço com material' },
-  { value: '080200', label: '080200 — Construção civil — Serviço sem material (empreitada pura)' },
-  { value: '080300', label: '080300 — Construção civil — Subempreitada' },
-
-  // 9. Operações com retenção na fonte (Responsabilidade Tributária do Tomador)
-  { value: '090100', label: '090100 — Retenção integral pelo tomador' },
-  { value: '090200', label: '090200 — Retenção parcial pelo tomador' },
-
-  // 10. Operação em ZFM / ALC
-  { value: '100100', label: '100100 — Zona Franca de Manaus — Venda a contribuinte' },
-  { value: '100200', label: '100200 — Zona Franca de Manaus — Venda a não-contribuinte' },
-  { value: '100300', label: '100300 — Área de Livre Comércio' },
-
-  // 10. Demais bens móveis imateriais / direitos — Inc. X (art. 11 LC 214/2025)
-  // Fonte: Anexo C-IndOp / AnexoVII-IndOp_IBSCBS (cIndOp NFS-e Nacional)
-  { value: '100501', label: '100501 — Demais bens móveis imateriais — Domicílio principal do adquirente (onerosas)' },
-  { value: '100502', label: '100502 — Demais bens móveis imateriais — Domicílio do destinatário — adquirente no exterior (onerosas)' },
-  { value: '100503', label: '100503 — Demais bens móveis imateriais — Endereço do destinatário (onerosas)' },
-
-  // 11. Outros
-  { value: '990100', label: '990100 — Outros' },
+  { value: '050201', label: '050201 — Simples Nacional — Tributação unificada (sublimite)' },
+  { value: '060101', label: '060101 — Profissionais liberais (Dec-lei 406/68) — Tributação por valor fixo' },
+  { value: '080101', label: '080101 — Construção civil — Serviço com ou sem material' },
+  { value: '100101', label: '100101 — Zona Franca de Manaus / Área de Livre Comércio' },
 ];
+
+// Mapeamento de CST antigo (2 dígitos) → CST novo (3 dígitos)
+// Útil para migrar valores salvos no banco antes da correção
+export const CST_MIGRATION = {
+  '01': '000', '02': '020', '40': '040', '41': '041',
+  '50': '050', '60': '060', '70': '070', '80': '080',
+  '81': '081', '82': '082', '83': '083', '90': '090',
+};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

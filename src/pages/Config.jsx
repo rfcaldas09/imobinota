@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useNfseReadiness } from '../contexts/NfseReadinessContext'
 import { LC116 } from '../lib/lc116'
 import { MUNICIPIOS_SUL } from '../lib/municipios'
-import { CST_OPTIONS, CINDOP_OPTIONS } from '../lib/reforma-tributaria'
+import { CST_OPTIONS, CINDOP_OPTIONS, CST_MIGRATION } from '../lib/reforma-tributaria'
 import { CCLASSTRIB_OPTIONS } from '../lib/lc116-reforma'
 import { getReformaByLc116 } from '../lib/lc116-reforma'
 import NbsPicker from '../components/NbsPicker'
@@ -318,8 +318,9 @@ export default function Config() {
           codigoServico: data?.nfse_codigo_servico  || '6.04',
           descServico:   data?.nfse_desc_servico    || '',
           // Reforma Tributária (IBS/CBS) — informativos
+          // Migração automática: CST antigo (2 dígitos ex: '01') → novo (3 dígitos ex: '000')
           nbs:        data?.nfse_nbs        || '',
-          cst:        data?.nfse_cst        || '',
+          cst:        (() => { const s = data?.nfse_cst || ''; return s.length === 2 ? (CST_MIGRATION[s] || s) : s; })(),
           cindop:     data?.nfse_cindop     || '',
           cclasstrib: data?.nfse_cclasstrib || '',
           logradouro:    data?.nfse_logradouro      || '',
@@ -994,6 +995,11 @@ export default function Config() {
                     <label className="text-xs font-medium text-slate-500 block mb-1">
                       CST — Código de Situação Tributária (IBS/CBS)
                     </label>
+                    {f.cst && f.cst.length === 2 && (
+                      <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-1">
+                        ⚠️ O código CST salvo (<strong>{f.cst}</strong>) está no formato antigo (2 dígitos). Selecione o novo código correto abaixo.
+                      </p>
+                    )}
                     <select
                       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
                       value={f.cst}
@@ -1011,6 +1017,11 @@ export default function Config() {
                     <label className="text-xs font-medium text-slate-500 block mb-1">
                       cIndOp — Indicador de Operação
                     </label>
+                    {f.cindop && !CINDOP_OPTIONS.find(o => o.value === f.cindop) && (
+                      <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-1">
+                        ⚠️ Código cIndOp salvo (<strong>{f.cindop}</strong>) não consta na tabela oficial. Selecione o correto abaixo.
+                      </p>
+                    )}
                     <select
                       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
                       value={f.cindop}
