@@ -31,18 +31,23 @@ export function NfseReadinessProvider({ children }) {
 
     const { data } = await supabase
       .from('profiles')
-      .select('company_name, cnpj, inscricao_municipal, nfse_cert_path, nfse_cert_password_enc, nfse_municipio_ibge, nfse_codigo_servico, aliquota_iss, nfse_logradouro, nfse_cep, from_name')
+      .select('company_name, cnpj, inscricao_municipal, nfse_cert_path, nfse_cert_password_enc, nfse_municipio_ibge, nfse_codigo_servico, aliquota_iss, nfse_logradouro, nfse_cep, from_name, nfse_provedor, focus_token')
       .eq('id', user.id)
       .maybeSingle()
 
     if (!data) { setMissing([]); setReady(false); return }
 
-    const certOk = !!(data.nfse_cert_path && data.nfse_cert_password_enc)
+    const isFocus = data.nfse_provedor === 'focus'
+    const certOk  = isFocus
+      ? !!data.focus_token
+      : !!(data.nfse_cert_path && data.nfse_cert_password_enc)
+
+    const certLabel = isFocus ? 'Token API Focus NFe' : 'Certificado Digital A1'
 
     const gaps = NFSE_CHECKS.filter(c => {
       if (c.field === '__cert') return !certOk
       return !data[c.field]
-    })
+    }).map(c => c.field === '__cert' ? { ...c, label: certLabel } : c)
 
     setMissing(gaps)
     setReady(gaps.length === 0)

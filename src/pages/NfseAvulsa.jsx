@@ -1257,7 +1257,7 @@ export default function NfseAvulsa() {
   useEffect(() => {
     if (!user) return
     supabase.from('profiles')
-      .select('ret_irrf, ret_csll, ret_cofins, ret_pis, ret_inss, aliquota_iss, nfse_nbs, nfse_cst, nfse_cindop, nfse_cclasstrib, nfse_municipio_ibge, inscricao_municipal, nfse_codigo_servico')
+      .select('ret_irrf, ret_csll, ret_cofins, ret_pis, ret_inss, aliquota_iss, nfse_nbs, nfse_cst, nfse_cindop, nfse_cclasstrib, nfse_municipio_ibge, inscricao_municipal, nfse_codigo_servico, nfse_provedor, focus_homologacao')
       .eq('id', user.id)
       .maybeSingle()
       .then(({ data }) => {
@@ -1273,6 +1273,8 @@ export default function NfseAvulsa() {
           setNfseDefaults({
             municipioIbge:      data.nfse_municipio_ibge   || '',
             inscricaoMunicipal: data.inscricao_municipal   || '',
+            nfseProvedor:       data.nfse_provedor         || 'sefin',
+            focusHomologacao:   !!data.focus_homologacao,
           })
           setProfileLc116(data.nfse_codigo_servico || '')
         }
@@ -1420,7 +1422,9 @@ export default function NfseAvulsa() {
       setEmitCurrent(i)
       const item = snapshot[i]
       try {
-        const res = await fetch('/.netlify/functions/nfse-emitir', {
+        const isFocus = (nfseDefaults.nfseProvedor === 'focus')
+        const emitFn  = isFocus ? 'nfse-emitir-focus' : 'nfse-emitir'
+        const res = await fetch(`/.netlify/functions/${emitFn}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1458,8 +1462,10 @@ export default function NfseAvulsa() {
               prestInscricaoMunicipal: item.prestInscricaoMunicipal ?? null,
               // Local da prestação do serviço (cLocPrestacao) — vazio = usa município emissor
               locPrestacaoIbge: item.locPrestacaoIbge || null,
+              // Reforma Tributária — NBS por nota (sobrepõe perfil quando preenchido)
+              codNbs: item.nbs || null,
             },
-            homologacao: false,
+            homologacao: isFocus ? nfseDefaults.focusHomologacao : false,
           }),
         })
         const data = await res.json()
@@ -1565,7 +1571,9 @@ export default function NfseAvulsa() {
       const cobData = fresh?.cob_data_json || em.cob_data_json
 
       const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
-      const res = await fetch('/.netlify/functions/nfse-emitir', {
+      const isFocusR = (nfseDefaults.nfseProvedor === 'focus')
+      const emitFnR  = isFocusR ? 'nfse-emitir-focus' : 'nfse-emitir'
+      const res = await fetch(`/.netlify/functions/${emitFnR}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1575,7 +1583,7 @@ export default function NfseAvulsa() {
           userId:     user.id,
           cobId:      null,
           cobData,
-          homologacao: false,
+          homologacao: isFocusR ? nfseDefaults.focusHomologacao : false,
         }),
       })
       const data = await res.json()
@@ -1648,7 +1656,8 @@ export default function NfseAvulsa() {
       // 1. Tenta cancelar a nota original (pode falhar se prazo expirado)
       const dentroDosPrazo = (new Date() - new Date(em.created_at)) < PRAZO_CANCEL_MS
       if (dentroDosPrazo) {
-        const cancelRes = await fetch('/.netlify/functions/nfse-cancelar', {
+        const cancelFnRe = em.chave_acesso?.startsWith('FOCUS:') ? 'nfse-cancelar-focus' : 'nfse-cancelar'
+        const cancelRes = await fetch(`/.netlify/functions/${cancelFnRe}`, {
           method: 'POST', headers,
           body: JSON.stringify({ userId: user.id, emissaoId: em.id }),
         })
@@ -1687,11 +1696,14 @@ export default function NfseAvulsa() {
         prestMunicipioIbge:      formData.prestMunicipioIbge      || null,
         prestInscricaoMunicipal: formData.prestInscricaoMunicipal ?? null,
         locPrestacaoIbge:        formData.locPrestacaoIbge         || null,
+        codNbs:                  formData.nbs                      || null,
       }
 
-      const emitRes = await fetch('/.netlify/functions/nfse-emitir', {
+      const isFocusCR = (nfseDefaults.nfseProvedor === 'focus')
+      const emitFnCR  = isFocusCR ? 'nfse-emitir-focus' : 'nfse-emitir'
+      const emitRes = await fetch(`/.netlify/functions/${emitFnCR}`, {
         method: 'POST', headers,
-        body: JSON.stringify({ userId: user.id, cobId: null, cobData, homologacao: false }),
+        body: JSON.stringify({ userId: user.id, cobId: null, cobData, homologacao: isFocusCR ? nfseDefaults.focusHomologacao : false }),
       })
       const emitData = await emitRes.json()
       if (!emitRes.ok || !emitData.ok) throw new Error(`Erro ao emitir nova nota: ${emitData.error || 'Falha na emissão'}`)
@@ -1833,7 +1845,8 @@ export default function NfseAvulsa() {
       }
       setBulkCancelCurrent(row.numero_nfse)
       try {
-        const res = await fetch('/.netlify/functions/nfse-cancelar', {
+        const cancelFnBulk = row.chave_acesso?.startsWith('FOCUS:') ? 'nfse-cancelar-focus' : 'nfse-cancelar'
+        const res = await fetch(`/.netlify/functions/${cancelFnBulk}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1869,7 +1882,8 @@ export default function NfseAvulsa() {
     setCancellingId(em.id)
     try {
       const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
-      const res = await fetch('/.netlify/functions/nfse-cancelar', {
+      const cancelFnH = em.chave_acesso?.startsWith('FOCUS:') ? 'nfse-cancelar-focus' : 'nfse-cancelar'
+      const res = await fetch(`/.netlify/functions/${cancelFnH}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2302,7 +2316,7 @@ export default function NfseAvulsa() {
                 <th className="px-4 py-2.5 text-left">Competência</th>
                 <th className="px-4 py-2.5 text-right">Valor</th>
                 <th className="px-4 py-2.5 text-center">Status</th>
-                <th className="px-4 py-2.5 text-left w-40">NFS-e</th>
+                <th className="px-4 py-2.5 text-left w-14">NFS-e</th>
                 <th className="px-4 py-2.5 text-left">Data</th>
                 <th className="px-2 py-2.5"/>
               </tr>
@@ -2322,7 +2336,7 @@ export default function NfseAvulsa() {
                   <td className="px-4 py-2.5 text-slate-500">{em.competencia || '—'}</td>
                   <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{fmtBRL(em.valor_servico)}</td>
                   <td className="px-4 py-2.5 text-center"><StatusBadge status={em.status}/></td>
-                  <td className="px-4 py-2.5 text-xs font-mono text-slate-500 w-40 max-w-[10rem]">
+                  <td className="px-4 py-2.5 text-xs font-mono text-slate-500 w-14 max-w-[3.5rem]">
                     {em.numero_nfse || em.numero_dps || '—'}
                     {em.erro_msg && (
                       <span className="block text-red-500 text-[11px] w-36 truncate" title={em.erro_msg}>

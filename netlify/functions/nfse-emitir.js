@@ -77,6 +77,7 @@ async function handle(event) {
     `nfse_ultimo_numero,nfse_cert_path,nfse_cert_password_enc,` +
     `nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,` +
     `regime_tributario,aliquota_iss,` +
+    `nfse_nbs,nfse_cst,nfse_cindop,nfse_cclasstrib,` +
     `email_provider,from_name,reply_to,email_subject,email_body,` +
     `smtp_host,smtp_port,smtp_user,smtp_pass,smtp_encryption,from_email`
   )
@@ -222,6 +223,13 @@ async function handle(event) {
     codNbs:        cobData.codNbs || null,
     imovel:        cobData.imovel || null,
     // imovel = { cib, inscricaoFiscal, logradouro, numero, complemento, bairro, cep, codMun, munNome }
+
+    // Reforma Tributária (IBS/CBS) — campos configurados em Configurações → Fiscal
+    // codNbs sobreposto por cobData.codNbs (per-nota) se informado acima
+    nbs:       cobData.codNbs || p.nfse_nbs       || null, // ex: '123012100'
+    cst:       p.nfse_cst       || null,                   // ex: '000'
+    cindop:    p.nfse_cindop    || null,                   // ex: '030101'
+    cclasstrib:p.nfse_cclasstrib|| null,                   // ex: '000001'
   }
 
   let dpsXml
@@ -669,9 +677,16 @@ function buildDpsXml(cfg, cob, homologacao) {
   }
 
   // <piscofins>: sequência obrigatória: CST → pAliqPis → pAliqCofins → vPis → vCofins → tpRetPisCofins
-  // CST 01 = Operação tributável (alíquota básica); tpRetPisCofins 1 = retido na fonte
+  // CST 01 = Operação tributável (alíquota básica)
+  // tpRetPisCofins:
+  //   1 = Não retido (PIS/COFINS são apenas débito apuração própria do prestador)
+  //   3 = Retido na fonte (tomador PJ retém PIS+COFINS+CSLL = 4,65% — "Contribuições Sociais Retidas")
+  // Quando há alíquotas de retenção de PIS/COFINS informadas, o tomador está retendo → usar 3.
   const pAliqPis    = (Number(ret.pPIS)    || 0).toFixed(2)
   const pAliqCofins = (Number(ret.pCOFINS) || 0).toFixed(2)
+  // tpRetPisCofins=3: PIS/COFINS retidos pelo tomador → portal inclui vPis+vCofins em "Contribuições Sociais Retidas"
+  // tpRetPisCofins=1: não retidos → portal exibe apenas como "Débito Apuração Própria" (não entra em retidas)
+  const tpRetPisCofins = hasPisCofins ? '3' : '1'
   const pisCofinsXml = hasPisCofins
     ? `<piscofins>\n` +
       `<CST>01</CST>\n` +
@@ -679,7 +694,7 @@ function buildDpsXml(cfg, cob, homologacao) {
       `<pAliqCofins>${pAliqCofins}</pAliqCofins>\n` +
       `<vPis>${vRetPIS || '0.00'}</vPis>\n` +
       `<vCofins>${vRetCOFINS || '0.00'}</vCofins>\n` +
-      `<tpRetPisCofins>1</tpRetPisCofins>\n` +
+      `<tpRetPisCofins>${tpRetPisCofins}</tpRetPisCofins>\n` +
       `</piscofins>\n`
     : ''
 
@@ -760,7 +775,7 @@ ${endTomaXml}</toma>
 </locPrest>
 <cServ>
 <cTribNac>${cfg.cTribNac}</cTribNac>
-${cfg.cTribMun ? `<cTribMun>${cfg.cTribMun}</cTribMun>\n` : ''}<xDescServ>${escXml(xDescServ.slice(0, 150))}</xDescServ>
+${cfg.cTribMun ? `<cTribMun>${cfg.cTribMun}</cTribMun>\n` : ''}${cfg.nbs    ? `<cNBS>${escXml(cfg.nbs)}</cNBS>\n`         : ''}${cfg.cindop ? `<cIndOp>${escXml(cfg.cindop)}</cIndOp>\n`     : ''}<xDescServ>${escXml(xDescServ.slice(0, 150))}</xDescServ>
 </cServ>
 ${cfg.imovel ? `<infObra>\n<BemImovel>\n` +
   (cfg.imovel.cib            ? `<nCib>${escXml(cfg.imovel.cib.toUpperCase())}</nCib>\n`                 : '') +
@@ -783,7 +798,9 @@ ${cfg.imovel ? `<infObra>\n<BemImovel>\n` +
 <tribISSQN>1</tribISSQN>
 <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
 ${tpRetISSQN === 2 && isSimples ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</tribMun>
-${hasRetFed ? `<tribFed>\n${tribFedInnerXml}</tribFed>\n` : ''}${totTribXml}
+${hasRetFed ? `<tribFed>\n${tribFedInnerXml}</tribFed>\n` : ''}${cfg.cst && cfg.cclasstrib
+  ? `<ibsCbs>\n<CST>${escXml(cfg.cst)}</CST>\n<cClassTrib>${escXml(cfg.cclasstrib)}</cClassTrib>\n</ibsCbs>\n`
+  : ''}${totTribXml}
 </trib>
 </valores>
 </infDPS>

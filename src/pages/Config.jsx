@@ -276,6 +276,10 @@ export default function Config() {
     pixKeyRecebimento: '',
     pixKeyType:        'cpf',
     subaccountCreated: false,
+    // Focus NFe (para municípios com sistema próprio)
+    nfseProvedor:      'sefin',
+    focusToken:        '',
+    focusHomologacao:  false,
   })
 
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
@@ -341,6 +345,10 @@ export default function Config() {
           pixKeyRecebimento: data?.pix_key_recebimento   || '',
           pixKeyType:        data?.pix_key_type          || 'cpf',
           subaccountCreated: data?.openpix_subaccount_created || false,
+          // Focus NFe
+          nfseProvedor:     data?.nfse_provedor     || 'sefin',
+          focusToken:       data?.focus_token       || '',
+          focusHomologacao: !!data?.focus_homologacao,
         }))
         // Marca se já existe senha salva (sem expor o valor)
         setCertSenhaOk(!!data?.nfse_cert_password_enc)
@@ -437,6 +445,10 @@ export default function Config() {
         nfse_cst:        f.cst        || null,
         nfse_cindop:     f.cindop     || null,
         nfse_cclasstrib: f.cclasstrib || null,
+        // Focus NFe
+        nfse_provedor:     f.nfseProvedor,
+        focus_token:       f.nfseProvedor === 'focus' ? (f.focusToken.trim() || null) : null,
+        focus_homologacao: f.nfseProvedor === 'focus' ? f.focusHomologacao : false,
       })
     } else if (tab === 'email') {
       Object.assign(payload, {
@@ -1033,20 +1045,93 @@ export default function Config() {
             </div>
           </Section>
 
+          {/* ── Provedor Focus NFe (apenas municípios nac:false) ──── */}
+          {(() => {
+            const sel = MUNICIPIOS_SUL.find(m => m.ibge === f.municipioIbge)
+            if (!sel || sel.nac !== false) return null
+            return (
+              <Section title="🔌 Provedor de Emissão NFS-e">
+                <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+                  <strong>{sel.nome.split(' —')[0]}</strong> usa sistema municipal próprio. Selecione o provedor de integração para emitir NFS-e neste município.
+                </p>
+
+                {/* Seletor de provedor */}
+                <Row label="Provedor de emissão">
+                  <select
+                    value={f.nfseProvedor}
+                    onChange={e => set('nfseProvedor', e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="sefin">SEFIN Nacional (padrão)</option>
+                    <option value="focus">Focus NFe</option>
+                  </select>
+                </Row>
+
+                {/* Campos Focus NFe */}
+                {f.nfseProvedor === 'focus' && (
+                  <div className="mt-3 space-y-3 border border-blue-200 bg-blue-50 rounded-xl px-4 py-3">
+                    <span className="text-xs font-semibold text-blue-800">⚡ Configuração Focus NFe</span>
+
+                    <Row
+                      label="Token de autenticação"
+                      hint="Token gerado no painel Focus NFe (app.focusnfe.com.br → Configurações → Tokens). Guarde com segurança.">
+                      <Inp
+                        value={f.focusToken}
+                        onChange={e => set('focusToken', e.target.value)}
+                        placeholder="token_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                        mono
+                      />
+                    </Row>
+
+                    <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={f.focusHomologacao}
+                        onChange={e => set('focusHomologacao', e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <div>
+                        <span className="text-sm text-slate-700 font-medium">Usar ambiente de homologação (sandbox)</span>
+                        <p className="text-xs text-slate-400 mt-0.5">Ative apenas para testes. Desative em produção.</p>
+                      </div>
+                    </label>
+
+                    {!f.focusToken && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                        ⚠️ Informe o token para habilitar a emissão via Focus NFe.
+                      </p>
+                    )}
+                    {f.focusToken && !f.focusHomologacao && (
+                      <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+                        ✅ Pronto para emitir em produção via Focus NFe.
+                      </p>
+                    )}
+                    {f.focusToken && f.focusHomologacao && (
+                      <p className="text-xs text-blue-700 bg-blue-100 border border-blue-200 rounded-md px-3 py-2">
+                        🧪 Modo homologação ativo — as notas emitidas são de teste e não têm validade fiscal.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </Section>
+            )
+          })()}
+
           {/* Status de prontidão para emitir NFS-e */}
           {(() => {
-            const ok = f.cnpj && f.inscMun && f.municipioIbge && f.certOk && f.aliquota
+            const isFocus   = f.nfseProvedor === 'focus'
+            const certReady = isFocus ? !!f.focusToken : f.certOk
+            const ok = f.cnpj && f.inscMun && f.municipioIbge && certReady && f.aliquota
             return (
               <div className={`rounded-xl px-4 py-3 text-xs ${ok ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-amber-50 border border-amber-200 text-amber-700'}`}>
                 {ok ? (
-                  <span>✅ Configuração completa — pronto para emitir NFS-e.</span>
+                  <span>✅ Configuração completa — pronto para emitir NFS-e{isFocus ? ' via Focus NFe' : ''}.</span>
                 ) : (
                   <span>
                     ⚠️ Para emitir NFS-e, você precisa de: {[
                       !f.cnpj && 'CNPJ/CPF',
                       !f.inscMun && 'Inscrição Municipal',
                       !f.municipioIbge && 'Código IBGE',
-                      !f.certOk && 'Certificado A1',
+                      !certReady && (isFocus ? 'Token Focus NFe' : 'Certificado A1'),
                       !f.aliquota && 'Alíquota ISS',
                     ].filter(Boolean).join(', ')}.
                     Configure em <strong>Empresa</strong> ou nas abas acima.
