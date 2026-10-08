@@ -794,18 +794,18 @@ ${cfg.imovel ? `<infObra>\n<BemImovel>\n` +
 <vServ>${vServ}</vServ>
 </vServPrest>
 <trib>
-<tribMun>
-<tribISSQN>1</tribISSQN>
-<tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
-${tpRetISSQN === 2 && isSimples ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</tribMun>
-${hasRetFed ? `<tribFed>\n${tribFedInnerXml}</tribFed>\n` : ''}${cfg.cst
+${cfg.cst
   ? `<ibsCbs>\n` +
     `${cfg.nbs     ? `<cNBS>${escXml(cfg.nbs)}</cNBS>\n`         : ''}` +
     `${cfg.cindop  ? `<indOp>${escXml(cfg.cindop)}</indOp>\n`    : ''}` +
     `<cCST>${escXml(cfg.cst)}</cCST>\n` +
     `${cfg.cclasstrib ? `<cClassTrib>${escXml(cfg.cclasstrib)}</cClassTrib>\n` : ''}` +
     `</ibsCbs>\n`
-  : ''}${totTribXml}
+  : ''}<tribMun>
+<tribISSQN>1</tribISSQN>
+<tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
+${tpRetISSQN === 2 && isSimples ? `<pAliq>${cfg.aliquota}</pAliq>\n` : ''}</tribMun>
+${hasRetFed ? `<tribFed>\n${tribFedInnerXml}</tribFed>\n` : ''}${totTribXml}
 </trib>
 </valores>
 </infDPS>
