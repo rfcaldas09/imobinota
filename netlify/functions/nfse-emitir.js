@@ -803,6 +803,7 @@ ${hasRetFed ? `<tribFed>\n${tribFedInnerXml}</tribFed>\n` : ''}${totTribXml}
 </valores>
 ${!isSimples && cfg.cst && cfg.cclasstrib ? (
 `<IBSCBS>
+<finNFSe>0</finNFSe>
 <indFinal>0</indFinal>
 ${cfg.cindop ? `<cIndOp>${cfg.cindop}</cIndOp>\n` : ''}<valores>
 <trib>
