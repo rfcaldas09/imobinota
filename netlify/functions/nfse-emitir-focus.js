@@ -144,13 +144,32 @@ async function handle(event) {
   const ref = `imb-${userId.replace(/-/g, '').slice(0, 8)}-${Date.now()}`
   console.log('[nfse-emitir-focus] ref:', ref, '| ibge:', ibge7, '| valor:', valorServicos)
 
+  // Objeto servico (Focus NFe v2 — NFS-e Nacional usa objeto, não array)
+  const ret = cobData.retencoes || {}
+  const servico = {
+    valor_servicos:     valorServicos,
+    valor_iss:          valorIss,
+    aliquota:           aliquota,
+    iss_retido:         issRetido,
+    item_lista_servico: itemLista,
+    discriminacao:      descServico.slice(0, 2000),
+    codigo_municipio:   ibge7,
+    // Retenções federais dentro de servico
+    ...(ret.pIRRF   ? { valor_ir:     parseFloat((valorServicos * ret.pIRRF   / 100).toFixed(2)) } : {}),
+    ...(ret.pCSLL   ? { valor_csll:   parseFloat((valorServicos * ret.pCSLL   / 100).toFixed(2)) } : {}),
+    ...(ret.pCOFINS ? { valor_cofins: parseFloat((valorServicos * ret.pCOFINS / 100).toFixed(2)) } : {}),
+    ...(ret.pPIS    ? { valor_pis:    parseFloat((valorServicos * ret.pPIS    / 100).toFixed(2)) } : {}),
+    ...(ret.pINSS   ? { valor_inss:   parseFloat((valorServicos * ret.pINSS   / 100).toFixed(2)) } : {}),
+  }
+
   // Monta o payload
   const focusPayload = {
-    data_emissao:      dataEmissao,
-    natureza_operacao: 1, // 1 = Tributação no município
-    numero_rps:        String(novNumero),
-    serie_rps:         '1',
-    tipo_rps:          'RPS',
+    data_emissao:             dataEmissao,
+    natureza_operacao:        1, // 1 = Tributação no município
+    optante_simples_nacional: p.regime_tributario === '1', // Simples=1, Presumido=2, Real=3
+    numero_rps:               String(novNumero),
+    serie_rps:                '1',
+    tipo_rps:                 'RPS',
     prestador: {
       ...(isCnpj ? { cnpj: cnpjDigits }              : {}),
       ...(isCpf  ? { cpf:  cnpjDigits.slice(-11) }   : {}),
@@ -164,31 +183,8 @@ async function handle(event) {
       ...(cobData.email ? { email: cobData.email }              : {}),
       ...(tomadorEndereco ? { endereco: tomadorEndereco }       : {}),
     },
-    itens_servico: [
-      {
-        descricao:                    descServico.slice(0, 500),
-        quantidade:                   1,
-        valor_unitario:               valorServicos,
-        valor_total:                  valorServicos,
-        item_lista_servico:           itemLista,
-        codigo_tributacao_municipio:  itemLista,
-      },
-    ],
-    valor_servicos: valorServicos,
-    valor_iss:      valorIss,
-    aliquota:       aliquota,
-    iss_retido:     issRetido,
-    codigo_municipio: ibge7,
-    discriminacao:    descServico.slice(0, 2000),
+    servico,
   }
-
-  // Retenções federais (se houver)
-  const ret = cobData.retencoes || {}
-  if (ret.pIRRF)   focusPayload.valor_ir    = parseFloat((valorServicos * ret.pIRRF   / 100).toFixed(2))
-  if (ret.pCSLL)   focusPayload.valor_csll  = parseFloat((valorServicos * ret.pCSLL   / 100).toFixed(2))
-  if (ret.pCOFINS) focusPayload.valor_cofins= parseFloat((valorServicos * ret.pCOFINS / 100).toFixed(2))
-  if (ret.pPIS)    focusPayload.valor_pis   = parseFloat((valorServicos * ret.pPIS    / 100).toFixed(2))
-  if (ret.pINSS)   focusPayload.valor_inss  = parseFloat((valorServicos * ret.pINSS   / 100).toFixed(2))
 
   console.log('[nfse-emitir-focus] payload:', JSON.stringify(focusPayload))
 

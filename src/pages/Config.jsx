@@ -205,6 +205,163 @@ function Lc116Picker({ value, onChange }) {
   )
 }
 
+// ── FocusSyncPanel — cadastro self-service de empresa no Focus NFe ─────────────
+function FocusSyncPanel({ f, set, userId }) {
+  const [certBase64,       setCertBase64]       = useState('')
+  const [certSenha,        setCertSenha]        = useState('')
+  const [loginPref,        setLoginPref]        = useState('')
+  const [senhaPref,        setSenhaPref]        = useState('')
+  const [syncing,          setSyncing]          = useState(false)
+  const [syncMsg,          setSyncMsg]          = useState(null)  // { ok, text }
+  const fileRef = useRef(null)
+
+  const hasCert = !!f.focusToken  // token existente = empresa já cadastrada
+
+  function handleCertFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => setCertBase64(ev.target.result.split(',')[1] || '')
+    reader.readAsDataURL(file)
+  }
+
+  async function handleSync() {
+    if (!certBase64 || !certSenha) {
+      setSyncMsg({ ok: false, text: 'Selecione o arquivo do certificado A1 e informe a senha.' })
+      return
+    }
+    setSyncing(true)
+    setSyncMsg(null)
+    try {
+      const res = await fetch('/.netlify/functions/focus-empresa-cadastrar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          certBase64,
+          certSenha,
+          loginPrefeitura: loginPref || undefined,
+          senhaPrefeitura: senhaPref || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        setSyncMsg({ ok: false, text: data.error || 'Erro ao cadastrar empresa no Focus NFe.' })
+      } else {
+        setSyncMsg({ ok: true, text: 'Empresa cadastrada com sucesso no Focus NFe! Token salvo automaticamente.' })
+        set('focusToken', '__synced__')   // marca como sincronizado — será atualizado no próximo carregamento do perfil
+        setCertBase64('')
+        setCertSenha('')
+        if (fileRef.current) fileRef.current.value = ''
+      }
+    } catch (err) {
+      setSyncMsg({ ok: false, text: `Erro de rede: ${err.message}` })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  return (
+    <div className="mt-3 space-y-4 border border-blue-200 bg-blue-50 rounded-xl px-4 py-4">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-blue-800">⚡ Integração Focus NFe</span>
+        {hasCert && (
+          <span className="text-xs font-medium text-emerald-700 bg-emerald-100 border border-emerald-200 rounded-full px-2.5 py-0.5">
+            ✅ Cadastrado
+          </span>
+        )}
+      </div>
+
+      <p className="text-xs text-slate-600 leading-relaxed">
+        Informe o certificado digital A1 da empresa e, se necessário, o login da prefeitura. O cadastro na Focus NFe é feito automaticamente — você não precisa acessar o painel deles.
+      </p>
+
+      {/* Certificado A1 */}
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-slate-700">Certificado Digital A1 (.pfx / .p12)</p>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".pfx,.p12"
+          onChange={handleCertFile}
+          className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
+        />
+        {certBase64 && (
+          <p className="text-xs text-emerald-600">✓ Arquivo carregado ({Math.round(certBase64.length * 0.75 / 1024)} KB)</p>
+        )}
+        <Row label="Senha do certificado" hint="Senha definida quando o certificado A1 foi gerado">
+          <Inp
+            value={certSenha}
+            onChange={e => setCertSenha(e.target.value)}
+            type="password"
+            placeholder="Senha do arquivo .pfx"
+          />
+        </Row>
+      </div>
+
+      {/* Login/senha da prefeitura (opcional — alguns municípios exigem) */}
+      <details className="text-xs">
+        <summary className="cursor-pointer font-medium text-slate-600 select-none">
+          🏛️ Login da prefeitura (opcional — São José e outros)
+        </summary>
+        <div className="mt-2 space-y-2 pl-1">
+          <p className="text-slate-500 leading-relaxed">
+            Alguns municípios (ex: São José/SC) exigem usuário e senha cadastrados no sistema da prefeitura para emitir NFS-e. Informe abaixo se for o caso.
+          </p>
+          <Row label="Usuário / Login">
+            <Inp value={loginPref} onChange={e => setLoginPref(e.target.value)} placeholder="usuario@prefeitura.sc.gov.br" />
+          </Row>
+          <Row label="Senha da prefeitura">
+            <Inp value={senhaPref} onChange={e => setSenhaPref(e.target.value)} type="password" placeholder="Senha do portal da prefeitura" />
+          </Row>
+        </div>
+      </details>
+
+      {/* Ambiente */}
+      <label className="flex items-start gap-2.5 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={f.focusHomologacao}
+          onChange={e => set('focusHomologacao', e.target.checked)}
+          className="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+        />
+        <div>
+          <span className="text-sm text-slate-700 font-medium">Usar ambiente de homologação (testes)</span>
+          <p className="text-xs text-slate-400 mt-0.5">Desative em produção para emitir notas com validade fiscal.</p>
+        </div>
+      </label>
+
+      {/* Botão sincronizar */}
+      <button
+        onClick={handleSync}
+        disabled={syncing || !certBase64 || !certSenha}
+        className="w-full py-2 text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+        {syncing ? '⏳ Cadastrando na Focus NFe…' : hasCert ? '🔄 Atualizar cadastro na Focus NFe' : '🔌 Cadastrar empresa na Focus NFe'}
+      </button>
+
+      {/* Feedback */}
+      {syncMsg && (
+        <p className={`text-xs rounded-md px-3 py-2 border ${syncMsg.ok
+          ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+          : 'text-red-700 bg-red-50 border-red-200'}`}>
+          {syncMsg.ok ? '✅' : '❌'} {syncMsg.text}
+        </p>
+      )}
+
+      {/* Status atual */}
+      {hasCert && !syncMsg && (
+        <p className={`text-xs rounded-md px-3 py-2 border ${f.focusHomologacao
+          ? 'text-blue-700 bg-blue-100 border-blue-200'
+          : 'text-emerald-700 bg-emerald-50 border-emerald-200'}`}>
+          {f.focusHomologacao
+            ? '🧪 Modo homologação — notas emitidas são de teste e não têm validade fiscal.'
+            : '✅ Pronto para emitir em produção via Focus NFe.'}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export default function Config() {
   const { user, isContabilidade, controlaGarantidora } = useAuth()
   const { refresh: refreshNfse } = useNfseReadiness()
@@ -872,30 +1029,17 @@ export default function Config() {
                     <option value="outro">Outro (digitar IBGE abaixo)</option>
                   </select>
                 </div>
-                {/* Aviso quando município usa sistema próprio (não o emissor nacional) */}
+                {/* Aviso de migração futura quando data conhecida */}
                 {(() => {
                   const sel = MUNICIPIOS_SUL.find(m => m.ibge === f.municipioIbge)
-                  if (!sel || sel.nac !== false) return null
-                  // Município com data de migração futura conhecida
-                  if (sel.nacEm) {
-                    const dt = new Date(sel.nacEm)
-                    const hoje = new Date()
-                    if (dt > hoje) {
-                      const dias = Math.ceil((dt - hoje) / 86400000)
-                      return (
-                        <p className="mt-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
-                          🔄 <strong>{sel.nome.split(' —')[0]}</strong> ainda usa sistema municipal próprio, mas migrará para o Emissor Público Nacional em <strong>{dt.toLocaleDateString('pt-BR')}</strong> (em {dias} dias). Até lá, selecione outro município para testes ou aguarde a migração.
-                        </p>
-                      )
-                    }
-                  }
-                  const compatíveis = MUNICIPIOS_SUL
-                    .filter(m => m.nac)
-                    .map(m => m.nome.split(' —')[0])
-                    .join(', ')
+                  if (!sel || sel.nac !== false || !sel.nacEm) return null
+                  const dt = new Date(sel.nacEm)
+                  const hoje = new Date()
+                  if (dt <= hoje) return null
+                  const dias = Math.ceil((dt - hoje) / 86400000)
                   return (
-                    <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                      ⚠️ <strong>{sel.nome.split(' —')[0]}</strong> usa sistema municipal próprio e <strong>não é compatível</strong> com o endpoint nacional da NFS-e (SEFIN). Para emitir notas nesse município, é necessária integração específica com a prefeitura. Municípios compatíveis: {compatíveis}.
+                    <p className="mt-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+                      🔄 <strong>{sel.nome.split(' —')[0]}</strong> ainda usa sistema municipal próprio, mas migrará para o Emissor Público Nacional em <strong>{dt.toLocaleDateString('pt-BR')}</strong> (em {dias} dias).
                     </p>
                   )
                 })()}
@@ -1077,51 +1221,9 @@ export default function Config() {
                   </select>
                 </Row>
 
-                {/* Campos Focus NFe */}
+                {/* Campos Focus NFe — self-service */}
                 {f.nfseProvedor === 'focus' && (
-                  <div className="mt-3 space-y-3 border border-blue-200 bg-blue-50 rounded-xl px-4 py-3">
-                    <span className="text-xs font-semibold text-blue-800">⚡ Configuração Focus NFe</span>
-
-                    <Row
-                      label="Token de autenticação"
-                      hint="Token gerado no painel Focus NFe (app.focusnfe.com.br → Configurações → Tokens). Guarde com segurança.">
-                      <Inp
-                        value={f.focusToken}
-                        onChange={e => set('focusToken', e.target.value)}
-                        placeholder="token_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                        mono
-                      />
-                    </Row>
-
-                    <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={f.focusHomologacao}
-                        onChange={e => set('focusHomologacao', e.target.checked)}
-                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <div>
-                        <span className="text-sm text-slate-700 font-medium">Usar ambiente de homologação (sandbox)</span>
-                        <p className="text-xs text-slate-400 mt-0.5">Ative apenas para testes. Desative em produção.</p>
-                      </div>
-                    </label>
-
-                    {!f.focusToken && (
-                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                        ⚠️ Informe o token para habilitar a emissão via Focus NFe.
-                      </p>
-                    )}
-                    {f.focusToken && !f.focusHomologacao && (
-                      <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
-                        ✅ Pronto para emitir em produção via Focus NFe.
-                      </p>
-                    )}
-                    {f.focusToken && f.focusHomologacao && (
-                      <p className="text-xs text-blue-700 bg-blue-100 border border-blue-200 rounded-md px-3 py-2">
-                        🧪 Modo homologação ativo — as notas emitidas são de teste e não têm validade fiscal.
-                      </p>
-                    )}
-                  </div>
+                  <FocusSyncPanel f={f} set={set} userId={user?.id} />
                 )}
               </Section>
             )
