@@ -68,10 +68,14 @@ async function handle(event) {
     `company_name,cnpj,inscricao_municipal,email,` +
     `nfse_municipio_ibge,nfse_municipio_nome,` +
     `nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,` +
-    `regime_tributario,focus_homologacao,` +
+    `regime_tributario,` +
     `nfse_cert_path,nfse_cert_password_enc`
   )
-  if (!profRes.ok) throw new Error(`Erro ao buscar perfil: ${profRes.status}`)
+  if (!profRes.ok) {
+    const errBody = await profRes.text().catch(() => '')
+    console.error('[focus-empresa-cadastrar] Erro Supabase busca perfil:', profRes.status, errBody)
+    throw new Error(`Erro ao buscar perfil: ${profRes.status} — ${errBody}`)
+  }
   const profiles = await profRes.json()
   const p = profiles[0]
   if (!p) return { statusCode: 404, body: JSON.stringify({ error: 'Perfil não encontrado' }) }
