@@ -50,8 +50,11 @@ export const CINDOP_OPTIONS = [
   // ── Regime regular — serviços a pessoas jurídicas / tomadores no país (mais comum)
   { value: '100301', label: '100301 — Serviço a destinatário no país — Regime regular' },
 
+  // ── Serviços digitais / tecnologia (SaaS, licenças de software, APIs)
+  { value: '100301', label: '100301 — Serviço a destinatário no país — Regime regular (SaaS, TI, software, consultoria)' },
+
   // ── Bens imateriais / direitos (domicílio do adquirente)
-  { value: '100501', label: '100501 — Bens imateriais / direitos — Domicílio principal do adquirente no país' },
+  { value: '100501', label: '100501 — Bens imateriais / direitos / licenças de software — Domicílio do adquirente' },
 
   // ── Serviços agropecuários / insumos
   { value: '050101', label: '050101 — Serviços agropecuários e aquícolas — Insumos (tipo I)' },

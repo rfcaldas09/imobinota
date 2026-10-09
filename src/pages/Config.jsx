@@ -206,28 +206,21 @@ function Lc116Picker({ value, onChange }) {
 }
 
 // ── FocusSyncPanel — cadastro self-service de empresa no Focus NFe ─────────────
+// Reutiliza o certificado A1 e senha já cadastrados na aba Empresa (nfse_cert_path +
+// nfse_cert_password_enc). Não duplica campos — apenas pede login/senha da prefeitura
+// (específico de municípios como São José/SC) e o botão de sincronização.
 function FocusSyncPanel({ f, set, userId }) {
-  const [certBase64,       setCertBase64]       = useState('')
-  const [certSenha,        setCertSenha]        = useState('')
-  const [loginPref,        setLoginPref]        = useState('')
-  const [senhaPref,        setSenhaPref]        = useState('')
-  const [syncing,          setSyncing]          = useState(false)
-  const [syncMsg,          setSyncMsg]          = useState(null)  // { ok, text }
-  const fileRef = useRef(null)
+  const [loginPref, setLoginPref] = useState('')
+  const [senhaPref, setSenhaPref] = useState('')
+  const [syncing,   setSyncing]   = useState(false)
+  const [syncMsg,   setSyncMsg]   = useState(null)  // { ok, text }
 
-  const hasCert = !!f.focusToken  // token existente = empresa já cadastrada
-
-  function handleCertFile(e) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = ev => setCertBase64(ev.target.result.split(',')[1] || '')
-    reader.readAsDataURL(file)
-  }
+  const hasCert    = !!f.focusToken  // empresa já cadastrada no Focus
+  const certOk     = !!f.certOk      // certificado A1 já configurado na aba Empresa
 
   async function handleSync() {
-    if (!certBase64 || !certSenha) {
-      setSyncMsg({ ok: false, text: 'Selecione o arquivo do certificado A1 e informe a senha.' })
+    if (!certOk) {
+      setSyncMsg({ ok: false, text: 'Configure o certificado digital A1 na aba Empresa antes de sincronizar com a Focus NFe.' })
       return
     }
     setSyncing(true)
@@ -238,8 +231,6 @@ function FocusSyncPanel({ f, set, userId }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
-          certBase64,
-          certSenha,
           loginPrefeitura: loginPref || undefined,
           senhaPrefeitura: senhaPref || undefined,
         }),
@@ -249,10 +240,7 @@ function FocusSyncPanel({ f, set, userId }) {
         setSyncMsg({ ok: false, text: data.error || 'Erro ao cadastrar empresa no Focus NFe.' })
       } else {
         setSyncMsg({ ok: true, text: 'Empresa cadastrada com sucesso no Focus NFe! Token salvo automaticamente.' })
-        set('focusToken', '__synced__')   // marca como sincronizado — será atualizado no próximo carregamento do perfil
-        setCertBase64('')
-        setCertSenha('')
-        if (fileRef.current) fileRef.current.value = ''
+        set('focusToken', '__synced__')
       }
     } catch (err) {
       setSyncMsg({ ok: false, text: `Erro de rede: ${err.message}` })
@@ -272,35 +260,19 @@ function FocusSyncPanel({ f, set, userId }) {
         )}
       </div>
 
-      <p className="text-xs text-slate-600 leading-relaxed">
-        Informe o certificado digital A1 da empresa e, se necessário, o login da prefeitura. O cadastro na Focus NFe é feito automaticamente — você não precisa acessar o painel deles.
-      </p>
-
-      {/* Certificado A1 */}
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-slate-700">Certificado Digital A1 (.pfx / .p12)</p>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".pfx,.p12"
-          onChange={handleCertFile}
-          className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
-        />
-        {certBase64 && (
-          <p className="text-xs text-emerald-600">✓ Arquivo carregado ({Math.round(certBase64.length * 0.75 / 1024)} KB)</p>
-        )}
-        <Row label="Senha do certificado" hint="Senha definida quando o certificado A1 foi gerado">
-          <Inp
-            value={certSenha}
-            onChange={e => setCertSenha(e.target.value)}
-            type="password"
-            placeholder="Senha do arquivo .pfx"
-          />
-        </Row>
-      </div>
+      {/* Status do certificado (vem da aba Empresa) */}
+      {certOk ? (
+        <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+          🔒 Certificado digital configurado na aba <strong>Empresa</strong>. Será usado automaticamente.
+        </p>
+      ) : (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          ⚠️ Certificado digital A1 não encontrado. Acesse a aba <strong>Empresa</strong> e faça o upload do arquivo .pfx antes de sincronizar.
+        </p>
+      )}
 
       {/* Login/senha da prefeitura (opcional — alguns municípios exigem) */}
-      <details className="text-xs">
+      <details className="text-xs" open={!hasCert}>
         <summary className="cursor-pointer font-medium text-slate-600 select-none">
           🏛️ Login da prefeitura (opcional — São José e outros)
         </summary>
@@ -334,7 +306,7 @@ function FocusSyncPanel({ f, set, userId }) {
       {/* Botão sincronizar */}
       <button
         onClick={handleSync}
-        disabled={syncing || !certBase64 || !certSenha}
+        disabled={syncing || !certOk}
         className="w-full py-2 text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
         {syncing ? '⏳ Cadastrando na Focus NFe…' : hasCert ? '🔄 Atualizar cadastro na Focus NFe' : '🔌 Cadastrar empresa na Focus NFe'}
       </button>
