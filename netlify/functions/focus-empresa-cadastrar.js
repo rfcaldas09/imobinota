@@ -133,6 +133,7 @@ async function handle(event) {
     uf,
     ...(p.email ? { email: p.email } : {}),
     habilita_nfse:           true,
+    mostrar_danfse_badge:    false,   // white-label: oculta logo Focus NFe no PDF da DANFSe
     arquivo_certificado_base64: certBase64,
     senha_certificado:          certSenha,
     ...(loginPrefeitura ? { login_responsavel: loginPrefeitura } : {}),
