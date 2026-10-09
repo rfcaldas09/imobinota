@@ -63,7 +63,7 @@ async function handle(event) {
 
   // ── 1. Carrega perfil do usuário ───────────────────────────────
   console.log('[focus-empresa-cadastrar] v2 | carregando perfil userId:', userId)
-  const supaUrl = `${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=company_name,cnpj,inscricao_municipal,email,nfse_municipio_ibge,nfse_municipio_nome,nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,regime_tributario,nfse_cert_path,nfse_cert_password_enc`
+  const supaUrl = `${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=company_name,cnpj,inscricao_municipal,nfse_municipio_ibge,nfse_municipio_nome,nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,regime_tributario,nfse_cert_path,nfse_cert_password_enc`
   console.log('[focus-empresa-cadastrar] URL Supabase:', supaUrl.slice(0, 80))
   const profRes = await fetch(supaUrl, {
     method: 'GET',
@@ -132,7 +132,6 @@ async function handle(event) {
     cep:                     parseInt(digits(p.nfse_cep || '00000000'), 10),
     municipio:               municipioNome,
     uf,
-    ...(p.email ? { email: p.email } : {}),
     habilita_nfse:           true,
     mostrar_danfse_badge:    false,   // white-label: oculta logo Focus NFe no PDF da DANFSe
     arquivo_certificado_base64: certBase64,
