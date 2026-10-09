@@ -91,11 +91,12 @@ async function handle(event) {
   const isTomadorCnpj  = tomadorCpfCnpj.length === 14
   const isTomadorCpf   = tomadorCpfCnpj.length === 11
 
-  // Código LC 116: "6.04" → "0604" (sem pontos, 4 dígitos)
+  // Código LC 116: "6.04" → "060400" (6 dígitos: 2 item + 2 subitem + 2 desdobro)
+  // Focus NFe exige exatamente 6 dígitos numéricos neste campo
   function lc116ToFocus(cod) {
-    if (!cod) return '0604'
+    if (!cod) return '060400'
     const [major, minor] = (cod || '').split('.')
-    return (major || '6').padStart(2, '0') + (minor || '04').padStart(2, '0')
+    return (major || '6').padStart(2, '0') + (minor || '04').padStart(2, '0') + '00'
   }
   const lc116Raw = cobData.codServicoLc116 || p.nfse_codigo_servico || '6.04'
   const itemLista = lc116ToFocus(lc116Raw)
