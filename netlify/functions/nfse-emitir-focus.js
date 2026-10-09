@@ -176,7 +176,9 @@ async function handle(event) {
     prestador: {
       ...(isCnpj ? { cnpj: cnpjDigits }              : {}),
       ...(isCpf  ? { cpf:  cnpjDigits.slice(-11) }   : {}),
-      ...(p.inscricao_municipal ? { inscricao_municipal: p.inscricao_municipal } : {}),
+      // inscricao_municipal omitida: NFS-e Nacional (E0120) rejeita IM quando
+      // o município não tem informações complementares registradas no CNC.
+      // O Focus NFe já possui o IM via cadastro da empresa.
       codigo_municipio: ibge7,
     },
     tomador: {
