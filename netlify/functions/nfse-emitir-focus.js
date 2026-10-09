@@ -215,7 +215,7 @@ async function handle(event) {
     await delay(POLL_DELAY)
     const statusRes  = await focusFetch(`${FOCUS_BASE}/nfse/${encodeURIComponent(ref)}`, 'GET', null, p.focus_token)
     const statusBody = await statusRes.json()
-    console.log(`[nfse-emitir-focus] poll ${i + 1}/${MAX_POLLS} | status:`, statusBody.status)
+    console.log(`[nfse-emitir-focus] poll ${i + 1}/${MAX_POLLS} | status:`, statusBody.status, '| body:', JSON.stringify(statusBody).slice(0, 300))
     focusStatus = statusBody.status || focusStatus
     focusData   = statusBody
     if (focusStatus === 'autorizado') {
@@ -223,11 +223,12 @@ async function handle(event) {
     }
   }
 
-  // Erros retornados pelo Focus
-  if (focusStatus === 'erro') {
+  // Erros retornados pelo Focus (inclui erro_autorizacao = rejeitado pela prefeitura)
+  if (focusStatus === 'erro' || focusStatus === 'erro_autorizacao') {
     const errMsg = focusData?.erros?.[0]?.mensagem
       || focusData?.mensagem_sefaz
-      || 'NFS-e rejeitada pelo município'
+      || focusData?.erros?.[0]?.codigo
+      || `NFS-e rejeitada pelo município (${focusStatus})`
     console.error('[nfse-emitir-focus] NFS-e com ERRO:', JSON.stringify(focusData))
     // Salva como erro no banco para visibilidade
     await saveEmissao(SUPABASE_URL, SERVICE_KEY, {
