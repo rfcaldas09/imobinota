@@ -62,18 +62,19 @@ async function handle(event) {
   }
 
   // ── 1. Carrega perfil do usuário ───────────────────────────────
-  console.log('[focus-empresa-cadastrar] carregando perfil userId:', userId)
-  const profRes = await sbFetch(SUPABASE_URL, SERVICE_KEY,
-    `profiles?id=eq.${userId}&select=` +
-    `company_name,cnpj,inscricao_municipal,email,` +
-    `nfse_municipio_ibge,nfse_municipio_nome,` +
-    `nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,` +
-    `regime_tributario,` +
-    `nfse_cert_path,nfse_cert_password_enc`
-  )
+  console.log('[focus-empresa-cadastrar] v2 | carregando perfil userId:', userId)
+  const supaUrl = `${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=company_name,cnpj,inscricao_municipal,email,nfse_municipio_ibge,nfse_municipio_nome,nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,regime_tributario,nfse_cert_path,nfse_cert_password_enc`
+  console.log('[focus-empresa-cadastrar] URL Supabase:', supaUrl.slice(0, 80))
+  const profRes = await fetch(supaUrl, {
+    method: 'GET',
+    headers: {
+      'apikey':        SERVICE_KEY,
+      'Authorization': `Bearer ${SERVICE_KEY}`,
+    },
+  })
   if (!profRes.ok) {
-    const errBody = await profRes.text().catch(() => '')
-    console.error('[focus-empresa-cadastrar] Erro Supabase busca perfil:', profRes.status, errBody)
+    const errBody = await profRes.text().catch(() => '(sem body)')
+    console.error('[focus-empresa-cadastrar] Supabase status:', profRes.status, '| body:', errBody)
     throw new Error(`Erro ao buscar perfil: ${profRes.status} — ${errBody}`)
   }
   const profiles = await profRes.json()

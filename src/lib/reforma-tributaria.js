@@ -47,10 +47,7 @@ export const CINDOP_OPTIONS = [
   // ── Eventos, espetáculos, entretenimento (presencial)
   { value: '040101', label: '040101 — Espetáculos, eventos, atividades de entretenimento — Presencial' },
 
-  // ── Regime regular — serviços a pessoas jurídicas / tomadores no país (mais comum)
-  { value: '100301', label: '100301 — Serviço a destinatário no país — Regime regular' },
-
-  // ── Serviços digitais / tecnologia (SaaS, licenças de software, APIs)
+  // ── Regime regular — serviços B2B, SaaS, TI, consultoria, software (tomador no país)
   { value: '100301', label: '100301 — Serviço a destinatário no país — Regime regular (SaaS, TI, software, consultoria)' },
 
   // ── Bens imateriais / direitos (domicílio do adquirente)
