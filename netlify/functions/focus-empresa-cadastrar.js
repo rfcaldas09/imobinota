@@ -111,7 +111,9 @@ async function handle(event) {
   // ── 4. Monta payload Focus NFe ─────────────────────────────────
   const ibge7  = digits(p.nfse_municipio_ibge).slice(0, 7)
   const isCnpj = cnpjDigits.length === 14
-  const regime = parseInt(p.regime_tributario || '3', 10)
+  // regime_tributario no DB: 'simples' | 'presumido' | 'real'
+  const regimeMap = { simples: 1, presumido: 2, real: 3 }
+  const regime = regimeMap[p.regime_tributario] ?? 3
 
   const ufMap = { '11':'RO','12':'AC','13':'AM','14':'RR','15':'PA','16':'AP','17':'TO',
                   '21':'MA','22':'PI','23':'CE','24':'RN','25':'PB','26':'PE','27':'AL','28':'SE','29':'BA',

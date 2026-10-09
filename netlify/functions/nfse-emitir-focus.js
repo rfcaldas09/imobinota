@@ -169,7 +169,7 @@ async function handle(event) {
   const focusPayload = {
     data_emissao:             dataEmissao,
     natureza_operacao:        1, // 1 = Tributação no município
-    optante_simples_nacional: p.regime_tributario === '1', // Simples=1, Presumido=2, Real=3
+    optante_simples_nacional: p.regime_tributario === 'simples', // valores: 'simples' | 'presumido' | 'real'
     numero_rps:               String(novNumero),
     serie_rps:                '1',
     tipo_rps:                 'RPS',
