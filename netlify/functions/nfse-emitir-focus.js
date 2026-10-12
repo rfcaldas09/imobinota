@@ -172,11 +172,10 @@ async function handle(event) {
     data_emissao:             dataEmissao,
     natureza_operacao:        1, // 1 = Tributação no município
     optante_simples_nacional: isSimples,
-    // informar_valor_total_tributos=0: suprime o campo indTotTrib no XML do SEFIN.
-    // O SEFIN de São José/SC (e outros municípios NFS-e Nacional) rejeita indTotTrib
-    // para não-optantes do SN (E0712/E0713). Para optantes SN, o Focus usa pTotTribSN
-    // via aliquota_simples_nacional — também não precisamos do indTotTrib.
-    informar_valor_total_tributos: 0,
+    // NÃO enviar informar_valor_total_tributos:
+    //   - valor 0 → Focus gera <indTotTrib>0</indTotTrib> → SEFIN rejeita E0713 para não-SN
+    //   - valor 1 → Focus gera <indTotTrib>1</indTotTrib> → mesma rejeição
+    //   - ausente → Focus omite o bloco <totTrib> inteiro (campo opcional na spec NFS-e Nacional) → OK
     numero_rps:               String(novNumero),
     serie_rps:                '1',
     tipo_rps:                 'RPS',
