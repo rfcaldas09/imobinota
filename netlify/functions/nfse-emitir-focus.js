@@ -165,11 +165,18 @@ async function handle(event) {
     ...(ret.pINSS   ? { valor_inss:   parseFloat((valorServicos * ret.pINSS   / 100).toFixed(2)) } : {}),
   }
 
+  const isSimples = p.regime_tributario === 'simples'
+
   // Monta o payload
   const focusPayload = {
     data_emissao:             dataEmissao,
     natureza_operacao:        1, // 1 = Tributação no município
-    optante_simples_nacional: p.regime_tributario === 'simples', // valores: 'simples' | 'presumido' | 'real'
+    optante_simples_nacional: isSimples,
+    // informar_valor_total_tributos=0: suprime o campo indTotTrib no XML do SEFIN.
+    // O SEFIN de São José/SC (e outros municípios NFS-e Nacional) rejeita indTotTrib
+    // para não-optantes do SN (E0712/E0713). Para optantes SN, o Focus usa pTotTribSN
+    // via aliquota_simples_nacional — também não precisamos do indTotTrib.
+    informar_valor_total_tributos: 0,
     numero_rps:               String(novNumero),
     serie_rps:                '1',
     tipo_rps:                 'RPS',
