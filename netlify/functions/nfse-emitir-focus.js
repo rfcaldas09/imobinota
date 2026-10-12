@@ -261,14 +261,6 @@ async function handle(event) {
     const statusBody = await statusRes.json()
     console.log(`[nfse-emitir-focus] poll ${i + 1}/${MAX_POLLS} | status:`, statusBody.status)
     // Log diagnóstico: mostra TODAS as chaves retornadas pelo Focus com completo=1
-    console.log('[nfse-emitir-focus] keys completo=1:', Object.keys(statusBody).join(', '))
-    // Tenta exibir qualquer campo que contenha XML ou DPS
-    for (const [k, v] of Object.entries(statusBody)) {
-      if (typeof v === 'string' && (v.includes('<DPS') || v.includes('<NFSe') || v.includes('<?xml') || v.includes('<trib'))) {
-        console.log(`[nfse-emitir-focus] XML field "${k}":`, v.slice(0, 2000))
-      }
-    }
-    // Log completo do erro para diagnóstico
     if (statusBody.status === 'erro_autorizacao' || statusBody.status === 'erro') {
       console.error('[nfse-emitir-focus] body completo:', JSON.stringify(statusBody))
     }
@@ -323,7 +315,7 @@ async function handle(event) {
     numero_nfse: numeroNfse, chave_acesso: `FOCUS:${ref}`,
     cobData, tomadorNome: cobData.tenant || '',
     mesRef: cobData.mesRef || '', valor: valorServicos,
-    linkPdf: focusData.link_nfse_pdf || null,
+    linkPdf: focusData.url_danfse || focusData.url || null,
   })
 
   console.log('[nfse-emitir-focus] AUTORIZADO | numeroNfse:', numeroNfse, '| emissaoId:', emissaoId)
@@ -355,13 +347,16 @@ async function focusFetch(url, method, body, token) {
 }
 
 function supabaseFetch(url, key, path, method = 'GET', body) {
+  const prefer = method === 'PATCH'  ? 'return=minimal'
+               : method === 'POST'   ? 'return=representation'
+               : undefined
   const opts = {
     method,
     headers: {
       'apikey':        key,
       'Authorization': `Bearer ${key}`,
       'Content-Type':  'application/json',
-      'Prefer':        method === 'PATCH' ? 'return=minimal' : undefined,
+      ...(prefer ? { 'Prefer': prefer } : {}),
     },
   }
   if (body) opts.body = JSON.stringify(body)
