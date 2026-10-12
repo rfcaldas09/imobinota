@@ -310,11 +310,15 @@ async function handle(event) {
   }
 
   // ── 6. Autorizado — salva emissão ────────────────────────────
+  // mesRef: usa o da cobData ou, se ausente (nota avulsa), o mês atual (YYYY-MM)
+  const mesRefFinal = cobData.mesRef
+    || new Date().toISOString().slice(0, 7)
+
   const emissaoId = await saveEmissao(SUPABASE_URL, SERVICE_KEY, {
     userId, cobId, status: 'emitida',
     numero_nfse: numeroNfse, chave_acesso: `FOCUS:${ref}`,
     cobData, tomadorNome: cobData.tenant || '',
-    mesRef: cobData.mesRef || '', valor: valorServicos,
+    mesRef: mesRefFinal, valor: valorServicos,
     linkPdf: focusData.url_danfse || focusData.url || null,
   })
 
@@ -388,12 +392,19 @@ async function saveEmissao(supabaseUrl, serviceKey, {
   )
 
   // Supabase retorna 201 com body quando Prefer: return=representation
-  // ou 201 vazio. Tenta extrair o id.
   let inserted
   try {
     const text = await res.text()
+    if (!res.ok) {
+      console.error('[saveEmissao] INSERT falhou HTTP', res.status, text)
+      return null
+    }
     inserted = text ? JSON.parse(text) : null
-  } catch { inserted = null }
+    console.log('[saveEmissao] INSERT ok | status:', res.status, '| id:', Array.isArray(inserted) ? inserted[0]?.id : inserted?.id)
+  } catch (e) {
+    console.error('[saveEmissao] erro ao parsear resposta:', e.message)
+    inserted = null
+  }
 
   return Array.isArray(inserted) ? inserted[0]?.id : inserted?.id || null
 }
