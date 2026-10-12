@@ -189,7 +189,8 @@ async function handle(event) {
     // ─ Tomador ─
     ...(isTomadorCnpj ? { cnpj_tomador: tomadorCpfCnpj }             : {}),
     ...(isTomadorCpf  ? { cpf_tomador:  tomadorCpfCnpj }             : {}),
-    motivo_ausencia_nif_tomador:    1,   // 1 = Dispensado do NIF
+    // motivo_ausencia_nif_tomador (cNaoNIF) só é enviado quando não há CPF/CNPJ (tomador estrangeiro)
+    ...(!isTomadorCnpj && !isTomadorCpf ? { motivo_ausencia_nif_tomador: 1 } : {}),
     razao_social_tomador:           cobData.tenant || 'Tomador',
     ...(cobData.email ? { email_tomador: cobData.email }              : {}),
     ...(tomadorEndereco ? {
