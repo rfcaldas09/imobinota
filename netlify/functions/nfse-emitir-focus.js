@@ -227,9 +227,13 @@ async function handle(event) {
     const statusRes  = await focusFetch(`${FOCUS_BASE}/nfse/${encodeURIComponent(ref)}?completo=1`, 'GET', null, p.focus_token)
     const statusBody = await statusRes.json()
     console.log(`[nfse-emitir-focus] poll ${i + 1}/${MAX_POLLS} | status:`, statusBody.status)
-    // Log do XML enviado ao SEFIN (campo dps_xml ou xml_enviado retornado pelo Focus com completo=1)
-    if (statusBody.dps_xml || statusBody.xml_enviado || statusBody.xml) {
-      console.log('[nfse-emitir-focus] XML enviado ao SEFIN:', statusBody.dps_xml || statusBody.xml_enviado || statusBody.xml)
+    // Log diagnóstico: mostra TODAS as chaves retornadas pelo Focus com completo=1
+    console.log('[nfse-emitir-focus] keys completo=1:', Object.keys(statusBody).join(', '))
+    // Tenta exibir qualquer campo que contenha XML ou DPS
+    for (const [k, v] of Object.entries(statusBody)) {
+      if (typeof v === 'string' && (v.includes('<DPS') || v.includes('<NFSe') || v.includes('<?xml') || v.includes('<trib'))) {
+        console.log(`[nfse-emitir-focus] XML field "${k}":`, v.slice(0, 2000))
+      }
     }
     // Log completo do erro para diagnóstico
     if (statusBody.status === 'erro_autorizacao' || statusBody.status === 'erro') {
