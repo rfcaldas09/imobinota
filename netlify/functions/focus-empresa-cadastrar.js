@@ -134,8 +134,9 @@ async function handle(event) {
     cep:                     parseInt(digits(p.nfse_cep || '00000000'), 10),
     municipio:               municipioNome,
     uf,
-    habilita_nfse:           true,
-    mostrar_danfse_badge:    false,   // white-label: oculta logo Focus NFe no PDF da DANFSe
+    habilita_nfse:              true,
+    habilita_nfsen_producao:    true,  // habilita NFS-e Nacional em produção (ambiente real)
+    mostrar_danfse_badge:       false, // white-label: oculta logo Focus NFe no PDF da DANFSe
     arquivo_certificado_base64: certBase64,
     senha_certificado:          certSenha,
     ...(loginPrefeitura ? { login_responsavel: loginPrefeitura } : {}),
