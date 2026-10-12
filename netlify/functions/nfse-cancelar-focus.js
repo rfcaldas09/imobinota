@@ -5,7 +5,7 @@
 //   1. Busca emissão no Supabase (valida dono, status e chave_acesso no formato FOCUS:{ref})
 //   2. Extrai o {ref} da chave_acesso
 //   3. Busca focus_token do perfil
-//   4. DELETE /v2/nfse/{ref} na API Focus NFe com justificativa
+//   4. DELETE /v2/nfsen/{ref} na API Focus NFe com justificativa
 //   5. Atualiza status = 'cancelada' no Supabase
 //
 // Docs: https://focusnfe.com.br/doc/#nfse-cancelamento-de-nfs-e
@@ -69,7 +69,7 @@ exports.handler = async (event) => {
   const FOCUS_BASE  = homologacao ? FOCUS_URL_HOMO : FOCUS_URL_PROD
 
   // ── 3. DELETE /v2/nfse/{ref} ──────────────────────────────────
-  const cancelUrl = `${FOCUS_BASE}/nfse/${encodeURIComponent(focusRef)}`
+  const cancelUrl = `${FOCUS_BASE}/nfsen/${encodeURIComponent(focusRef)}`
   console.log('[nfse-cancelar-focus] cancelando:', cancelUrl)
 
   let focusStatus, focusBody
