@@ -189,6 +189,40 @@ async function handle(event) {
     throw new Error('Empresa cadastrada no Focus mas erro ao salvar token no perfil')
   }
 
+  // ── 7. Registra webhook no Focus para receber atualizações de status ─
+  const webhookUrl = process.env.FOCUS_WEBHOOK_URL
+    || 'https://imobinota.app/.netlify/functions/focus-nfse-webhook'
+
+  try {
+    // Focus aceita POST para criar; se já existir retorna 422 — tratamos abaixo
+    const hookRes  = await focusFetch(`${FOCUS_URL_PROD}/hooks`, 'POST', {
+      url:            webhookUrl,
+      cnpj_emitente:  cnpjDigits,
+    }, MASTER_TOKEN)
+    const hookBody = await hookRes.json().catch(() => ({}))
+    console.log('[focus-empresa-cadastrar] hook register status:', hookRes.status, '| body:', JSON.stringify(hookBody))
+
+    if (hookRes.status === 422) {
+      // Hook já existe — tenta PUT para garantir que a URL está atualizada
+      const hooksListRes  = await focusFetch(`${FOCUS_URL_PROD}/hooks?cnpj_emitente=${cnpjDigits}`, 'GET', null, MASTER_TOKEN)
+      const hooksList     = await hooksListRes.json().catch(() => [])
+      const existingHook  = Array.isArray(hooksList) ? hooksList.find(h => h.url === webhookUrl) : null
+      if (!existingHook) {
+        // URL diferente — já existe hook mas com URL antiga; cria com nova URL
+        const hookUpdateRes = await focusFetch(`${FOCUS_URL_PROD}/hooks`, 'POST', {
+          url:           webhookUrl,
+          cnpj_emitente: cnpjDigits,
+        }, MASTER_TOKEN)
+        console.log('[focus-empresa-cadastrar] hook retry status:', hookUpdateRes.status)
+      } else {
+        console.log('[focus-empresa-cadastrar] hook já registrado corretamente')
+      }
+    }
+  } catch (hookErr) {
+    // Não bloqueia cadastro da empresa se webhook falhar
+    console.warn('[focus-empresa-cadastrar] Erro ao registrar webhook (não bloqueante):', hookErr?.message)
+  }
+
   return {
     statusCode: 200,
     body: JSON.stringify({
