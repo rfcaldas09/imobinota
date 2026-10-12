@@ -52,7 +52,7 @@ async function handle(event) {
   const profRes = await supabaseFetch(SUPABASE_URL, SERVICE_KEY,
     `profiles?id=eq.${userId}&select=company_name,cnpj,inscricao_municipal,` +
     `nfse_municipio_ibge,nfse_municipio_nome,nfse_codigo_servico,nfse_desc_servico,` +
-    `nfse_ultimo_numero,focus_token,focus_homologacao,` +
+    `nfse_ultimo_numero,focus_token,focus_token_prod,focus_homologacao,` +
     `nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,` +
     `regime_tributario,aliquota_iss`
   )
@@ -61,7 +61,7 @@ async function handle(event) {
   const p = profiles[0]
   if (!p) return { statusCode: 404, body: JSON.stringify({ error: 'Perfil não encontrado' }) }
 
-  if (!p.focus_token) {
+  if (!p.focus_token && !p.focus_token_prod) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Token Focus NFe não configurado em Configurações → Fiscal → Provedor de Emissão' }) }
   }
   if (!p.cnpj) {
@@ -71,6 +71,15 @@ async function handle(event) {
   // homologação: cobData pode sobrepor perfil (útil para testes pontuais)
   const homologacao = homoOverride !== undefined ? homoOverride : !!p.focus_homologacao
   const FOCUS_BASE  = homologacao ? FOCUS_URL_HOMO : FOCUS_URL_PROD
+
+  // Seleciona o token correto conforme o ambiente
+  // focus_token       = token de homologação
+  // focus_token_prod  = token de produção
+  const focusToken = homologacao ? p.focus_token : (p.focus_token_prod || p.focus_token)
+  if (!focusToken) {
+    const missing = homologacao ? 'homologação' : 'produção'
+    return { statusCode: 400, body: JSON.stringify({ error: `Token de ${missing} não encontrado. Clique em "Atualizar cadastro na Focus NFe" em Configurações → Fiscal.` }) }
+  }
 
   // ── 2. Incrementa número RPS ──────────────────────────────────
   const novNumero = (p.nfse_ultimo_numero || 0) + 1
@@ -235,7 +244,7 @@ async function handle(event) {
   // ── 4. POST Focus NFe NFS-e Nacional (/nfsen) ────────────────
   const createRes = await focusFetch(
     `${FOCUS_BASE}/nfsen?ref=${encodeURIComponent(ref)}`,
-    'POST', focusPayload, p.focus_token
+    'POST', focusPayload, focusToken
   )
   const createBody = await createRes.json()
   console.log('[nfse-emitir-focus] Focus create status:', createRes.status, '| body:', JSON.stringify(createBody))
@@ -257,7 +266,7 @@ async function handle(event) {
   for (let i = 0; i < MAX_POLLS && focusStatus === 'processando_autorizacao'; i++) {
     await delay(POLL_DELAY)
     // ?completo=1 faz o Focus retornar o XML completo enviado ao SEFIN — vital para diagnóstico
-    const statusRes  = await focusFetch(`${FOCUS_BASE}/nfsen/${encodeURIComponent(ref)}?completo=1`, 'GET', null, p.focus_token)
+    const statusRes  = await focusFetch(`${FOCUS_BASE}/nfsen/${encodeURIComponent(ref)}?completo=1`, 'GET', null, focusToken)
     const statusBody = await statusRes.json()
     console.log(`[nfse-emitir-focus] poll ${i + 1}/${MAX_POLLS} | status:`, statusBody.status)
     // Log diagnóstico: mostra TODAS as chaves retornadas pelo Focus com completo=1
@@ -333,7 +342,7 @@ async function handle(event) {
     const xmlFullUrl = xmlCaminho.startsWith('http') ? xmlCaminho : `${focusBaseDomain}${xmlCaminho}`
     console.log('[nfse-emitir-focus] buscando XML em:', xmlFullUrl)
     try {
-      const xmlRes = await focusFetch(xmlFullUrl, 'GET', null, p.focus_token)
+      const xmlRes = await focusFetch(xmlFullUrl, 'GET', null, focusToken)
       if (xmlRes.ok) {
         xmlNfse = await xmlRes.text()
         console.log('[nfse-emitir-focus] XML obtido, tamanho:', xmlNfse.length)
