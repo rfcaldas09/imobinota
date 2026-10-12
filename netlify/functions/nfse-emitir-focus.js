@@ -268,6 +268,9 @@ async function handle(event) {
     focusData   = statusBody
     if (focusStatus === 'autorizado') {
       numeroNfse = statusBody.numero || statusBody.numero_nfse || String(novNumero)
+      // Log completo para diagnóstico — mostra todos os campos retornados pelo Focus
+      console.log('[nfse-emitir-focus] focusData autorizado (keys):', Object.keys(statusBody).join(', '))
+      console.log('[nfse-emitir-focus] focusData autorizado:', JSON.stringify(statusBody))
     }
   }
 
@@ -309,17 +312,41 @@ async function handle(event) {
     }
   }
 
-  // ── 6. Autorizado — salva emissão ────────────────────────────
+  // ── 6. Autorizado — busca XML e salva emissão ────────────────
   // mesRef: usa o da cobData ou, se ausente (nota avulsa), o mês atual (YYYY-MM)
   const mesRefFinal = cobData.mesRef
     || new Date().toISOString().slice(0, 7)
+
+  // Tenta buscar conteúdo XML da NFS-e retornado pelo Focus NFe
+  // Focus retorna a URL do XML em campos como caminho_xml_nota_fiscal ou url_xml
+  let xmlNfse = null
+  const xmlUrl = focusData.caminho_xml_nota_fiscal
+    || focusData.url_xml
+    || focusData.arquivo_xml
+    || focusData.xml_url
+    || null
+  if (xmlUrl) {
+    try {
+      const xmlRes = await fetch(xmlUrl)
+      if (xmlRes.ok) {
+        xmlNfse = await xmlRes.text()
+        console.log('[nfse-emitir-focus] XML obtido, tamanho:', xmlNfse.length)
+      } else {
+        console.warn('[nfse-emitir-focus] Falha ao buscar XML, HTTP:', xmlRes.status, 'url:', xmlUrl)
+      }
+    } catch (e) {
+      console.warn('[nfse-emitir-focus] Erro ao buscar XML:', e.message)
+    }
+  } else {
+    console.log('[nfse-emitir-focus] Nenhuma URL de XML retornada pelo Focus (campos disponíveis:', Object.keys(focusData).join(', '), ')')
+  }
 
   const emissaoId = await saveEmissao(SUPABASE_URL, SERVICE_KEY, {
     userId, cobId, status: 'emitida',
     numero_nfse: numeroNfse, chave_acesso: `FOCUS:${ref}`,
     cobData, tomadorNome: cobData.tenant || '',
     mesRef: mesRefFinal, valor: valorServicos,
-    linkPdf: focusData.url_danfse || focusData.url || null,
+    xmlNfse,
   })
 
   console.log('[nfse-emitir-focus] AUTORIZADO | numeroNfse:', numeroNfse, '| emissaoId:', emissaoId)
@@ -371,7 +398,7 @@ async function saveEmissao(supabaseUrl, serviceKey, {
   userId, cobId, status,
   numero_nfse, chave_acesso,
   cobData, tomadorNome, mesRef, valor,
-  errMsg = null,
+  xmlNfse = null, errMsg = null,
 }) {
   const record = {
     user_id:       userId,
@@ -383,7 +410,8 @@ async function saveEmissao(supabaseUrl, serviceKey, {
     tomador_nome:  tomadorNome || '',
     competencia:   mesRef || '',
     valor_servico: valor || 0,
-    ...(errMsg ? { erro_msg: errMsg } : {}),
+    ...(xmlNfse ? { xml_nfse: xmlNfse } : {}),
+    ...(errMsg   ? { erro_msg: errMsg } : {}),
   }
 
   const res = await supabaseFetch(supabaseUrl, serviceKey,
