@@ -185,7 +185,7 @@ async function handle(event) {
     serie_dps:                      1,
     numero_dps:                     novNumero,
     data_competencia:               dataEmissao,
-    emitente_dps:                   1,   // 1 = Prestador
+    emitente_dps:                   3,   // 3 = Aplicativo de Terceiros (Focus NFe como emissor autorizado)
     codigo_municipio_emissora:      parseInt(ibge7),
 
     // ─ Prestador ─
