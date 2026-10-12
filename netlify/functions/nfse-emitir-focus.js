@@ -371,19 +371,18 @@ async function saveEmissao(supabaseUrl, serviceKey, {
   userId, cobId, status,
   numero_nfse, chave_acesso,
   cobData, tomadorNome, mesRef, valor,
-  linkPdf = null, errMsg = null,
+  errMsg = null,
 }) {
   const record = {
     user_id:       userId,
-    // cob_id não existe na tabela nfse_emissoes — omitido para evitar erro PGRST204
+    cobranca_id:   cobId || null,
     status,
     numero_nfse:   numero_nfse || null,
     chave_acesso:  chave_acesso,
     cob_data_json: cobData,
     tomador_nome:  tomadorNome || '',
-    mes_ref:       mesRef || '',
-    valor:         valor || 0,
-    pdf_link:      linkPdf || null,
+    competencia:   mesRef || '',
+    valor_servico: valor || 0,
     ...(errMsg ? { erro_msg: errMsg } : {}),
   }
 
