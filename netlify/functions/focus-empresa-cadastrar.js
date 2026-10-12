@@ -41,7 +41,8 @@ async function handle(event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Body inválido' }) }
   }
 
-  const { userId, loginPrefeitura, senhaPrefeitura } = body
+  // loginPrefeitura/senhaPrefeitura podem vir no body (formulário) ou serem lidos do perfil depois
+  const { userId, loginPrefeitura: loginBody, senhaPrefeitura: senhaBody } = body
   if (!userId) {
     return { statusCode: 400, body: JSON.stringify({ error: 'userId é obrigatório' }) }
   }
@@ -63,7 +64,7 @@ async function handle(event) {
 
   // ── 1. Carrega perfil do usuário ───────────────────────────────
   console.log('[focus-empresa-cadastrar] v2 | carregando perfil userId:', userId)
-  const supaUrl = `${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=company_name,cnpj,inscricao_municipal,nfse_municipio_ibge,nfse_municipio_nome,nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,regime_tributario,nfse_cert_path,nfse_cert_password_enc`
+  const supaUrl = `${SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&select=company_name,cnpj,inscricao_municipal,nfse_municipio_ibge,nfse_municipio_nome,nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,regime_tributario,nfse_cert_path,nfse_cert_password_enc,focus_login_prefeitura,focus_senha_prefeitura`
   console.log('[focus-empresa-cadastrar] URL Supabase:', supaUrl.slice(0, 80))
   const profRes = await fetch(supaUrl, {
     method: 'GET',
@@ -107,6 +108,11 @@ async function handle(event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'Falha ao descriptografar a senha do certificado. Verifique NFSE_CERT_KEY.' }) }
   }
   console.log('[focus-empresa-cadastrar] cert ok, tamanho base64:', certBase64.length)
+
+  // Usa credenciais do body se fornecidas; senão usa o que está salvo no perfil
+  const loginPrefeitura = loginBody || p.focus_login_prefeitura || null
+  const senhaPrefeitura = senhaBody || p.focus_senha_prefeitura || null
+  if (loginPrefeitura) console.log('[focus-empresa-cadastrar] login_prefeitura presente:', loginPrefeitura)
 
   // ── 4. Monta payload Focus NFe ─────────────────────────────────
   const ibge7  = digits(p.nfse_municipio_ibge).slice(0, 7)
