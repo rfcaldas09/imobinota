@@ -375,7 +375,7 @@ async function saveEmissao(supabaseUrl, serviceKey, {
 }) {
   const record = {
     user_id:       userId,
-    cob_id:        cobId || null,
+    // cob_id não existe na tabela nfse_emissoes — omitido para evitar erro PGRST204
     status,
     numero_nfse:   numero_nfse || null,
     chave_acesso:  chave_acesso,
