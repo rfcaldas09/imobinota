@@ -318,27 +318,33 @@ async function handle(event) {
     || new Date().toISOString().slice(0, 7)
 
   // Tenta buscar conteúdo XML da NFS-e retornado pelo Focus NFe
-  // Focus retorna a URL do XML em campos como caminho_xml_nota_fiscal ou url_xml
+  // Focus retorna caminho_xml_nota_fiscal como caminho relativo (ex: /arquivos_development/...)
+  // Precisa prefixar o domínio base do Focus e autenticar com Basic Auth
   let xmlNfse = null
-  const xmlUrl = focusData.caminho_xml_nota_fiscal
+  const xmlCaminho = focusData.caminho_xml_nota_fiscal
     || focusData.url_xml
     || focusData.arquivo_xml
     || focusData.xml_url
     || null
-  if (xmlUrl) {
+
+  if (xmlCaminho) {
+    // Se for caminho relativo, monta URL completa com domínio base do Focus
+    const focusBaseDomain = FOCUS_BASE.replace('/v2', '') // ex: https://homologacao.focusnfe.com.br
+    const xmlFullUrl = xmlCaminho.startsWith('http') ? xmlCaminho : `${focusBaseDomain}${xmlCaminho}`
+    console.log('[nfse-emitir-focus] buscando XML em:', xmlFullUrl)
     try {
-      const xmlRes = await fetch(xmlUrl)
+      const xmlRes = await focusFetch(xmlFullUrl, 'GET', null, p.focus_token)
       if (xmlRes.ok) {
         xmlNfse = await xmlRes.text()
         console.log('[nfse-emitir-focus] XML obtido, tamanho:', xmlNfse.length)
       } else {
-        console.warn('[nfse-emitir-focus] Falha ao buscar XML, HTTP:', xmlRes.status, 'url:', xmlUrl)
+        console.warn('[nfse-emitir-focus] Falha ao buscar XML, HTTP:', xmlRes.status, 'url:', xmlFullUrl)
       }
     } catch (e) {
       console.warn('[nfse-emitir-focus] Erro ao buscar XML:', e.message)
     }
   } else {
-    console.log('[nfse-emitir-focus] Nenhuma URL de XML retornada pelo Focus (campos disponíveis:', Object.keys(focusData).join(', '), ')')
+    console.log('[nfse-emitir-focus] Nenhuma URL de XML retornada pelo Focus (campos:', Object.keys(focusData).join(', '), ')')
   }
 
   const emissaoId = await saveEmissao(SUPABASE_URL, SERVICE_KEY, {
