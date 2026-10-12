@@ -223,9 +223,18 @@ async function handle(event) {
 
   for (let i = 0; i < MAX_POLLS && focusStatus === 'processando_autorizacao'; i++) {
     await delay(POLL_DELAY)
-    const statusRes  = await focusFetch(`${FOCUS_BASE}/nfse/${encodeURIComponent(ref)}`, 'GET', null, p.focus_token)
+    // ?completo=1 faz o Focus retornar o XML completo enviado ao SEFIN — vital para diagnóstico
+    const statusRes  = await focusFetch(`${FOCUS_BASE}/nfse/${encodeURIComponent(ref)}?completo=1`, 'GET', null, p.focus_token)
     const statusBody = await statusRes.json()
-    console.log(`[nfse-emitir-focus] poll ${i + 1}/${MAX_POLLS} | status:`, statusBody.status, '| body:', JSON.stringify(statusBody).slice(0, 300))
+    console.log(`[nfse-emitir-focus] poll ${i + 1}/${MAX_POLLS} | status:`, statusBody.status)
+    // Log do XML enviado ao SEFIN (campo dps_xml ou xml_enviado retornado pelo Focus com completo=1)
+    if (statusBody.dps_xml || statusBody.xml_enviado || statusBody.xml) {
+      console.log('[nfse-emitir-focus] XML enviado ao SEFIN:', statusBody.dps_xml || statusBody.xml_enviado || statusBody.xml)
+    }
+    // Log completo do erro para diagnóstico
+    if (statusBody.status === 'erro_autorizacao' || statusBody.status === 'erro') {
+      console.error('[nfse-emitir-focus] body completo:', JSON.stringify(statusBody))
+    }
     focusStatus = statusBody.status || focusStatus
     focusData   = statusBody
     if (focusStatus === 'autorizado') {
