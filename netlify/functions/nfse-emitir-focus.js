@@ -152,7 +152,12 @@ async function handle(event) {
   const servico = {
     valor_servicos:     valorServicos,
     valor_iss:          valorIss,
-    aliquota:           aliquota,
+    // Para não-optantes do SN (Lucro Presumido/Real): NÃO enviar aliquota.
+    // O Focus NFe usa servico.aliquota para gerar pTotTribSN no XML, o que o SEFIN
+    // rejeita com E0713 para não-SN. Com valor_iss + valor_servicos já informados,
+    // o Focus calcula a alíquota de ISS internamente.
+    // Para Simples Nacional: enviar aliquota (necessário para pTotTribSN).
+    ...(isSimples ? { aliquota } : {}),
     iss_retido:         issRetido,
     item_lista_servico: itemLista,
     discriminacao:      descServico.slice(0, 2000),
