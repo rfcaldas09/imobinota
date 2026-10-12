@@ -147,6 +147,8 @@ async function handle(event) {
   const ref = `imb-${userId.replace(/-/g, '').slice(0, 8)}-${Date.now()}`
   console.log('[nfse-emitir-focus] ref:', ref, '| ibge:', ibge7, '| valor:', valorServicos)
 
+  const isSimples = p.regime_tributario === 'simples'
+
   // Objeto servico (Focus NFe v2 — NFS-e Nacional usa objeto, não array)
   const ret = cobData.retencoes || {}
   const servico = {
@@ -169,8 +171,6 @@ async function handle(event) {
     ...(ret.pPIS    ? { valor_pis:    parseFloat((valorServicos * ret.pPIS    / 100).toFixed(2)) } : {}),
     ...(ret.pINSS   ? { valor_inss:   parseFloat((valorServicos * ret.pINSS   / 100).toFixed(2)) } : {}),
   }
-
-  const isSimples = p.regime_tributario === 'simples'
 
   // Monta o payload
   const focusPayload = {
