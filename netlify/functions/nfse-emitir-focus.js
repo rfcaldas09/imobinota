@@ -52,7 +52,7 @@ async function handle(event) {
   const profRes = await supabaseFetch(SUPABASE_URL, SERVICE_KEY,
     `profiles?id=eq.${userId}&select=company_name,cnpj,inscricao_municipal,` +
     `nfse_municipio_ibge,nfse_municipio_nome,nfse_codigo_servico,nfse_desc_servico,` +
-    `nfse_ultimo_numero,focus_token,focus_token_prod,focus_homologacao,` +
+    `nfse_ultimo_numero,focus_token,focus_token_prod,focus_homologacao,focus_nfse_legado,` +
     `nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,` +
     `regime_tributario,aliquota_iss`
   )
@@ -158,94 +158,140 @@ async function handle(event) {
 
   const isSimples = p.regime_tributario === 'simples'
 
-  // ── Monta payload NFS-e Nacional (/nfsen) — formato flat ────────
-  // IMPORTANTE: usamos /nfsen (não /nfse legado) porque São José e municípios
-  // com nac:true usam o padrão nacional SEFIN. O endpoint /nfse (legado) converte
-  // internamente e SEMPRE adiciona <indTotTrib>0</indTotTrib> na conversão,
-  // causando E0713 para não-optantes do SN.
-  //
-  // Solução: usar /nfsen com campos percentual_total_tributos_* → gera <pTotTrib>
-  // (válido para não-SN) em vez de <indTotTrib> (rejeitado pelo SEFIN para não-SN).
+  // ── Decide modo: legado (/nfse) ou nacional (/nfsen) ─────────
+  const nfseIsLegado = !!p.focus_nfse_legado
+  console.log('[nfse-emitir-focus] modo NFS-e:', nfseIsLegado ? 'LEGADO (/nfse)' : 'NACIONAL (/nfsen)')
+
   const ret = cobData.retencoes || {}
+  let focusPayload, focusEndpoint
 
-  // Para não-SN: pTotTrib com breakdown federal/estadual/municipal (válido)
-  // Para SN: pTotTribSN com percentual do Simples
-  const totTribFields = isSimples
-    ? { percentual_total_tributos_simples_nacional: aliquota }
-    : {
-        // Estimativas aproximadas para Lucro Presumido — evita indTotTrib
-        percentual_total_tributos_federais:   0,
-        percentual_total_tributos_estaduais:  0,
-        percentual_total_tributos_municipais: aliquota,
-      }
+  if (nfseIsLegado) {
+    // ── Payload formato LEGADO /nfse ─────────────────────────────
+    // Formato aninhado: { prestador, tomador, servico }
+    // Usado por municípios com sistema próprio (São José/SC, etc.)
+    const lc116Item = (lc116Raw || '6.04').replace(/^0+/, '') // remove zeros à esquerda (ex: "06.04" → "6.04")
 
-  const focusPayload = {
-    // ─ Identificação da DPS ─
-    data_emissao:                   `${dataEmissao}T00:00:00-0300`,
-    serie_dps:                      1,
-    numero_dps:                     novNumero,
-    data_competencia:               dataEmissao,
-    emitente_dps:                   1,   // 1 = Prestador emitindo via aplicativo de terceiros (Focus NFe)
-    codigo_municipio_emissora:      parseInt(ibge7),
+    focusEndpoint = `${FOCUS_BASE}/nfse?ref=${encodeURIComponent(ref)}`
+    focusPayload = {
+      data_emissao:             `${dataEmissao}T00:00:00-0300`,
+      natureza_operacao:        1,              // 1 = Tributação no município
+      optante_simples_nacional: isSimples,
+      incentivador_cultural:    false,
+      regime_especial_tributacao: isSimples ? 6 : undefined, // 6 = ME/EPP Simples Nacional
 
-    // ─ Prestador ─
-    ...(isCnpj ? { cnpj_prestador: cnpjDigits }             : {}),
-    ...(isCpf  ? { cpf_prestador:  cnpjDigits.slice(-11) }  : {}),
-    // codigo_opcao_simples_nacional: 1=Não Optante, 2=MEI, 3=ME/EPP
-    codigo_opcao_simples_nacional:  isSimples ? 3 : 1,
-    regime_especial_tributacao:     0,   // 0 = Nenhum
+      // ─ Prestador ─
+      prestador: {
+        ...(isCnpj ? { cnpj: cnpjDigits }              : {}),
+        ...(isCpf  ? { cpf:  cnpjDigits.slice(-11) }   : {}),
+        inscricao_municipal: (p.inscricao_municipal || '').replace(/\D/g, '') || undefined,
+        codigo_municipio:    ibge7,
+      },
 
-    // ─ Tomador ─
-    ...(isTomadorCnpj ? { cnpj_tomador: tomadorCpfCnpj }             : {}),
-    ...(isTomadorCpf  ? { cpf_tomador:  tomadorCpfCnpj }             : {}),
-    // motivo_ausencia_nif_tomador (cNaoNIF) só é enviado quando não há CPF/CNPJ (tomador estrangeiro)
-    ...(!isTomadorCnpj && !isTomadorCpf ? { motivo_ausencia_nif_tomador: 1 } : {}),
-    razao_social_tomador:           cobData.tenant || 'Tomador',
-    ...(cobData.email ? { email_tomador: cobData.email }              : {}),
-    ...(tomadorEndereco ? {
-      logradouro_tomador:           tomadorEndereco.logradouro,
-      numero_tomador:               tomadorEndereco.numero,
-      bairro_tomador:               tomadorEndereco.bairro || '',
-      codigo_municipio_tomador:     parseInt(tomadorEndereco.codigo_municipio),
-      cep_tomador:                  parseInt(tomadorEndereco.cep),
-    } : {}),
+      // ─ Tomador ─
+      tomador: {
+        ...(isTomadorCnpj ? { cnpj: tomadorCpfCnpj } : {}),
+        ...(isTomadorCpf  ? { cpf:  tomadorCpfCnpj } : {}),
+        razao_social: cobData.tenant || 'Tomador',
+        ...(cobData.email ? { email: cobData.email } : {}),
+        ...(tomadorEndereco ? {
+          endereco: {
+            logradouro:      tomadorEndereco.logradouro,
+            numero:          tomadorEndereco.numero,
+            bairro:          tomadorEndereco.bairro || '',
+            codigo_municipio: tomadorEndereco.codigo_municipio,
+            uf:              tomadorEndereco.uf,
+            cep:             tomadorEndereco.cep,
+          },
+        } : {}),
+      },
 
-    // ─ Serviço ─
-    codigo_municipio_prestacao:     ibge7,
-    codigo_tributacao_nacional_iss: itemLista,
-    descricao_servico:              descServico.slice(0, 1000),
-    valor_servico:                  valorServicos,
-    tributacao_iss:                 1,   // 1 = Operação tributável
-    // tipo_retencao_iss: 1=Não Retido, 2=Retido pelo Tomador
-    tipo_retencao_iss:              issRetido ? 2 : 1,
+      // ─ Serviço ─
+      servico: {
+        valor_servicos:             valorServicos,
+        iss_retido:                 issRetido,
+        ...(issRetido ? { valor_iss_retido: parseFloat((valorServicos * aliquota / 100).toFixed(2)) } : {}),
+        valor_iss:                  parseFloat((valorServicos * aliquota / 100).toFixed(2)),
+        aliquota:                   aliquota / 100,  // Focus legado usa decimal (ex: 0.02 para 2%)
+        item_lista_servico:         lc116Item,
+        discriminacao:              descServico.slice(0, 2000),
+        codigo_municipio:           ibge7,
+        // Retenções federais
+        ...(ret.pIRRF   ? { valor_ir:    parseFloat((valorServicos * ret.pIRRF   / 100).toFixed(2)) } : {}),
+        ...(ret.pINSS   ? { valor_inss:  parseFloat((valorServicos * ret.pINSS   / 100).toFixed(2)) } : {}),
+        ...(ret.pCSLL   ? { valor_csll:  parseFloat((valorServicos * ret.pCSLL   / 100).toFixed(2)) } : {}),
+        ...(ret.pPIS    ? { valor_pis:   parseFloat((valorServicos * ret.pPIS    / 100).toFixed(2)) } : {}),
+        ...(ret.pCOFINS ? { valor_cofins: parseFloat((valorServicos * ret.pCOFINS / 100).toFixed(2)) } : {}),
+      },
+    }
 
-    // ─ Total de tributos ─
-    // Usar percentual_total_tributos_* → gera <pTotTrib> (válido para não-SN)
-    // NÃO usar indicador_total_tributacao: Focus gera <indTotTrib>0 por default
-    // e o SEFIN rejeita com E0713 para empresas não-optantes do SN.
-    ...totTribFields,
+    // Remove campos undefined recursivamente
+    focusPayload = JSON.parse(JSON.stringify(focusPayload))
 
-    // ─ Retenções federais ─
-    // Na NFS-e Nacional pós-Reforma Tributária, vRetCSLL unifica CSLL+PIS+COFINS retidos.
-    // Para compatibilidade, somamos as retenções nesse campo quando houver.
-    ...(ret.pIRRF ? { valor_irrf: parseFloat((valorServicos * ret.pIRRF / 100).toFixed(2)) } : {}),
-    ...(() => {
-      const vCSLL   = ret.pCSLL   ? valorServicos * ret.pCSLL   / 100 : 0
-      const vPIS    = ret.pPIS    ? valorServicos * ret.pPIS    / 100 : 0
-      const vCOFINS = ret.pCOFINS ? valorServicos * ret.pCOFINS / 100 : 0
-      const total   = parseFloat((vCSLL + vPIS + vCOFINS).toFixed(2))
-      return total > 0 ? { valor_csll: total } : {}
-    })(),
-    ...(ret.pINSS ? { valor_cp: parseFloat((valorServicos * ret.pINSS / 100).toFixed(2)) } : {}),
+  } else {
+    // ── Payload formato NACIONAL /nfsen ───────────────────────────
+    // Formato plano (flat), padrão DPS da SEFIN.
+    // IMPORTANTE: usar percentual_total_tributos_* para não-SN (evita E0713)
+
+    const totTribFields = isSimples
+      ? { percentual_total_tributos_simples_nacional: aliquota }
+      : {
+          percentual_total_tributos_federais:   0,
+          percentual_total_tributos_estaduais:  0,
+          percentual_total_tributos_municipais: aliquota,
+        }
+
+    focusEndpoint = `${FOCUS_BASE}/nfsen?ref=${encodeURIComponent(ref)}`
+    focusPayload = {
+      data_emissao:                   `${dataEmissao}T00:00:00-0300`,
+      serie_dps:                      1,
+      numero_dps:                     novNumero,
+      data_competencia:               dataEmissao,
+      emitente_dps:                   1,   // 1 = Prestador
+      codigo_municipio_emissora:      parseInt(ibge7),
+
+      ...(isCnpj ? { cnpj_prestador: cnpjDigits }            : {}),
+      ...(isCpf  ? { cpf_prestador:  cnpjDigits.slice(-11) } : {}),
+      codigo_opcao_simples_nacional:  isSimples ? 3 : 1,
+      regime_especial_tributacao:     0,
+
+      ...(isTomadorCnpj ? { cnpj_tomador: tomadorCpfCnpj }             : {}),
+      ...(isTomadorCpf  ? { cpf_tomador:  tomadorCpfCnpj }             : {}),
+      ...(!isTomadorCnpj && !isTomadorCpf ? { motivo_ausencia_nif_tomador: 1 } : {}),
+      razao_social_tomador:           cobData.tenant || 'Tomador',
+      ...(cobData.email ? { email_tomador: cobData.email }              : {}),
+      ...(tomadorEndereco ? {
+        logradouro_tomador:           tomadorEndereco.logradouro,
+        numero_tomador:               tomadorEndereco.numero,
+        bairro_tomador:               tomadorEndereco.bairro || '',
+        codigo_municipio_tomador:     parseInt(tomadorEndereco.codigo_municipio),
+        cep_tomador:                  parseInt(tomadorEndereco.cep),
+      } : {}),
+
+      codigo_municipio_prestacao:     ibge7,
+      codigo_tributacao_nacional_iss: itemLista,
+      descricao_servico:              descServico.slice(0, 1000),
+      valor_servico:                  valorServicos,
+      tributacao_iss:                 1,
+      tipo_retencao_iss:              issRetido ? 2 : 1,
+      ...totTribFields,
+
+      ...(ret.pIRRF ? { valor_irrf: parseFloat((valorServicos * ret.pIRRF / 100).toFixed(2)) } : {}),
+      ...(() => {
+        const vCSLL   = ret.pCSLL   ? valorServicos * ret.pCSLL   / 100 : 0
+        const vPIS    = ret.pPIS    ? valorServicos * ret.pPIS    / 100 : 0
+        const vCOFINS = ret.pCOFINS ? valorServicos * ret.pCOFINS / 100 : 0
+        const total   = parseFloat((vCSLL + vPIS + vCOFINS).toFixed(2))
+        return total > 0 ? { valor_csll: total } : {}
+      })(),
+      ...(ret.pINSS ? { valor_cp: parseFloat((valorServicos * ret.pINSS / 100).toFixed(2)) } : {}),
+    }
   }
 
+  console.log('[nfse-emitir-focus] endpoint:', focusEndpoint.replace(FOCUS_BASE, ''))
   console.log('[nfse-emitir-focus] payload:', JSON.stringify(focusPayload))
 
-  // ── 4. POST Focus NFe NFS-e Nacional (/nfsen) ────────────────
-  const createRes = await focusFetch(
-    `${FOCUS_BASE}/nfsen?ref=${encodeURIComponent(ref)}`,
-    'POST', focusPayload, focusToken
-  )
+  // ── 4. POST Focus NFe ─────────────────────────────────────────
+  const createRes = await focusFetch(focusEndpoint, 'POST', focusPayload, focusToken)
   const createBody = await createRes.json()
   console.log('[nfse-emitir-focus] Focus create status:', createRes.status, '| body:', JSON.stringify(createBody))
 
@@ -263,10 +309,15 @@ async function handle(event) {
   let focusData     = createBody
   let numeroNfse    = null
 
+  // Endpoint de consulta (GET) também varia conforme o modo
+  const focusConsultaBase = nfseIsLegado
+    ? `${FOCUS_BASE}/nfse/${encodeURIComponent(ref)}`
+    : `${FOCUS_BASE}/nfsen/${encodeURIComponent(ref)}`
+
   for (let i = 0; i < MAX_POLLS && focusStatus === 'processando_autorizacao'; i++) {
     await delay(POLL_DELAY)
-    // ?completo=1 faz o Focus retornar o XML completo enviado ao SEFIN — vital para diagnóstico
-    const statusRes  = await focusFetch(`${FOCUS_BASE}/nfsen/${encodeURIComponent(ref)}?completo=1`, 'GET', null, focusToken)
+    // ?completo=1 faz o Focus retornar o XML completo enviado à prefeitura — vital para diagnóstico
+    const statusRes  = await focusFetch(`${focusConsultaBase}?completo=1`, 'GET', null, focusToken)
     const statusBody = await statusRes.json()
     console.log(`[nfse-emitir-focus] poll ${i + 1}/${MAX_POLLS} | status:`, statusBody.status)
     // Log diagnóstico: mostra TODAS as chaves retornadas pelo Focus com completo=1

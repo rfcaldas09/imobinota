@@ -75,7 +75,7 @@ async function handle(event) {
 
   // ── 2. Busca perfil para obter token Focus ─────────────────────
   const profRes  = await supabaseFetch(SUPABASE_URL, SERVICE_KEY,
-    `profiles?id=eq.${em.user_id}&select=focus_token,focus_token_prod,focus_homologacao`
+    `profiles?id=eq.${em.user_id}&select=focus_token,focus_token_prod,focus_homologacao,focus_nfse_legado`
   )
   const profRows = await profRes.json()
   const p        = profRows?.[0]
@@ -85,12 +85,14 @@ async function handle(event) {
     return { statusCode: 200, body: JSON.stringify({ ok: false }) }
   }
 
-  const homologacao = !!p.focus_homologacao
-  const FOCUS_BASE  = homologacao ? FOCUS_URL_HOMO : FOCUS_URL_PROD
-  const focusToken  = homologacao ? p.focus_token : (p.focus_token_prod || p.focus_token)
+  const homologacao  = !!p.focus_homologacao
+  const nfseIsLegado = !!p.focus_nfse_legado
+  const FOCUS_BASE   = homologacao ? FOCUS_URL_HOMO : FOCUS_URL_PROD
+  const focusToken   = homologacao ? p.focus_token : (p.focus_token_prod || p.focus_token)
+  const nfseEndpoint = nfseIsLegado ? 'nfse' : 'nfsen'
 
   // ── 3. Busca dados completos da nota no Focus ──────────────────
-  const detRes  = await focusFetch(`${FOCUS_BASE}/nfsen/${encodeURIComponent(ref)}?completo=1`, 'GET', null, focusToken)
+  const detRes  = await focusFetch(`${FOCUS_BASE}/${nfseEndpoint}/${encodeURIComponent(ref)}?completo=1`, 'GET', null, focusToken)
   const detData = await detRes.json()
   console.log('[focus-nfse-webhook] Focus GET status:', detRes.status, '| nfse status:', detData.status)
 

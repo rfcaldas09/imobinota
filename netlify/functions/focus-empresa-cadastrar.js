@@ -123,6 +123,22 @@ async function handle(event) {
   const uf = ufMap[ibge7.slice(0, 2)] || 'SC'
   const municipioNome = (p.nfse_municipio_nome || '').split(' —')[0] || 'Município'
 
+  // ── 4a. Detecta se o município usa NFS-e Nacional ou Legado ───
+  // GET /v2/municipios/{ibge} retorna provedor_nfse:
+  //   null / "nacional" → NFS-e Nacional (/nfsen, habilita_nfsen_producao)
+  //   qualquer outro valor → NFS-e Legado (/nfse, habilita_nfse)
+  let nfseIsLegado = false
+  try {
+    const munRes  = await focusFetch(`${FOCUS_URL_PROD}/municipios/${ibge7}`, 'GET', null, MASTER_TOKEN)
+    const munData = await munRes.json()
+    const prov    = (munData.provedor_nfse || '').toLowerCase()
+    // Se provedor é nulo/vazio/"nacional", é NFS-e Nacional; senão é legado
+    nfseIsLegado = !!prov && prov !== 'nacional' && prov !== 'nfse_nacional'
+    console.log('[focus-empresa-cadastrar] municipio ibge:', ibge7, '| provedor_nfse:', munData.provedor_nfse, '| nfseIsLegado:', nfseIsLegado)
+  } catch (e) {
+    console.warn('[focus-empresa-cadastrar] Erro ao detectar tipo município, assumindo Nacional:', e.message)
+  }
+
   const focusPayload = {
     nome:                    p.company_name || 'Empresa',
     ...(isCnpj ? { cnpj: cnpjDigits } : { cpf: cnpjDigits }),
@@ -134,8 +150,9 @@ async function handle(event) {
     cep:                     parseInt(digits(p.nfse_cep || '00000000'), 10),
     municipio:               municipioNome,
     uf,
-    habilita_nfse:              false, // legacy — não compatível com NFS-e Nacional
-    habilita_nfsen_producao:    true,  // NFS-e Nacional em produção (São José e outros municípios nacionais)
+    // Mutually exclusive: legado usa habilita_nfse, nacional usa habilita_nfsen_producao
+    habilita_nfse:              nfseIsLegado,   // true para municípios legados (São José/SC, etc.)
+    habilita_nfsen_producao:    !nfseIsLegado,  // true para municípios NFS-e Nacional
     mostrar_danfse_badge:       false, // white-label: oculta logo Focus NFe no PDF da DANFSe
     arquivo_certificado_base64: certBase64,
     senha_certificado:          certSenha,
@@ -176,9 +193,10 @@ async function handle(event) {
 
   // ── 6. Salva tokens e credenciais de prefeitura no perfil ──────
   const patchData = {
-    focus_token:      tokenHomo,
-    focus_token_prod: tokenProd,
-    focus_sync_at:    new Date().toISOString(),
+    focus_token:        tokenHomo,
+    focus_token_prod:   tokenProd,
+    focus_sync_at:      new Date().toISOString(),
+    focus_nfse_legado:  nfseIsLegado,   // true = usa /nfse legado; false = usa /nfsen nacional
     ...(loginPrefeitura !== undefined ? { focus_login_prefeitura: loginPrefeitura || null } : {}),
     ...(senhaPrefeitura !== undefined ? { focus_senha_prefeitura: senhaPrefeitura || null } : {}),
   }

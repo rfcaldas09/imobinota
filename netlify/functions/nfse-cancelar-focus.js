@@ -57,7 +57,7 @@ exports.handler = async (event) => {
 
   // ── 2. Busca perfil (token + homologação) ─────────────────────
   const profRes  = await supabaseFetch(SUPABASE_URL, SERVICE_KEY,
-    `profiles?id=eq.${userId}&select=focus_token,focus_token_prod,focus_homologacao`, 'GET')
+    `profiles?id=eq.${userId}&select=focus_token,focus_token_prod,focus_homologacao,focus_nfse_legado`, 'GET')
   const profRows = await profRes.json()
   const p        = profRows?.[0]
 
@@ -65,12 +65,14 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: 'Token Focus NFe não configurado no perfil' }) }
   }
 
-  const homologacao = !!p.focus_homologacao
-  const FOCUS_BASE  = homologacao ? FOCUS_URL_HOMO : FOCUS_URL_PROD
-  const focusToken  = homologacao ? p.focus_token : (p.focus_token_prod || p.focus_token)
+  const homologacao  = !!p.focus_homologacao
+  const nfseIsLegado = !!p.focus_nfse_legado
+  const FOCUS_BASE   = homologacao ? FOCUS_URL_HOMO : FOCUS_URL_PROD
+  const focusToken   = homologacao ? p.focus_token : (p.focus_token_prod || p.focus_token)
+  const nfseEndpoint = nfseIsLegado ? 'nfse' : 'nfsen'
 
-  // ── 3. DELETE /v2/nfse/{ref} ──────────────────────────────────
-  const cancelUrl = `${FOCUS_BASE}/nfsen/${encodeURIComponent(focusRef)}`
+  // ── 3. DELETE /v2/nfse[n]/{ref} ───────────────────────────────
+  const cancelUrl = `${FOCUS_BASE}/${nfseEndpoint}/${encodeURIComponent(focusRef)}`
   console.log('[nfse-cancelar-focus] cancelando:', cancelUrl)
 
   let focusStatus, focusBody
