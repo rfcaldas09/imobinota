@@ -678,15 +678,16 @@ function buildDpsXml(cfg, cob, homologacao) {
 
   // <piscofins>: sequência obrigatória: CST → pAliqPis → pAliqCofins → vPis → vCofins → tpRetPisCofins
   // CST 01 = Operação tributável (alíquota básica)
-  // tpRetPisCofins:
-  //   1 = Não retido (PIS/COFINS são apenas débito apuração própria do prestador)
-  //   3 = Retido na fonte (tomador PJ retém PIS+COFINS+CSLL = 4,65% — "Contribuições Sociais Retidas")
-  // Quando há alíquotas de retenção de PIS/COFINS informadas, o tomador está retendo → usar 3.
+  // tpRetPisCofins — conforme spec SEFIN NFS-e Nacional:
+  //   1 = Retido na fonte (tomador PJ retém PIS+COFINS → portal inclui em "Contribuições Sociais Retidas")
+  //   3 = Não retido / Débito Apuração Própria (prestador apura PIS/COFINS por conta própria)
+  // Quando há alíquotas de retenção de PIS/COFINS informadas, o tomador está retendo → usar 1.
   const pAliqPis    = (Number(ret.pPIS)    || 0).toFixed(2)
   const pAliqCofins = (Number(ret.pCOFINS) || 0).toFixed(2)
-  // tpRetPisCofins=3: PIS/COFINS retidos pelo tomador → portal inclui vPis+vCofins em "Contribuições Sociais Retidas"
-  // tpRetPisCofins=1: não retidos → portal exibe apenas como "Débito Apuração Própria" (não entra em retidas)
-  const tpRetPisCofins = hasPisCofins ? '3' : '1'
+  // tpRetPisCofins=1: PIS/COFINS retidos pelo tomador → portal inclui vPis+vCofins em "Contribuições Sociais Retidas"
+  //                   SEFIN também inclui vPis+vCofins no vTotalRet → deduz do vLiq
+  // tpRetPisCofins=3: não retidos → portal exibe como "Débito Apuração Própria" (não entra no vTotalRet nem vLiq)
+  const tpRetPisCofins = hasPisCofins ? '1' : '3'
   const pisCofinsXml = hasPisCofins
     ? `<piscofins>\n` +
       `<CST>01</CST>\n` +
