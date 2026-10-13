@@ -458,16 +458,26 @@ function extrairCamposPdf(xml, cobData, profile) {
   const cofins = tagFloat('vCOFINS') || tagFloat('vCofins') || tagFloat('vRetCOFINS')
   const inss   = tagFloat('vINSS')  || tagFloat('vInss')  || tagFloat('vRetCP')
   const ir     = tagFloat('vIR')    || tagFloat('vIRRF')  || tagFloat('vRetIRRF')
-  const csll   = tagFloat('vCSLL')  || tagFloat('vRetCSLL')
+  // NT 007 (desde 09/02/2026): quando tpRetPisCofins=3, o campo vRetCSLL é
+  // CONSOLIDADO (CSLL + PIS + COFINS somados). Para exibir só o CSLL no PDF,
+  // subtraímos os valores de PIS e COFINS que já lemos separadamente.
+  const tpRetPisCofins = tag('tpRetPisCofins')
+  const csllBruto = tagFloat('vCSLL') || tagFloat('vRetCSLL')
+  const csll = tpRetPisCofins === '3'
+    ? +Math.max(0, csllBruto - pis - cofins).toFixed(2)
+    : csllBruto
   const outrasRetencoes = 0
 
   // Tributos aproximados (pTotTribSN = % para Simples; senão soma)
   const pTotSN        = tagFloat('pTotTribSN')
   const valorTributos = pTotSN > 0 ? +(valorBruto * pTotSN / 100).toFixed(2) : (pis + cofins + inss + ir + csll)
   const valorLiquido  = tagFloat('vLiq') || +(valorBruto - valorIss - ir - inss).toFixed(2)
-  // Valor efetivamente recebido pelo prestador = vLiq − PIS − COFINS
-  // (retidos pelo tomador via DARF separado — não entram na fórmula vLiq do SEFIN)
-  const valorAReceber = (pis || cofins) ? +Math.max(0, valorLiquido - pis - cofins).toFixed(2) : null
+  // Valor efetivamente recebido pelo prestador:
+  // ANTES NT 007: vLiq não descontava PIS+COFINS (DARF separado pelo tomador) → mostrava dedução extra
+  // COM NT 007 (tpRetPisCofins=3): vLiq já inclui PIS+COFINS em vTotalRet → nenhuma dedução adicional
+  const valorAReceber = (pis || cofins) && tpRetPisCofins !== '3'
+    ? +Math.max(0, valorLiquido - pis - cofins).toFixed(2)
+    : null
 
   // IBS/CBS (reforma tributária — zeros quando não vigente)
   const cbs          = tagFloat('vCBS')
