@@ -169,10 +169,10 @@ async function handle(event) {
     // ── Payload formato LEGADO /nfse ─────────────────────────────
     // Formato aninhado: { prestador, tomador, servico }
     // Usado por municípios com sistema próprio (São José/SC, etc.)
-    // Formato 4 dígitos sem ponto para IPM/Atende.Net: "6.04" → "0604", "17.09" → "1709"
-    // A Focus NFe legacy espera este formato conforme exemplo da documentação ("0901", "0604", etc.)
-    const [lc116Major, lc116Minor] = (lc116Raw || '6.04').split('.')
-    const lc116Item4d = lc116Major.padStart(2, '0') + (lc116Minor || '00').padStart(2, '0')
+    // Formato IPM/AtendeNet (São José/SC): apenas remove o ponto, sem padding
+    // Ref: https://focusnfe.com.br/guides/nfse/municipios-integrados/sao-jose-sc/
+    // Exemplo: "1.07" → "107", "4.12" → "412", "6.04" → "604"
+    const lc116Item4d = (lc116Raw || '6.04').replace('.', '')
 
     // NBS (Nomenclatura Brasileira de Serviços) — Reforma Tributária (RT)
     // Alguns municípios IPM exigem este campo a partir de 01/10/2026
@@ -219,8 +219,9 @@ async function handle(event) {
         iss_retido:                 issRetido,
         ...(issRetido ? { valor_iss_retido: parseFloat((valorServicos * aliquota / 100).toFixed(2)) } : {}),
         valor_iss:                  parseFloat((valorServicos * aliquota / 100).toFixed(2)),
-        aliquota:                   aliquota / 100,  // Focus legado usa decimal (ex: 0.02 para 2%)
-        item_lista_servico:         lc116Item4d,     // 4 dígitos sem ponto: "0604" (não "6.04")
+        aliquota:                   aliquota,        // Percentual direto: 2 (não 0.02) — padrão IPM/AtendeNet
+        item_lista_servico:         lc116Item4d,     // Sem ponto sem padding: "107" para "1.07"
+        situacao_tributaria:        '0',             // Obrigatório para São José/SC (AtendeNet)
         ...(codigoNbs ? { codigo_nbs: codigoNbs } : {}), // RT: NBS opcional, exigido por alguns municípios IPM
         discriminacao:              descServico.slice(0, 2000),
         codigo_municipio:           ibge7,
