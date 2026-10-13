@@ -678,18 +678,20 @@ function buildDpsXml(cfg, cob, homologacao) {
 
   // <piscofins>: sequência obrigatória: CST → pAliqPis → pAliqCofins → vPis → vCofins → tpRetPisCofins
   // CST 01 = Operação tributável (alíquota básica)
-  // tpRetPisCofins — conforme spec SEFIN NFS-e Nacional:
-  //   1 = Retido na fonte (tomador PJ retém PIS+COFINS → portal inclui em "Contribuições Sociais Retidas")
-  //   3 = Não retido / Débito Apuração Própria (prestador apura PIS/COFINS por conta própria)
-  // Quando há alíquotas de retenção de PIS/COFINS informadas, o tomador está retendo → usar 1.
+  //
+  // NT 007 (vigente desde 09/02/2026) — regras definitivas de tpRetPisCofins:
+  //   0 = PIS/COFINS/CSLL Não Retidos (apenas devidos pelo prestador)
+  //   3 = PIS/COFINS/CSLL Retidos na fonte pelo tomador
+  // Quando hasPisCofins (usuário informou % PIS/COFINS), o tomador está retendo → tpRetPisCofins = 3.
+  //
+  // Consolidação NT 007: com tpRetPisCofins=3, os valores retidos de PIS + COFINS + CSLL
+  // são SOMADOS em vRetCSLL (campo consolidado). vPis e vCofins permanecem como
+  // "imposto DEVIDO" (alíquota × base). Resultado no SEFIN:
+  //   vTotalRet = vRetIRRF + vRetCSLL_consolidado
+  //   vLiq = vServ - vTotalRet  ✓
   const pAliqPis    = (Number(ret.pPIS)    || 0).toFixed(2)
   const pAliqCofins = (Number(ret.pCOFINS) || 0).toFixed(2)
-  // tpRetPisCofins — conforme spec SEFIN NFS-e Nacional (confirmado pelo comportamento real do SEFIN 1.6.0):
-  //   1 = Recolhimento próprio pelo prestador (não retido pelo tomador) → NÃO entra em vTotalRet
-  //   2 = Retido na fonte pelo tomador → SEFIN inclui vPis+vCofins em vTotalRet → deduz do vLiq
-  //   3 = Retido na fonte pelo intermediário
-  // Quando o usuário informa % de PIS/COFINS, o tomador está retendo na fonte → valor 2.
-  const tpRetPisCofins = hasPisCofins ? '2' : '1'
+  const tpRetPisCofins = hasPisCofins ? '3' : '0'
   const pisCofinsXml = hasPisCofins
     ? `<piscofins>\n` +
       `<CST>01</CST>\n` +
@@ -701,11 +703,18 @@ function buildDpsXml(cfg, cob, homologacao) {
       `</piscofins>\n`
     : ''
 
+  // NT 007: vRetCSLL consolidado = CSLL_retida + PIS_retido + COFINS_retido
+  const vRetCSLLConsolidadoNum = (Number(vRetCSLL) || 0)
+    + (hasPisCofins ? (Number(vRetPIS) || 0) + (Number(vRetCOFINS) || 0) : 0)
+  const vRetCSLLConsolidado = vRetCSLLConsolidadoNum > 0
+    ? vRetCSLLConsolidadoNum.toFixed(2)
+    : null
+
   // Filhos diretos de <tribFed> (ordem XSD: piscofins, vRetCP, vRetIRRF, vRetCSLL)
   const tribFedInnerXml = pisCofinsXml +
-    (vRetCP   ? `<vRetCP>${vRetCP}</vRetCP>\n`       : '') +
-    (vRetIRRF ? `<vRetIRRF>${vRetIRRF}</vRetIRRF>\n` : '') +
-    (vRetCSLL ? `<vRetCSLL>${vRetCSLL}</vRetCSLL>\n`  : '')
+    (vRetCP              ? `<vRetCP>${vRetCP}</vRetCP>\n`                    : '') +
+    (vRetIRRF            ? `<vRetIRRF>${vRetIRRF}</vRetIRRF>\n`             : '') +
+    (vRetCSLLConsolidado ? `<vRetCSLL>${vRetCSLLConsolidado}</vRetCSLL>\n`   : '')
 
   console.log('[nfse-emitir] tpRetISSQN:', tpRetISSQN, '| retFed:', hasRetFed ? JSON.stringify({ vRetIRRF, vRetCSLL, vRetCOFINS, vRetPIS, vRetCP }) : 'nenhuma')
 
