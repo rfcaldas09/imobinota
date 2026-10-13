@@ -712,11 +712,13 @@ function buildDpsXml(cfg, cob, homologacao) {
   const endPrestXml = ''
 
   // xDescServ: descrição do serviço para o SEFIN (obrigatório, até 150 chars)
-  // Prioridade: campo configurável no perfil > fallback genérico
-  const xDescServ = (cfg.descServico || '').trim() || 'Prestação de serviços'
+  // Prioridade: discriminação da cobrança > campo do perfil > fallback genérico
+  // O campo discriminacao vai aqui (Descrição do Serviço), não em xInfComp
+  const xDescServ = (discrim || cfg.descServico || '').trim() || 'Prestação de serviços'
 
-  // infoCompl: só inclui o bloco se houver texto de discriminação
-  const infoComplXml = discrim
+  // infoCompl: se discriminação couber em xDescServ (≤150 chars), não duplica aqui.
+  // Se for mais longa que 150 chars, envia o texto completo em xInfComp.
+  const infoComplXml = discrim && discrim.length > 150
     ? `<infoCompl>\n<xInfComp>${escXml(discrim.slice(0, 2000))}</xInfComp>\n</infoCompl>\n`
     : ''
 
