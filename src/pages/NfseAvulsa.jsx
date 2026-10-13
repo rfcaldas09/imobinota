@@ -2168,13 +2168,13 @@ export default function NfseAvulsa() {
                 disabled={emitting}
                 title="Criar nova nota baseada em uma nota emitida no mês anterior"
                 className="flex items-center gap-1.5 border border-violet-200 text-violet-700 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-violet-50 disabled:opacity-50">
-                <IcCopy c="w-3.5 h-3.5"/> Replicar mês anterior
+                <IcCopy c="w-3.5 h-3.5"/> Copiar NF do mês anterior
               </button>
               <button
                 onClick={() => { setEditIdx(null); setShowModal(true) }}
                 disabled={emitting}
                 className="flex items-center gap-1.5 border border-indigo-200 text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-50 disabled:opacity-50">
-                <IcPlus/> Adicionar Tomador
+                <IcPlus/> Gerar nota fiscal
               </button>
             </div>
           </div>
