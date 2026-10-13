@@ -1510,7 +1510,31 @@ export default function NfseAvulsa() {
   const [deletingId, setDeletingId] = useState(null)
 
   // ── Replicar nota anterior ───────────────────────────────────
-  const [replicarTarget, setReplicarTarget] = useState(null) // formData pré-preenchido
+  const [replicarTarget,      setReplicarTarget]      = useState(null)  // formData pré-preenchido
+  const [showReplicarPicker,  setShowReplicarPicker]  = useState(false)
+  const [replicarPickerNotes, setReplicarPickerNotes] = useState([])
+  const [loadingReplicarPicker, setLoadingReplicarPicker] = useState(false)
+
+  const handleOpenReplicarPicker = async () => {
+    setShowReplicarPicker(true)
+    setLoadingReplicarPicker(true)
+    // Calcula mês anterior a partir de hoje
+    const hoje = new Date()
+    const mesAnterior = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1)
+    const mesAnteriorStr = `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth() + 1).padStart(2, '0')}`
+    const { data } = await supabase
+      .from('nfse_emissoes')
+      .select('id, numero_nfse, tomador_nome, valor_servico, competencia, status, cob_data_json')
+      .eq('user_id', user.id)
+      .is('cobranca_id', null)
+      .eq('status', 'emitida')
+      .eq('competencia', mesAnteriorStr)
+      .not('cob_data_json', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(100)
+    setReplicarPickerNotes(data || [])
+    setLoadingReplicarPicker(false)
+  }
 
   const handleReplicar = (em) => {
     if (!em.cob_data_json) {
@@ -2133,17 +2157,18 @@ export default function NfseAvulsa() {
                   ⏹ Parar após esta nota
                 </button>
               )}
-              <button
-                onClick={() => setShowImportOfxModal(true)}
-                disabled={emitting}
-                className="flex items-center gap-1.5 border border-blue-200 text-blue-700 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-blue-50 disabled:opacity-50">
-                <IcUpload c="w-3.5 h-3.5"/> Importar OFX
-              </button>
-              <button
+<button
                 onClick={() => setShowImportModal(true)}
                 disabled={emitting}
                 className="flex items-center gap-1.5 border border-emerald-200 text-emerald-700 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-emerald-50 disabled:opacity-50">
                 <IcUpload c="w-3.5 h-3.5"/> Importar de XLS
+              </button>
+              <button
+                onClick={handleOpenReplicarPicker}
+                disabled={emitting}
+                title="Criar nova nota baseada em uma nota emitida no mês anterior"
+                className="flex items-center gap-1.5 border border-violet-200 text-violet-700 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-violet-50 disabled:opacity-50">
+                <IcCopy c="w-3.5 h-3.5"/> Replicar mês anterior
               </button>
               <button
                 onClick={() => { setEditIdx(null); setShowModal(true) }}
@@ -2577,6 +2602,62 @@ export default function NfseAvulsa() {
           saveLabel="Cancelar original e emitir nova"
           saveBusy={reemitirLoading}
         />
+      )}
+
+      {/* Modal — picker de nota do mês anterior para replicar */}
+      {showReplicarPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div>
+                <h3 className="font-semibold text-slate-800">Replicar nota do mês anterior</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Selecione uma nota emitida no mês passado para usar como base</p>
+              </div>
+              <button
+                onClick={() => setShowReplicarPicker(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-3">
+              {loadingReplicarPicker ? (
+                <div className="flex items-center justify-center py-12 text-slate-400">
+                  <div className="w-6 h-6 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin mr-2"/>
+                  Buscando notas...
+                </div>
+              ) : replicarPickerNotes.length === 0 ? (
+                <div className="text-center py-12 text-slate-400">
+                  <IcDoc c="w-10 h-10 mx-auto mb-3 opacity-30"/>
+                  <p className="text-sm">Nenhuma nota emitida no mês anterior.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {replicarPickerNotes.map(em => (
+                    <button
+                      key={em.id}
+                      onClick={() => { setShowReplicarPicker(false); handleReplicar(em) }}
+                      className="w-full flex items-center justify-between px-3 py-3 rounded-xl hover:bg-violet-50 transition-colors text-left group">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-slate-800 text-sm truncate">{em.tomador_nome || '—'}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {em.numero_nfse ? `NFS-e ${em.numero_nfse}` : 'Sem número'} · {em.competencia || ''}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 ml-3 shrink-0">
+                        <span className="text-sm font-semibold text-slate-700">
+                          {em.valor_servico != null
+                            ? `R$ ${Number(em.valor_servico).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                            : '—'}
+                        </span>
+                        <IcCopy c="w-4 h-4 text-violet-400 group-hover:text-violet-600 transition-colors"/>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal — replicar nota para o mês atual */}
