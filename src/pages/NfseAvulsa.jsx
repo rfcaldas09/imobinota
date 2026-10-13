@@ -1248,8 +1248,7 @@ function EmissaoProgress({ items, results, current, done }) {
 // ── Página principal ───────────────────────────────────────────────
 export default function NfseAvulsa() {
   const { user } = useAuth()
-  const { subscription } = useSubscription()
-  const planAtivo = subscription?.isActive ?? true  // assume ativo enquanto carrega
+  const { isActive: planAtivo = true } = useSubscription() ?? {}
   const lsKey = user ? `nfsa_pending_${user.id}` : null
 
   // Defaults de retenção do perfil do usuário
