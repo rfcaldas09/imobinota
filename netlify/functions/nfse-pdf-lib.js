@@ -296,10 +296,18 @@ function renderPage(doc, f, qrBuf) {
   t(`Valor Aproximado dos tributos ${fmtVal(f.valorTributos || 0)}`, PL + 3, y, 250, { size: 7 })
   y += 14; hline(y)
 
-  // Linha adicional: valor efetivo a receber (aparece apenas quando há PIS/COFINS retidos)
-  // O vLiq do SEFIN não desconta PIS+COFINS (retidos via DARF pelo tomador); esta linha
-  // mostra o valor real creditado ao prestador.
-  if (f.valorAReceber !== null && f.valorAReceber !== undefined) {
+  // Linha de valor líquido/a receber — aparece quando há retenções federais
+  if (f.tpRetPisCofins === '3') {
+    // NT 007: vLiq já desconta todas as retenções (PIS+COFINS+CSLL+IRRF via vTotalRet)
+    // Mostra diretamente o VALOR LÍQUIDO sem dedução adicional
+    y += 3
+    t('VALOR LÍQUIDO', PL + 255, y, W - 375, { bold: true, size: 9, align: 'right', color: DRK })
+    t(fmtVal(f.valorLiquido), PR - 115, y, 112, { bold: true, size: 9, align: 'right' })
+    vline(PR - 120, y, 13)
+    y += 14; hline(y)
+  } else if (f.valorAReceber !== null && f.valorAReceber !== undefined) {
+    // Pré NT 007: vLiq não descontava PIS+COFINS (DARF separado do tomador)
+    // Mostra a dedução extra e o valor efetivo a receber
     y += 3
     const pisCofinsDed = +(f.valorLiquido - f.valorAReceber).toFixed(2)
     t(`(−) PIS + COFINS retidos pelo tomador via DARF: ${fmtVal(pisCofinsDed)}`,
@@ -588,6 +596,7 @@ function extrairCamposPdf(xml, cobData, profile) {
     valorTributos,
     valorLiquido,
     valorAReceber,
+    tpRetPisCofins,
 
     // IBS/CBS/NBS (reforma tributária — zeros quando não vigente)
     codigoNbs,
