@@ -25,6 +25,7 @@ const IcDownload= ({ c='' }) => ic('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-
 const IcBan     = ({ c='' }) => ic('<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>', c)
 const IcUpload  = ({ c='' }) => ic('<polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>', c)
 const IcCode    = ({ c='' }) => ic('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>', c)
+const IcCopy    = ({ c='' }) => ic('<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', c)
 
 // ── Helpers ────────────────────────────────────────────────────────
 const digits  = v => v.replace(/\D/g, '')
@@ -1508,6 +1509,50 @@ export default function NfseAvulsa() {
   const [reprocessingId, setReprocessingId] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
 
+  // ── Replicar nota anterior ───────────────────────────────────
+  const [replicarTarget, setReplicarTarget] = useState(null) // formData pré-preenchido
+
+  const handleReplicar = (em) => {
+    if (!em.cob_data_json) {
+      alert('Dados da emissão não disponíveis para replicar.')
+      return
+    }
+    const cob = em.cob_data_json
+    const ret = cob.retencoes || {}
+    const te  = cob.tomadorEnd || {}
+    const pctFmt = v => (v != null && v > 0) ? String(v).replace('.', ',') : ''
+
+    setReplicarTarget({
+      nome:            cob.tenant   || '',
+      cpfCnpj:         cob.cpf      || '',
+      email:           cob.email    || '',
+      valor:           cob.totalValue > 0 ? maskBRL(String(Math.round(cob.totalValue * 100))) : '',
+      discriminacao:   cob.discriminacao   || '',
+      mesRef:          nowMonth(),   // ← mês atual, não o da nota original
+      codLc116:        cob.codServicoLc116 || '',
+      issRetido:       (ret.tpRetISSQN || 1) === 2,
+      pIRRF:           pctFmt(ret.pIRRF),
+      pCSLL:           pctFmt(ret.pCSLL),
+      pCOFINS:         pctFmt(ret.pCOFINS),
+      pPIS:            pctFmt(ret.pPIS),
+      pINSS:           pctFmt(ret.pINSS),
+      tomaLogradouro:  te.logradouro || '',
+      tomaNumero:      te.numero     || '',
+      tamaBairro:      te.bairro     || '',
+      tamaCep:         te.cep        || '',
+      tamaCodMun:      te.codMun     || '',
+      tamaMunNome:     te.munNome    || '',
+      prestMunicipioIbge:      cob.prestMunicipioIbge      || nfseDefaults.municipioIbge      || '',
+      prestInscricaoMunicipal: cob.prestInscricaoMunicipal ?? nfseDefaults.inscricaoMunicipal ?? '',
+      locPrestacaoIbge:  cob.locPrestacaoIbge || '',
+      locPrestacaoNome:  '',
+      nbs:        cob.codNbs || reformaDefaults.nbs        || '',
+      cst:        reformaDefaults.cst        || '',
+      cindop:     reformaDefaults.cindop     || '',
+      cclasstrib: reformaDefaults.cclasstrib || '',
+    })
+  }
+
   // ── Corrigir e Reemitir ──────────────────────────────────────
   const [reemitirTarget, setReemitirTarget] = useState(null) // { em, formData }
   const [reemitirLoading, setReemitirLoading] = useState(false)
@@ -2433,6 +2478,18 @@ export default function NfseAvulsa() {
                             </button>
                           )}
 
+                          {/* Botão replicar para o mês atual */}
+                          {em.cob_data_json && (
+                            <button
+                              onClick={() => handleReplicar(em)}
+                              disabled={cancelando || !!downloadingId}
+                              title="Criar nova nota para o mês atual com os mesmos dados"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors disabled:opacity-40 whitespace-nowrap">
+                              <IcCopy c="w-3 h-3"/>
+                              Replicar
+                            </button>
+                          )}
+
                           {/* Botão cancelar */}
                           {dentroDosPrazo ? (
                             confirmando ? (
@@ -2519,6 +2576,23 @@ export default function NfseAvulsa() {
           nfseDefaults={nfseDefaults}
           saveLabel="Cancelar original e emitir nova"
           saveBusy={reemitirLoading}
+        />
+      )}
+
+      {/* Modal — replicar nota para o mês atual */}
+      {replicarTarget && (
+        <TomadorModal
+          initial={replicarTarget}
+          onSave={formData => {
+            setPending(p => [...p, formData])
+            setReplicarTarget(null)
+          }}
+          onClose={() => setReplicarTarget(null)}
+          retDefaults={retDefaults}
+          issAliquota={issAliquota}
+          reformaDefaults={reformaDefaults}
+          nfseDefaults={nfseDefaults}
+          saveLabel="Adicionar à fila de emissão"
         />
       )}
 
