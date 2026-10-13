@@ -169,7 +169,15 @@ async function handle(event) {
     // ── Payload formato LEGADO /nfse ─────────────────────────────
     // Formato aninhado: { prestador, tomador, servico }
     // Usado por municípios com sistema próprio (São José/SC, etc.)
-    const lc116Item = (lc116Raw || '6.04').replace(/^0+/, '') // remove zeros à esquerda (ex: "06.04" → "6.04")
+    // Formato 4 dígitos sem ponto para IPM/Atende.Net: "6.04" → "0604", "17.09" → "1709"
+    // A Focus NFe legacy espera este formato conforme exemplo da documentação ("0901", "0604", etc.)
+    const [lc116Major, lc116Minor] = (lc116Raw || '6.04').split('.')
+    const lc116Item4d = lc116Major.padStart(2, '0') + (lc116Minor || '00').padStart(2, '0')
+
+    // NBS (Nomenclatura Brasileira de Serviços) — Reforma Tributária (RT)
+    // Alguns municípios IPM exigem este campo a partir de 01/10/2026
+    // Ref: https://doc.focusnfe.com.br/reference/emitir_nfse (campo codigo_nbs)
+    const codigoNbs = cobData.codigoNbs || p.nfse_codigo_nbs || null
 
     focusEndpoint = `${FOCUS_BASE}/nfse?ref=${encodeURIComponent(ref)}`
     focusPayload = {
@@ -212,7 +220,8 @@ async function handle(event) {
         ...(issRetido ? { valor_iss_retido: parseFloat((valorServicos * aliquota / 100).toFixed(2)) } : {}),
         valor_iss:                  parseFloat((valorServicos * aliquota / 100).toFixed(2)),
         aliquota:                   aliquota / 100,  // Focus legado usa decimal (ex: 0.02 para 2%)
-        item_lista_servico:         lc116Item,
+        item_lista_servico:         lc116Item4d,     // 4 dígitos sem ponto: "0604" (não "6.04")
+        ...(codigoNbs ? { codigo_nbs: codigoNbs } : {}), // RT: NBS opcional, exigido por alguns municípios IPM
         discriminacao:              descServico.slice(0, 2000),
         codigo_municipio:           ibge7,
         // Retenções federais
