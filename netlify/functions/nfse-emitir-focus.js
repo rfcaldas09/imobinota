@@ -54,7 +54,7 @@ async function handle(event) {
     `nfse_municipio_ibge,nfse_municipio_nome,nfse_codigo_servico,nfse_desc_servico,` +
     `nfse_ultimo_numero,focus_token,focus_token_prod,focus_homologacao,focus_nfse_legado,` +
     `nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,` +
-    `regime_tributario,aliquota_iss`
+    `regime_tributario,aliquota_iss,nfse_nbs`
   )
   if (!profRes.ok) throw new Error(`Erro ao buscar perfil: ${profRes.status}`)
   const profiles = await profRes.json()
@@ -177,7 +177,7 @@ async function handle(event) {
     // NBS (Nomenclatura Brasileira de Serviços) — Reforma Tributária (RT)
     // Alguns municípios IPM exigem este campo a partir de 01/10/2026
     // Ref: https://doc.focusnfe.com.br/reference/emitir_nfse (campo codigo_nbs)
-    const codigoNbs = cobData.codigoNbs || p.nfse_codigo_nbs || null
+    const codigoNbs = cobData.codigoNbs || p.nfse_nbs || null
 
     focusEndpoint = `${FOCUS_BASE}/nfse?ref=${encodeURIComponent(ref)}`
     focusPayload = {
