@@ -684,10 +684,12 @@ function buildDpsXml(cfg, cob, homologacao) {
   // Quando há alíquotas de retenção de PIS/COFINS informadas, o tomador está retendo → usar 1.
   const pAliqPis    = (Number(ret.pPIS)    || 0).toFixed(2)
   const pAliqCofins = (Number(ret.pCOFINS) || 0).toFixed(2)
-  // tpRetPisCofins=1: PIS/COFINS retidos pelo tomador → portal inclui vPis+vCofins em "Contribuições Sociais Retidas"
-  //                   SEFIN também inclui vPis+vCofins no vTotalRet → deduz do vLiq
-  // tpRetPisCofins=3: não retidos → portal exibe como "Débito Apuração Própria" (não entra no vTotalRet nem vLiq)
-  const tpRetPisCofins = hasPisCofins ? '1' : '3'
+  // tpRetPisCofins — conforme spec SEFIN NFS-e Nacional (confirmado pelo comportamento real do SEFIN 1.6.0):
+  //   1 = Recolhimento próprio pelo prestador (não retido pelo tomador) → NÃO entra em vTotalRet
+  //   2 = Retido na fonte pelo tomador → SEFIN inclui vPis+vCofins em vTotalRet → deduz do vLiq
+  //   3 = Retido na fonte pelo intermediário
+  // Quando o usuário informa % de PIS/COFINS, o tomador está retendo na fonte → valor 2.
+  const tpRetPisCofins = hasPisCofins ? '2' : '1'
   const pisCofinsXml = hasPisCofins
     ? `<piscofins>\n` +
       `<CST>01</CST>\n` +
