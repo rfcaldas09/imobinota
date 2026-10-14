@@ -30,6 +30,8 @@ export const CST_OPTIONS = [
   { value: '082', label: '082 — Regime Específico — Plano de saúde e seguro' },
   { value: '083', label: '083 — Regime Específico — Construção civil' },
   { value: '090', label: '090 — Outros' },
+  // LC 214/2025 — Reduções de alíquota (art. 127 e seguintes)
+  { value: '200', label: '200 — Tributada com redução de alíquota do IBS e CBS (art. 127, LC 214/2025)' },
 ];
 
 // ─── cIndOp — Indicador de Operação ──────────────────────────────────────────
@@ -47,8 +49,9 @@ export const CINDOP_OPTIONS = [
   // ── Eventos, espetáculos, entretenimento (presencial)
   { value: '040101', label: '040101 — Espetáculos, eventos, atividades de entretenimento — Presencial' },
 
-  // ── Regime regular — serviços B2B, SaaS, TI, consultoria, software (tomador no país)
-  { value: '100301', label: '100301 — Serviço a destinatário no país — Regime regular (SaaS, TI, software, consultoria)' },
+  // ── Demais serviços não especificados em outros indicadores, ou art. 11 III prestados à distância
+  // (código residual — cobre consultoria, arquitetura, serviços intelectuais em geral)
+  { value: '100301', label: '100301 — Demais serviços / prestados à distância — Domicílio do adquirente no país' },
 
   // ── Bens imateriais / direitos (domicílio do adquirente)
   { value: '100501', label: '100501 — Bens imateriais / direitos / licenças de software — Domicílio do adquirente' },
