@@ -169,10 +169,11 @@ async function handle(event) {
     // ── Payload formato LEGADO /nfse ─────────────────────────────
     // Formato aninhado: { prestador, tomador, servico }
     // Usado por municípios com sistema próprio (São José/SC, etc.)
-    // Formato IPM/AtendeNet (São José/SC): apenas remove o ponto, sem padding
+    // Formato IPM/AtendeNet (São José/SC): remove o ponto e adiciona desdobramento '01'
     // Ref: https://focusnfe.com.br/guides/nfse/municipios-integrados/sao-jose-sc/
-    // Exemplo: "1.07" → "107", "4.12" → "412", "6.04" → "604"
-    const lc116Item4d = (lc116Raw || '6.04').replace('.', '')
+    // Erro 00383 "não possui desdobramento nacional" ocorre sem o sufixo '01'
+    // Exemplo: "1.07" → "10701", "4.12" → "41201", "6.04" → "60401"
+    const lc116Item4d = (lc116Raw || '6.04').replace('.', '') + '01'
 
     // NBS (Nomenclatura Brasileira de Serviços) — Reforma Tributária (RT)
     // Alguns municípios IPM exigem este campo a partir de 01/10/2026
