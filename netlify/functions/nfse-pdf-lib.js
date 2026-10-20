@@ -390,6 +390,12 @@ function renderPage(doc, f, qrBuf) {
     ry += 11
   }
 
+  if (f.localPrestacao) {
+    lbl('Local da Prestação:',   PL + 2,   ry, 90)
+    val(f.localPrestacao,        PL + 94,  ry, 250)
+    ry += 11
+  }
+
   lbl('Observações:', PL + 2, ry, 58)
   if (f.observacoes) val(f.observacoes, PL + 62, ry, W - 66)
   ry += 18
@@ -627,6 +633,7 @@ function extrairCamposPdf(xml, cobData, profile) {
     // Outras informações
     competencia:       cobData?.mesRef || '',
     localRecolhimento: munNome && uf ? `${munNome}/${uf}` : munNome || '',
+    localPrestacao:    tag('xLocPrestacao') || '',
     recolhimento,
     cnae:              profile?.nfse_codigo_servico || '',
     simples:           isSimples,

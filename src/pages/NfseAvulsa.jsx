@@ -82,6 +82,7 @@ const mkBlankForm = (retDefaults = NAT_RET_DEFAULT, reformaDefaults = {}, nfseDe
   prestMunicipioIbge:      nfseDefaults.municipioIbge      || '',
   prestInscricaoMunicipal: nfseDefaults.inscricaoMunicipal || '',
   // Local da prestação do serviço (cLocPrestacao no DPS) — separado do município emissor
+  // Preenchido por-nota: município onde o serviço é prestado, quando diferente do município emissor
   locPrestacaoIbge: '', locPrestacaoNome: '',
   // Reforma Tributária (IBS/CBS) — informativos, pré-preenchidos com defaults do perfil
   nbs:        reformaDefaults.nbs        || '',
@@ -1277,9 +1278,9 @@ export default function NfseAvulsa() {
             cclasstrib: data.nfse_cclasstrib || '',
           })
           setNfseDefaults({
-            municipioIbge:      data.nfse_municipio_ibge   || '',
-            inscricaoMunicipal: data.inscricao_municipal   || '',
-            nfseProvedor:       data.nfse_provedor         || 'sefin',
+            municipioIbge:      data.nfse_municipio_ibge      || '',
+            inscricaoMunicipal: data.inscricao_municipal       || '',
+            nfseProvedor:       data.nfse_provedor             || 'sefin',
             focusHomologacao:   !!data.focus_homologacao,
           })
           setProfileLc116(data.nfse_codigo_servico || '')

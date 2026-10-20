@@ -442,9 +442,9 @@ export default function Config() {
           retPIS:    data?.ret_pis    != null ? String(data.ret_pis).replace('.', ',')    : '',
           retINSS:   data?.ret_inss   != null ? String(data.ret_inss).replace('.', ',')   : '',
           // NFS-e
-          municipioIbge: data?.nfse_municipio_ibge  || '',
-          municipioNome: data?.nfse_municipio_nome  || '',
-          codigoServico: data?.nfse_codigo_servico  || '6.04',
+          municipioIbge:     data?.nfse_municipio_ibge       || '',
+          municipioNome:     data?.nfse_municipio_nome       || '',
+          codigoServico:     data?.nfse_codigo_servico       || '6.04',
           descServico:   data?.nfse_desc_servico    || '',
           // Reforma Tributária (IBS/CBS) — informativos
           // Migração automática: CST antigo (2 dígitos ex: '01') → novo (3 dígitos ex: '000')
@@ -560,9 +560,9 @@ export default function Config() {
         ret_pis:    parseRet(f.retPIS),
         ret_inss:   parseRet(f.retINSS),
         // NFS-e
-        nfse_municipio_ibge: f.municipioIbge,
-        nfse_municipio_nome: f.municipioNome,
-        nfse_codigo_servico: f.codigoServico,
+        nfse_municipio_ibge:      f.municipioIbge,
+        nfse_municipio_nome:      f.municipioNome,
+        nfse_codigo_servico:      f.codigoServico,
         nfse_desc_servico:   f.descServico || null,
         nfse_serie:          'NFSE',
         nfse_logradouro:     f.logradouro,
