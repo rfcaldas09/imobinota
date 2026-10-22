@@ -317,7 +317,7 @@ function gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco }) {
   let totalValor = 0
 
   // ── Header arquivo
-  linhas.push(buildFileHeader240({ info, cnpj, empresa, seqRemessa, hoje }))
+  linhas.push(buildFileHeader240({ info, cnpj, empresa, cc, seqRemessa, hoje }))
   seqGlobal++
 
   // ── Lot header
@@ -375,27 +375,16 @@ function nossoNumero240(em, idx, codBanco, cc) {
   return '0'.repeat(10) + N(seqRaw, 10)
 }
 
-function buildFileHeader240({ info, cnpj, empresa, seqRemessa, hoje }) {
+function buildFileHeader240({ info, cnpj, empresa, cc, seqRemessa, hoje }) {
   let r = ''
-  r += info.cod                     // 001-003 banco
-  r += '0000'                       // 004-007 lote arquivo
-  r += '0'                          // 008 tipo
-  r += ' '.repeat(9)                // 009-017 CNAB
-  r += '2'                          // 018 tipo inscrição CNPJ
-  r += cnpj                         // 019-032 (14N)
-  r += A(info.cod === '085' ? '' : '', 20) // 033-052 convênio (preenchido conforme banco)
-  r += N(info.cod, 3).padEnd(5,' ').slice(0,5) // na prática deixar branco
-  // Reescrevo: 033-052 = convenio = conta completa para facilitar
-  // Backtrack: rebuild properly
-  r = ''
   r += info.cod                     // 001-003
   r += '0000'                       // 004-007
   r += '0'                          // 008
   r += ' '.repeat(9)                // 009-017
-  r += '2'                          // 018
-  r += cnpj                         // 019-032
-  // 033-052: código convênio (20A) - usamos agência+conta sem DV para identificação
-  r += A(N(cc.agencia,5) + N(cc.conta, 12), 20)  // 033-052
+  r += '2'                          // 018 tipo inscrição CNPJ
+  r += cnpj                         // 019-032 (14N)
+  // 033-052: código convênio (20A) - agência+conta para identificação
+  r += A(N(cc.agencia, 5) + N(cc.conta, 12), 20)  // 033-052
   r += N(cc.agencia, 5)             // 053-057
   r += A(cc.agencia_dv || ' ', 1)   // 058
   r += N(cc.conta, 12)              // 059-070

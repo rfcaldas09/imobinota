@@ -2339,7 +2339,7 @@ export default function NfseAvulsa() {
                     Gerar CNAB ({selectedHistIds.size})
                   </button>
                   {cnabPickerOpen && (
-                    <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 min-w-[200px] py-1">
+                    <div className="absolute right-0 bottom-full mb-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 min-w-[200px] py-1">
                       <p className="text-xs text-slate-400 px-3 py-1.5 border-b border-slate-100">Selecione a conta bancária:</p>
                       {cnabContas.map(cc => (
                         <button key={cc.id} type="button"
