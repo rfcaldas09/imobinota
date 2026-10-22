@@ -2339,21 +2339,26 @@ export default function NfseAvulsa() {
                     Gerar CNAB ({selectedHistIds.size})
                   </button>
                   {cnabPickerOpen && (
-                    <div className="absolute right-0 bottom-full mb-1 bg-white border border-slate-200 rounded-xl shadow-lg z-50 min-w-[200px] py-1">
-                      <p className="text-xs text-slate-400 px-3 py-1.5 border-b border-slate-100">Selecione a conta bancária:</p>
-                      {cnabContas.map(cc => (
-                        <button key={cc.id} type="button"
-                          onClick={() => handleGerarCNAB(cc.id)}
-                          className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 transition">
-                          <span className="font-semibold text-slate-700">{cc.label || cc.banco}</span>
-                          <span className="text-slate-400 ml-1">{cc.banco === 'bradesco' ? 'CNAB 400' : 'CNAB 240'}</span>
+                    <>
+                      {/* Backdrop transparente para fechar ao clicar fora */}
+                      <div className="fixed inset-0 z-40" onClick={() => setCnabPickerOpen(false)} />
+                      <div className="fixed z-50 bg-white border border-slate-200 rounded-xl shadow-xl min-w-[220px] py-1"
+                        style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                        <p className="text-xs text-slate-400 px-3 py-1.5 border-b border-slate-100">Selecione a conta bancária:</p>
+                        {cnabContas.map(cc => (
+                          <button key={cc.id} type="button"
+                            onClick={() => { setCnabPickerOpen(false); handleGerarCNAB(cc.id) }}
+                            className="w-full text-left px-3 py-2.5 text-sm hover:bg-slate-50 transition">
+                            <span className="font-semibold text-slate-700">{cc.label || cc.banco}</span>
+                            <span className="text-slate-400 ml-2 text-xs">{cc.banco === 'bradesco' ? 'CNAB 400' : 'CNAB 240'}</span>
+                          </button>
+                        ))}
+                        <button type="button" onClick={() => setCnabPickerOpen(false)}
+                          className="w-full text-left px-3 py-2 text-sm text-slate-400 hover:bg-slate-50 border-t border-slate-100">
+                          Cancelar
                         </button>
-                      ))}
-                      <button type="button" onClick={() => setCnabPickerOpen(false)}
-                        className="w-full text-left px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-50 border-t border-slate-100">
-                        Cancelar
-                      </button>
-                    </div>
+                      </div>
+                    </>
                   )}
                 </div>
                 <button
