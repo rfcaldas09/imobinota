@@ -351,6 +351,9 @@ export default function Config() {
   const [saved, setSaved]       = useState(false)
   const [saving, setSaving]     = useState(false)
   const [loadingProfile, setLoadingProfile] = useState(true)
+  // CNAB multi-conta
+  const [cnabForm, setCnabForm] = useState(null)  // null = fechado, obj = editando
+  const cnabFormSet = (k, v) => setCnabForm(p => ({ ...p, [k]: v }))
   const [previewOpen, setPreviewOpen] = useState(false)
   const [testSending, setTestSending] = useState(false)
   const [testResult, setTestResult]   = useState(null)   // { ok, msg }
@@ -409,15 +412,8 @@ export default function Config() {
     nfseProvedor:      'sefin',
     focusToken:        '',
     focusHomologacao:  false,
-    // CNAB / Boleto bancário
-    cnabBanco:         'bradesco',
-    cnabAgencia:       '',
-    cnabAgenciaDv:     '',
-    cnabConta:         '',
-    cnabContaDv:       '',
-    cnabCarteira:      '',
-    cnabCodEmpresa:    '',
-    cnabSeqRemessa:    1,
+    // CNAB / Boleto bancário — array de contas
+    cnabContas: [],
   })
 
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
@@ -488,19 +484,15 @@ export default function Config() {
           nfseProvedor:     data?.nfse_provedor     || 'sefin',
           focusToken:       data?.focus_token       || '',
           focusHomologacao: !!data?.focus_homologacao,
-          // CNAB / Boleto bancário
-          ...(() => {
-            const cc = (data?.cnab_config && typeof data.cnab_config === 'object') ? data.cnab_config : {}
-            return {
-              cnabBanco:      cc.banco       || 'bradesco',
-              cnabAgencia:    cc.agencia     || '',
-              cnabAgenciaDv:  cc.agencia_dv  || '',
-              cnabConta:      cc.conta       || '',
-              cnabContaDv:    cc.conta_dv    || '',
-              cnabCarteira:   cc.carteira    || '',
-              cnabCodEmpresa: cc.cod_empresa || '',
-              cnabSeqRemessa: cc.seq_remessa || 1,
+          // CNAB / Boleto bancário — array de contas
+          cnabContas: (() => {
+            const raw = data?.cnab_config
+            if (Array.isArray(raw)) return raw
+            if (raw && typeof raw === 'object' && raw.banco) {
+              // Migra formato legado (objeto único)
+              return [{ id: 'legacy', label: raw.banco === 'bradesco' ? 'Bradesco' : raw.banco, ...raw }]
             }
+            return []
           })(),
         }))
         // Marca se já existe senha salva (sem expor o valor)
@@ -660,19 +652,8 @@ export default function Config() {
         pix_key_type:        f.pixKeyType,
       })
 
-      // CNAB config — salva como JSONB
-      Object.assign(payload, {
-        cnab_config: {
-          banco:       f.cnabBanco,
-          agencia:     f.cnabAgencia.replace(/\D/g, ''),
-          agencia_dv:  f.cnabAgenciaDv.trim(),
-          conta:       f.cnabConta.replace(/\D/g, ''),
-          conta_dv:    f.cnabContaDv.trim(),
-          carteira:    f.cnabCarteira.replace(/\D/g, ''),
-          cod_empresa: f.cnabCodEmpresa.trim(),
-          seq_remessa: Number(f.cnabSeqRemessa) || 1,
-        }
-      })
+      // CNAB config — salva array de contas como JSONB
+      Object.assign(payload, { cnab_config: f.cnabContas })
     }
 
     await supabase.from('profiles').upsert(payload)
@@ -1473,99 +1454,132 @@ export default function Config() {
             </div>
           </div>
 
-          {/* ── CNAB / Boleto bancário ───────────────────────────────── */}
+          {/* ── CNAB / Boleto bancário — múltiplas contas ───────────── */}
           <div className="bg-white border border-slate-100 rounded-2xl p-5">
-            <h3 className="font-semibold text-slate-800 mb-1 text-sm">📄 Remessa CNAB — Geração de Boletos</h3>
-            <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-              Configure os dados da sua conta bancária para gerar arquivos de remessa CNAB 400 (Bradesco).
-              O arquivo é gerado na tela de <strong>Emitir NFS-e Avulsa</strong> e enviado ao banco pelo seu
-              internet banking (Bradesco Net Empresa / WebTA).
-            </p>
-            <div className="space-y-3">
-              <Row label="Banco">
-                <select
-                  value={f.cnabBanco}
-                  onChange={e => set('cnabBanco', e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="bradesco">Bradesco (237)</option>
-                  <option value="viacredi" disabled>Viacredi / Sicoob — em breve</option>
-                </select>
-              </Row>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="font-semibold text-slate-800 text-sm">📄 Remessa CNAB — Geração de Boletos</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Cadastre as contas bancárias para gerar remessas. Bradesco = CNAB 400; Viacredi / Banrisul = CNAB 240.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCnabForm({ id: crypto.randomUUID(), banco: 'bradesco', label: '', agencia: '', agencia_dv: '', conta: '', conta_dv: '', carteira: '', cod_empresa: '', seq_remessa: 1 })}
+                className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition whitespace-nowrap">
+                + Adicionar conta
+              </button>
+            </div>
 
-              <Row label="Código da Empresa (Cedente)" hint="20 dígitos fornecidos pelo Bradesco ao abrir a cobrança registrada. Alinhado à direita com zeros à esquerda.">
-                <Inp
-                  value={f.cnabCodEmpresa}
-                  onChange={e => set('cnabCodEmpresa', e.target.value)}
-                  placeholder="00000000000000000000"
-                  mono
-                />
-              </Row>
+            {/* Lista de contas */}
+            {f.cnabContas.length === 0 && (
+              <p className="text-xs text-slate-400 italic">Nenhuma conta configurada.</p>
+            )}
+            <div className="space-y-2">
+              {f.cnabContas.map((cc, idx) => (
+                <div key={cc.id || idx} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2">
+                  <div>
+                    <span className="text-xs font-semibold text-slate-700">{cc.label || cc.banco}</span>
+                    <span className="text-xs text-slate-400 ml-2">{cc.banco === 'bradesco' ? 'CNAB 400' : 'CNAB 240'} · Ag {cc.agencia}{cc.agencia_dv ? '-' + cc.agencia_dv : ''} / CC {cc.conta}{cc.conta_dv ? '-' + cc.conta_dv : ''}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setCnabForm({ ...cc })}
+                      className="text-xs text-indigo-600 hover:underline">Editar</button>
+                    <button type="button" onClick={() => set('cnabContas', f.cnabContas.filter((_, i) => i !== idx))}
+                      className="text-xs text-red-500 hover:underline">Remover</button>
+                  </div>
+                </div>
+              ))}
+            </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Row label="Carteira" hint="Ex: 09">
-                  <Inp
-                    value={f.cnabCarteira}
-                    onChange={e => set('cnabCarteira', e.target.value.replace(/\D/g, '').slice(0, 3))}
-                    placeholder="09"
-                    mono
-                  />
+            {/* Modal inline de edição */}
+            {cnabForm && (
+              <div className="mt-4 border border-indigo-200 rounded-xl p-4 bg-indigo-50 space-y-3">
+                <h4 className="text-sm font-semibold text-indigo-800">
+                  {f.cnabContas.find(c => c.id === cnabForm.id) ? 'Editar conta' : 'Nova conta bancária'}
+                </h4>
+
+                <Row label="Banco">
+                  <select value={cnabForm.banco} onChange={e => cnabFormSet('banco', e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="bradesco">Bradesco (237) — CNAB 400</option>
+                    <option value="viacredi">Viacredi / Cecred (085) — CNAB 240</option>
+                    <option value="banrisul">Banrisul (041) — CNAB 240</option>
+                  </select>
                 </Row>
+
+                <Row label="Apelido (ex: Bradesco Principal)">
+                  <Inp value={cnabForm.label} onChange={e => cnabFormSet('label', e.target.value)} placeholder="Bradesco Principal" />
+                </Row>
+
+                {cnabForm.banco === 'bradesco' && (
+                  <Row label="Código da Empresa (Cedente)" hint="20 dígitos fornecidos pelo Bradesco (cobrança registrada).">
+                    <Inp value={cnabForm.cod_empresa || ''} onChange={e => cnabFormSet('cod_empresa', e.target.value.replace(/\D/g, '').slice(0, 20))}
+                      placeholder="00000000000000000000" mono />
+                  </Row>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Row label="Carteira" hint="Ex: 09 (Bradesco), 01 (Viacredi/Banrisul)">
+                    <Inp value={cnabForm.carteira || ''} onChange={e => cnabFormSet('carteira', e.target.value.replace(/\D/g, '').slice(0, 3))}
+                      placeholder="09" mono />
+                  </Row>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-2">
+                      <Row label="Agência">
+                        <Inp value={cnabForm.agencia || ''} onChange={e => cnabFormSet('agencia', e.target.value.replace(/\D/g, '').slice(0, 5))}
+                          placeholder="12345" mono />
+                      </Row>
+                    </div>
+                    <div>
+                      <Row label="DV">
+                        <Inp value={cnabForm.agencia_dv || ''} onChange={e => cnabFormSet('agencia_dv', e.target.value.slice(0, 1))}
+                          placeholder="0" mono />
+                      </Row>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-3 gap-2">
                   <div className="col-span-2">
-                    <Row label="Agência (sem dígito)" hint="">
-                      <Inp
-                        value={f.cnabAgencia}
-                        onChange={e => set('cnabAgencia', e.target.value.replace(/\D/g, '').slice(0, 5))}
-                        placeholder="12345"
-                        mono
-                      />
+                    <Row label="Conta Corrente">
+                      <Inp value={cnabForm.conta || ''} onChange={e => cnabFormSet('conta', e.target.value.replace(/\D/g, '').slice(0, 12))}
+                        placeholder="1234567" mono />
                     </Row>
                   </div>
                   <div>
-                    <Row label="DV" hint="">
-                      <Inp
-                        value={f.cnabAgenciaDv}
-                        onChange={e => set('cnabAgenciaDv', e.target.value.replace(/\D/g, '').slice(0, 1))}
-                        placeholder="0"
-                        mono
-                      />
+                    <Row label="DV">
+                      <Inp value={cnabForm.conta_dv || ''} onChange={e => cnabFormSet('conta_dv', e.target.value.slice(0, 1))}
+                        placeholder="0" mono />
                     </Row>
                   </div>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                <div className="col-span-2">
-                  <Row label="Conta Corrente (sem dígito)" hint="">
-                    <Inp
-                      value={f.cnabConta}
-                      onChange={e => set('cnabConta', e.target.value.replace(/\D/g, '').slice(0, 7))}
-                      placeholder="1234567"
-                      mono
-                    />
-                  </Row>
-                </div>
-                <div>
-                  <Row label="DV" hint="">
-                    <Inp
-                      value={f.cnabContaDv}
-                      onChange={e => set('cnabContaDv', e.target.value.replace(/\D/g, '').slice(0, 1))}
-                      placeholder="0"
-                      mono
-                    />
-                  </Row>
+                <Row label="Próximo Nº de Remessa">
+                  <Inp value={String(cnabForm.seq_remessa || 1)}
+                    onChange={e => cnabFormSet('seq_remessa', parseInt(e.target.value.replace(/\D/g, '') || '1', 10))}
+                    placeholder="1" mono />
+                </Row>
+
+                <div className="flex gap-2 justify-end pt-1">
+                  <button type="button" onClick={() => setCnabForm(null)}
+                    className="px-4 py-1.5 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition">
+                    Cancelar
+                  </button>
+                  <button type="button"
+                    onClick={() => {
+                      const existe = f.cnabContas.find(c => c.id === cnabForm.id)
+                      if (existe) {
+                        set('cnabContas', f.cnabContas.map(c => c.id === cnabForm.id ? cnabForm : c))
+                      } else {
+                        set('cnabContas', [...f.cnabContas, cnabForm])
+                      }
+                      setCnabForm(null)
+                    }}
+                    className="px-4 py-1.5 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+                    Salvar conta
+                  </button>
                 </div>
               </div>
-
-              <Row label="Próximo Nº de Remessa" hint="Sequencial incrementado automaticamente a cada arquivo gerado. Inicia em 1.">
-                <Inp
-                  value={String(f.cnabSeqRemessa)}
-                  onChange={e => set('cnabSeqRemessa', parseInt(e.target.value.replace(/\D/g, '') || '1', 10))}
-                  placeholder="1"
-                  mono
-                />
-              </Row>
-            </div>
+            )}
           </div>
 
         </div>
