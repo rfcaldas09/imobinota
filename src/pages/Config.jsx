@@ -1568,15 +1568,6 @@ export default function Config() {
             </div>
           </div>
 
-          <div className="bg-white border border-slate-100 rounded-2xl p-5">
-            <h3 className="font-semibold text-slate-800 mb-3 text-sm">ℹ️ Como funciona</h3>
-            <ol className="space-y-2 text-xs text-slate-500 leading-relaxed">
-              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">1.</span>Seu cliente recebe o boletoSeu cliente recebe o boleto e paga via PIX.</li>
-              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">2.</span>O pagamento entra na sua conta instantaneamente.</li>
-              <li className="flex gap-2"><span className="font-bold text-indigo-600 shrink-0">3.</span>O sistema marca a cobrança como <strong>Pago</strong> automaticamente.</li>
-            </ol>
-          </div>
-
         </div>
       )}
 

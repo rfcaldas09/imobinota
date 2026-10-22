@@ -1642,10 +1642,9 @@ export default function NfseAvulsa() {
     }
     setCnabGenerating(true)
     try {
-      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
       const res = await fetch('/.netlify/functions/cnab-gerar', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, emissaoIds: emitidaIds }),
       })
       const data = await res.json()
