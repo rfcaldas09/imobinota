@@ -134,7 +134,17 @@ async function handle(event) {
 // ══════════════════════════════════════════════════════════════════
 //  Helpers comuns
 // ══════════════════════════════════════════════════════════════════
-const A = (v, len) => String(v || '').toUpperCase().replace(/[\r\n]/g, ' ').slice(0, len).padEnd(len, ' ')
+// Normaliza acentos/cedilha para ASCII (CNAB exige 1 byte por char)
+function toAscii(str) {
+  return String(str || '')
+    .normalize('NFD')                    // decompõe: Ç → C + ̧
+    .replace(/[̀-ͯ]/g, '')     // remove diacríticos
+    .replace(/[Çç]/g, c => c === 'Ç' ? 'C' : 'c')
+    .replace(/[Ãã]/g, c => c === 'Ã' ? 'A' : 'a')
+    .replace(/[Õõ]/g, c => c === 'Õ' ? 'O' : 'o')
+    .replace(/[^A-Za-z0-9 .,:;/\\()\-_@#*+=%<>!?áéíóúàèìòùâêîôûäëïöüñ]/g, ' ')
+}
+const A = (v, len) => toAscii(v).toUpperCase().replace(/[\r\n]/g, ' ').slice(0, len).padEnd(len, ' ')
 const N = (v, len) => String(v || '').replace(/\D/g, '').padStart(len, '0').slice(-len)
 
 function fmtDataDDMMAAAA(date) {
@@ -302,8 +312,8 @@ function buildTrailer400(seq) {
 //  FEBRABAN padrão cobrança
 // ══════════════════════════════════════════════════════════════════
 const BANCO_INFO = {
-  viacredi: { cod: '085', nome: 'VIACREDI', lotVer: '045', carteira: '01' },
-  banrisul:  { cod: '041', nome: 'BANRISUL',  lotVer: '060', carteira: '01' },
+  viacredi: { cod: '085', nome: 'VIACREDI', lotVer: '045', carteira: '10' },
+  banrisul:  { cod: '041', nome: 'BANRISUL',  lotVer: '060', carteira: '11' },
   sicoob:   { cod: '756', nome: 'SICOOB',    lotVer: '045', carteira: '01' },
 }
 
@@ -460,13 +470,13 @@ function buildSegP240({ info, cc, em, nn, seqLote, hoje }) {
   r += N(carteira, 2)              // 058-059
   r += '1'                         // 060 tipo cobrança (simples)
   r += '2'                         // 061 forma emissão (cliente)
-  r += 'N'                         // 062 permite instrução
+  r += '2'                         // 062 emissão bloqueto (2=cliente emite)
   r += fmtDataDDMMAAAA(venc)       // 063-070 vencimento
   r += valor13                     // 071-083
   r += '00000'                     // 084-088 ag. cobradora
   r += ' '                         // 089
-  r += '02'                        // 090-091 espécie DM
-  r += 'N'                         // 092 aceite
+  r += '00'                        // 090-091 espécie (00 = padrão AILOS/Banrisul)
+  r += '0'                         // 092 aceite (0 = não aceite, padrão bancos RS)
   r += fmtDataDDMMAAAA(emDt)       // 093-100 emissão
   r += '3'                         // 101 mora isento
   r += '00000000'                  // 102-109 data mora
