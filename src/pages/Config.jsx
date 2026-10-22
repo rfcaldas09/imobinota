@@ -131,11 +131,12 @@ function Row({ label, hint, children }) {
   )
 }
 
-function Inp({ value, onChange, type='text', placeholder='', mono=false, disabled=false }) {
+function Inp({ value, onChange, onBlur, type='text', placeholder='', mono=false, disabled=false }) {
   return (
     <input
       value={value}
       onChange={onChange}
+      onBlur={onBlur}
       type={type}
       placeholder={placeholder}
       disabled={disabled}
@@ -1518,14 +1519,16 @@ export default function Config() {
                 )}
 
                 <div className="grid grid-cols-2 gap-3">
-                  <Row label="Carteira" hint="Ex: 09 (Bradesco), 01 (Viacredi/Banrisul)">
+                  <Row label="Código do banco (Carteira)" hint="Ex: 09 (Bradesco), 01 (Viacredi/Banrisul)">
                     <Inp value={cnabForm.carteira || ''} onChange={e => cnabFormSet('carteira', e.target.value.replace(/\D/g, '').slice(0, 3))}
+                      onBlur={() => { if (cnabForm.carteira) cnabFormSet('carteira', cnabForm.carteira.padStart(2, '0')) }}
                       placeholder="09" mono />
                   </Row>
                   <div className="grid grid-cols-3 gap-2">
                     <div className="col-span-2">
                       <Row label="Agência">
                         <Inp value={cnabForm.agencia || ''} onChange={e => cnabFormSet('agencia', e.target.value.replace(/\D/g, '').slice(0, 5))}
+                          onBlur={() => { if (cnabForm.agencia) cnabFormSet('agencia', cnabForm.agencia.padStart(5, '0')) }}
                           placeholder="12345" mono />
                       </Row>
                     </div>
@@ -1542,6 +1545,7 @@ export default function Config() {
                   <div className="col-span-2">
                     <Row label="Conta Corrente">
                       <Inp value={cnabForm.conta || ''} onChange={e => cnabFormSet('conta', e.target.value.replace(/\D/g, '').slice(0, 12))}
+                        onBlur={() => { if (cnabForm.conta) cnabFormSet('conta', cnabForm.conta.padStart(12, '0')) }}
                         placeholder="1234567" mono />
                     </Row>
                   </div>
@@ -1554,8 +1558,9 @@ export default function Config() {
                 </div>
 
                 <Row label="Próximo Nº de Remessa">
-                  <Inp value={String(cnabForm.seq_remessa || 1)}
-                    onChange={e => cnabFormSet('seq_remessa', parseInt(e.target.value.replace(/\D/g, '') || '1', 10))}
+                  <Inp value={String(cnabForm.seq_remessa ?? '')}
+                    onChange={e => cnabFormSet('seq_remessa', e.target.value.replace(/\D/g, ''))}
+                    onBlur={() => { const n = parseInt(cnabForm.seq_remessa, 10); cnabFormSet('seq_remessa', isNaN(n) || n < 1 ? 1 : n) }}
                     placeholder="1" mono />
                 </Row>
 
