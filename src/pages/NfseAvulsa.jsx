@@ -1600,6 +1600,7 @@ export default function NfseAvulsa() {
   // ── Seleção múltipla no histórico ────────────────────────────
   const [selectedHistIds, setSelectedHistIds] = useState(new Set())
   const [deletingSelected, setDeletingSelected] = useState(false)
+  const [cnabGenerating, setCnabGenerating] = useState(false)
 
   const toggleHistSelect = (id) => {
     setSelectedHistIds(prev => {
@@ -1626,6 +1627,48 @@ export default function NfseAvulsa() {
       alert('Erro ao excluir registros.')
     } finally {
       setDeletingSelected(false)
+    }
+  }
+
+  // ── Gerar arquivo CNAB 400 para boleto bancário ─────────────
+  const handleGerarCNAB = async () => {
+    const emitidaIds = Array.from(selectedHistIds).filter(id => {
+      const em = filteredHistory.find(e => e.id === id)
+      return em && em.status === 'emitida'
+    })
+    if (!emitidaIds.length) {
+      alert('Selecione pelo menos uma nota com status "emitida" para gerar o arquivo CNAB.')
+      return
+    }
+    setCnabGenerating(true)
+    try {
+      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
+      const res = await fetch('/.netlify/functions/cnab-gerar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+        body: JSON.stringify({ userId: user.id, emissaoIds: emitidaIds }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert(`Erro ao gerar CNAB: ${data.error || 'Erro desconhecido'}`)
+        return
+      }
+      // Dispara download do arquivo texto
+      const { cnabText, filename, totalTitulos, valorTotal } = data
+      const blob = new Blob([cnabText], { type: 'text/plain;charset=ascii' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      alert(`Arquivo ${filename} gerado com sucesso!\n${totalTitulos} título(s) · Total: R$ ${Number(valorTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`)
+    } catch (err) {
+      alert(`Erro ao gerar CNAB: ${err.message}`)
+    } finally {
+      setCnabGenerating(false)
     }
   }
 
@@ -2258,15 +2301,27 @@ export default function NfseAvulsa() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {selectedHistIds.size > 0 && (
-              <button
-                onClick={handleDeleteSelected}
-                disabled={deletingSelected}
-                className="flex items-center gap-1.5 bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-700 disabled:opacity-50">
-                {deletingSelected
-                  ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
-                  : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>}
-                Excluir selecionadas ({selectedHistIds.size})
-              </button>
+              <>
+                <button
+                  onClick={handleGerarCNAB}
+                  disabled={cnabGenerating}
+                  title="Gerar arquivo remessa CNAB 400 Bradesco para as notas selecionadas"
+                  className="flex items-center gap-1.5 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-blue-700 disabled:opacity-50">
+                  {cnabGenerating
+                    ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
+                    : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>}
+                  Gerar CNAB ({selectedHistIds.size})
+                </button>
+                <button
+                  onClick={handleDeleteSelected}
+                  disabled={deletingSelected}
+                  className="flex items-center gap-1.5 bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-red-700 disabled:opacity-50">
+                  {deletingSelected
+                    ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"/>
+                    : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>}
+                  Excluir selecionadas ({selectedHistIds.size})
+                </button>
+              </>
             )}
             <button
               onClick={() => { setShowBulkCancel(v => !v); setBulkCancelLog([]); setBulkCancelRunning(false) }}

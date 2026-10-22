@@ -409,6 +409,15 @@ export default function Config() {
     nfseProvedor:      'sefin',
     focusToken:        '',
     focusHomologacao:  false,
+    // CNAB / Boleto bancário
+    cnabBanco:         'bradesco',
+    cnabAgencia:       '',
+    cnabAgenciaDv:     '',
+    cnabConta:         '',
+    cnabContaDv:       '',
+    cnabCarteira:      '',
+    cnabCodEmpresa:    '',
+    cnabSeqRemessa:    1,
   })
 
   const set = (k, v) => setF(p => ({ ...p, [k]: v }))
@@ -479,6 +488,20 @@ export default function Config() {
           nfseProvedor:     data?.nfse_provedor     || 'sefin',
           focusToken:       data?.focus_token       || '',
           focusHomologacao: !!data?.focus_homologacao,
+          // CNAB / Boleto bancário
+          ...(() => {
+            const cc = (data?.cnab_config && typeof data.cnab_config === 'object') ? data.cnab_config : {}
+            return {
+              cnabBanco:      cc.banco       || 'bradesco',
+              cnabAgencia:    cc.agencia     || '',
+              cnabAgenciaDv:  cc.agencia_dv  || '',
+              cnabConta:      cc.conta       || '',
+              cnabContaDv:    cc.conta_dv    || '',
+              cnabCarteira:   cc.carteira    || '',
+              cnabCodEmpresa: cc.cod_empresa || '',
+              cnabSeqRemessa: cc.seq_remessa || 1,
+            }
+          })(),
         }))
         // Marca se já existe senha salva (sem expor o valor)
         setCertSenhaOk(!!data?.nfse_cert_password_enc)
@@ -635,6 +658,20 @@ export default function Config() {
       Object.assign(payload, {
         pix_key_recebimento: pixKeyNorm || null,
         pix_key_type:        f.pixKeyType,
+      })
+
+      // CNAB config — salva como JSONB
+      Object.assign(payload, {
+        cnab_config: {
+          banco:       f.cnabBanco,
+          agencia:     f.cnabAgencia.replace(/\D/g, ''),
+          agencia_dv:  f.cnabAgenciaDv.trim(),
+          conta:       f.cnabConta.replace(/\D/g, ''),
+          conta_dv:    f.cnabContaDv.trim(),
+          carteira:    f.cnabCarteira.replace(/\D/g, ''),
+          cod_empresa: f.cnabCodEmpresa.trim(),
+          seq_remessa: Number(f.cnabSeqRemessa) || 1,
+        }
       })
     }
 
@@ -1430,6 +1467,101 @@ export default function Config() {
                     f.pixKeyType === 'telefone'  ? '+5547999998888' :
                     'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
                   }
+                  mono
+                />
+              </Row>
+            </div>
+          </div>
+
+          {/* ── CNAB / Boleto bancário ───────────────────────────────── */}
+          <div className="bg-white border border-slate-100 rounded-2xl p-5">
+            <h3 className="font-semibold text-slate-800 mb-1 text-sm">📄 Remessa CNAB — Geração de Boletos</h3>
+            <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+              Configure os dados da sua conta bancária para gerar arquivos de remessa CNAB 400 (Bradesco).
+              O arquivo é gerado na tela de <strong>Emitir NFS-e Avulsa</strong> e enviado ao banco pelo seu
+              internet banking (Bradesco Net Empresa / WebTA).
+            </p>
+            <div className="space-y-3">
+              <Row label="Banco">
+                <select
+                  value={f.cnabBanco}
+                  onChange={e => set('cnabBanco', e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="bradesco">Bradesco (237)</option>
+                  <option value="viacredi" disabled>Viacredi / Sicoob — em breve</option>
+                </select>
+              </Row>
+
+              <Row label="Código da Empresa (Cedente)" hint="20 dígitos fornecidos pelo Bradesco ao abrir a cobrança registrada. Alinhado à direita com zeros à esquerda.">
+                <Inp
+                  value={f.cnabCodEmpresa}
+                  onChange={e => set('cnabCodEmpresa', e.target.value)}
+                  placeholder="00000000000000000000"
+                  mono
+                />
+              </Row>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Row label="Carteira" hint="Ex: 09">
+                  <Inp
+                    value={f.cnabCarteira}
+                    onChange={e => set('cnabCarteira', e.target.value.replace(/\D/g, '').slice(0, 3))}
+                    placeholder="09"
+                    mono
+                  />
+                </Row>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-2">
+                    <Row label="Agência (sem dígito)" hint="">
+                      <Inp
+                        value={f.cnabAgencia}
+                        onChange={e => set('cnabAgencia', e.target.value.replace(/\D/g, '').slice(0, 5))}
+                        placeholder="12345"
+                        mono
+                      />
+                    </Row>
+                  </div>
+                  <div>
+                    <Row label="DV" hint="">
+                      <Inp
+                        value={f.cnabAgenciaDv}
+                        onChange={e => set('cnabAgenciaDv', e.target.value.replace(/\D/g, '').slice(0, 1))}
+                        placeholder="0"
+                        mono
+                      />
+                    </Row>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <Row label="Conta Corrente (sem dígito)" hint="">
+                    <Inp
+                      value={f.cnabConta}
+                      onChange={e => set('cnabConta', e.target.value.replace(/\D/g, '').slice(0, 7))}
+                      placeholder="1234567"
+                      mono
+                    />
+                  </Row>
+                </div>
+                <div>
+                  <Row label="DV" hint="">
+                    <Inp
+                      value={f.cnabContaDv}
+                      onChange={e => set('cnabContaDv', e.target.value.replace(/\D/g, '').slice(0, 1))}
+                      placeholder="0"
+                      mono
+                    />
+                  </Row>
+                </div>
+              </div>
+
+              <Row label="Próximo Nº de Remessa" hint="Sequencial incrementado automaticamente a cada arquivo gerado. Inicia em 1.">
+                <Inp
+                  value={String(f.cnabSeqRemessa)}
+                  onChange={e => set('cnabSeqRemessa', parseInt(e.target.value.replace(/\D/g, '') || '1', 10))}
+                  placeholder="1"
                   mono
                 />
               </Row>
