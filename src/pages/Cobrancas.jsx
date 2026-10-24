@@ -2171,9 +2171,16 @@ export default function Cobrancas() {
         .eq('user_id', user.id)
         .in('cobranca_id', cobIds)
         .order('created_at', { ascending: false })
-      // Mantém apenas a mais recente por cobrança
+      // Prefere a NFS-e emitida mais recente por cobrança;
+      // se só há cancelada/erro, usa ela (para mostrar o status correto)
       for (const em of (emissoes || [])) {
-        if (!nfseMap[em.cobranca_id]) nfseMap[em.cobranca_id] = em
+        const existing = nfseMap[em.cobranca_id]
+        if (!existing) {
+          nfseMap[em.cobranca_id] = em
+        } else if (existing.status !== 'emitida' && em.status === 'emitida') {
+          // Candidato mais antigo mas emitido bate candidato mais recente cancelado
+          nfseMap[em.cobranca_id] = em
+        }
       }
     }
 
