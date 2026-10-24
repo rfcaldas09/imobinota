@@ -46,7 +46,13 @@ export async function emitirCobrancas(userId, contracts, mesRef) {
     .eq('mes_referencia', ref)
 
   const existingIds = new Set((existing || []).map(e => e.contrato_id))
-  const toCreate    = contracts.filter(c => !existingIds.has(c.id))
+  // Deduplica por contrato_id antes de inserir (garante idempotência mesmo em concorrência)
+  const seenIds  = new Set()
+  const toCreate = contracts.filter(c => {
+    if (existingIds.has(c.id) || seenIds.has(c.id)) return false
+    seenIds.add(c.id)
+    return true
+  })
   const skipped     = contracts.length - toCreate.length
 
   if (!toCreate.length) return { created: 0, skipped, error: null, records: [] }

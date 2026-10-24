@@ -1166,6 +1166,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
   const [result, setResult]     = useState(null)
   // discriminações pendentes: { [cobrancaId]: string }
   const [discMap, setDiscMap]   = useState({})
+  const [confirming, setConfirming] = useState(false) // guard anti-duplo-clique
 
   useEffect(() => {
     if (!user || !contracts.length) return
@@ -1285,42 +1286,48 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
   }
 
   const confirm = async () => {
+    if (confirming) return          // bloqueia duplo clique
+    setConfirming(true)
     setProgress(0)
     setLogs([])
     setResult(null)
 
     // ── Passo 1: cria cobrancas (pula as que já existem) ──────────
-    const res = await emitirCobrancas(user.id, activeContracts, mesRef)
-    if (res.error) {
-      setResult({ created: 0, skipped: res.skipped, fails: 0, error: res.error })
-      setStep('done')
-      return
+    try {
+      const res = await emitirCobrancas(user.id, activeContracts, mesRef)
+      if (res.error) {
+        setResult({ created: 0, skipped: res.skipped, fails: 0, error: res.error })
+        setStep('done')
+        return
+      }
+
+      if (action !== 'nfse') {
+        setResult({ created: res.created, skipped: res.skipped, fails: 0, error: null })
+        setStep('done')
+        onDone()
+        return
+      }
+
+      // ── Passo 2: busca fila e verifica se há contratos que pedem discriminação mensal ─
+      const fila = await buildFila()
+      const precisamDiscriminacao = fila.filter(c => c.solicitarDiscriminacaoMensal)
+
+      if (precisamDiscriminacao.length > 0) {
+        // Inicializa o map com o texto fixo (se houver) como sugestão
+        const init = {}
+        precisamDiscriminacao.forEach(c => { init[c.id] = c.discriminacaoServico || '' })
+        setDiscMap(init)
+        // Armazena fila no state para usar depois
+        setResult({ _fila: fila, created: res.created, skipped: res.skipped })
+        setStep('discriminacao')
+        return
+      }
+
+      // Nenhum contrato precisa de discriminação manual — vai direto
+      await runFila(fila, {}, res)
+    } finally {
+      setConfirming(false)
     }
-
-    if (action !== 'nfse') {
-      setResult({ created: res.created, skipped: res.skipped, fails: 0, error: null })
-      setStep('done')
-      onDone()
-      return
-    }
-
-    // ── Passo 2: busca fila e verifica se há contratos que pedem discriminação mensal ─
-    const fila = await buildFila()
-    const precisamDiscriminacao = fila.filter(c => c.solicitarDiscriminacaoMensal)
-
-    if (precisamDiscriminacao.length > 0) {
-      // Inicializa o map com o texto fixo (se houver) como sugestão
-      const init = {}
-      precisamDiscriminacao.forEach(c => { init[c.id] = c.discriminacaoServico || '' })
-      setDiscMap(init)
-      // Armazena fila no state para usar depois
-      setResult({ _fila: fila, created: res.created, skipped: res.skipped })
-      setStep('discriminacao')
-      return
-    }
-
-    // Nenhum contrato precisa de discriminação manual — vai direto
-    await runFila(fila, {}, res)
   }
 
   // ── Executa emissão para todos da fila ──────────────────────────
@@ -1556,9 +1563,12 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
               <button onClick={() => setStep('pick')} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-50">Voltar</button>
               <button
                 onClick={confirm}
-                disabled={(selectedIds?.size ?? 0) === 0}
+                disabled={(selectedIds?.size ?? 0) === 0 || confirming}
                 className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-md shadow-indigo-200 disabled:opacity-40 disabled:cursor-not-allowed">
-                📄 Confirmar {selectedIds?.size ? `(${selectedIds.size})` : ''}
+                {confirming
+                  ? <><span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"/>Processando…</>
+                  : <>📄 Confirmar {selectedIds?.size ? `(${selectedIds.size})` : ''}</>
+                }
               </button>
             </div>
           </div>
@@ -1947,6 +1957,10 @@ export default function Cobrancas() {
   const [inlineCancelConfirm,setInlineCancelConfirm]= useState(null) // cobId aguardando confirm
   const [inlineCancelling,   setInlineCancelling]   = useState(null) // cobId cancelando
 
+  // ── Seleção em lote de NFS-e para cancelamento ────────────────
+  const [selectedNfseIds,    setSelectedNfseIds]    = useState(new Set()) // cobIds selecionadas
+  const [bulkCancelling,     setBulkCancelling]     = useState(false)
+
   const inlineDownloadPdf = async (c) => {
     if (!c.nfseId) return
     setInlinePdfId(c.id)
@@ -2002,6 +2016,33 @@ export default function Cobrancas() {
       load()
     } catch (e) { alert(`Erro ao cancelar NFS-e: ${e.message}`) }
     finally { setInlineCancelling(null) }
+  }
+
+  // ── Cancelamento em lote de NFS-e selecionadas ───────────────────
+  const bulkCancelarNfse = async () => {
+    if (!selectedNfseIds.size) return
+    const alvo = lista.filter(c => selectedNfseIds.has(c.id) && c.nfseId && c.nfseStatus === 'emitida')
+    if (!alvo.length) return
+    const n = alvo.length
+    if (!window.confirm(`Cancelar ${n} NFS-e selecionada${n > 1 ? 's' : ''}?\nEsta ação não pode ser desfeita.`)) return
+    setBulkCancelling(true)
+    const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
+    let erros = 0
+    for (const c of alvo) {
+      try {
+        const res = await fetch('/.netlify/functions/nfse-cancelar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}) },
+          body: JSON.stringify({ userId: user.id, emissaoId: c.nfseId }),
+        })
+        const data = await res.json()
+        if (!res.ok) erros++
+      } catch { erros++ }
+    }
+    setBulkCancelling(false)
+    setSelectedNfseIds(new Set())
+    if (erros) alert(`${erros} nota(s) com erro ao cancelar.`)
+    load()
   }
 
   // ── Download ZIP com todos os PDF + XML do mês ────────────────────
@@ -2323,9 +2364,9 @@ export default function Cobrancas() {
         </div>
       </div>
 
-      {/* ── Linha de download em massa ─────────────────────── */}
+      {/* ── Linha de download em massa + cancelamento em lote ─── */}
       {isActive && cobrancas.some(c => c.nfseStatus === 'emitida' && c.nfseId) && (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button
             onClick={downloadZipMes}
             disabled={zipLoading}
@@ -2342,6 +2383,23 @@ export default function Cobrancas() {
               </>
             )}
           </button>
+
+          {/* Cancelar notas selecionadas */}
+          {selectedNfseIds.size > 0 && (
+            <button
+              onClick={bulkCancelarNfse}
+              disabled={bulkCancelling}
+              className="flex items-center gap-2 bg-white border border-red-200 text-red-700 px-4 py-2 rounded-xl font-semibold text-sm hover:bg-red-50 shadow-sm whitespace-nowrap disabled:opacity-60 disabled:cursor-wait">
+              {bulkCancelling ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-red-300 border-t-red-600 rounded-full animate-spin"/>
+                  Cancelando…
+                </>
+              ) : (
+                <>🚫 Cancelar {selectedNfseIds.size} nota{selectedNfseIds.size > 1 ? 's' : ''} selecionada{selectedNfseIds.size > 1 ? 's' : ''}</>
+              )}
+            </button>
+          )}
         </div>
       )}
 
@@ -2387,6 +2445,26 @@ export default function Cobrancas() {
                     />
                   </th>
                 )}
+                {/* Checkbox NFS-e — seleção em lote para cancelamento */}
+                {isActive && !(isContabilidade && controlaGarantidora) && (
+                  <th className="px-3 py-3 w-10">
+                    {lista.some(c => c.nfseStatus === 'emitida' && c.nfseId) && (
+                      <input
+                        type="checkbox"
+                        title="Selecionar todas as NFS-e emitidas"
+                        checked={
+                          lista.filter(c => c.nfseStatus === 'emitida' && c.nfseId).length > 0 &&
+                          lista.filter(c => c.nfseStatus === 'emitida' && c.nfseId).every(c => selectedNfseIds.has(c.id))
+                        }
+                        onChange={e => {
+                          const elegíveis = lista.filter(c => c.nfseStatus === 'emitida' && c.nfseId).map(c => c.id)
+                          setSelectedNfseIds(e.target.checked ? new Set(elegíveis) : new Set())
+                        }}
+                        className="w-4 h-4 accent-red-600 cursor-pointer"
+                      />
+                    )}
+                  </th>
+                )}
                 <th className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Cliente</th>
                 <th className="text-left px-3 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden md:table-cell w-40">Referência</th>
                 <th className="text-center px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide hidden lg:table-cell">Venc.</th>
@@ -2398,7 +2476,7 @@ export default function Cobrancas() {
             </thead>
             <tbody className="divide-y divide-slate-50">
               {lista.map(c => (
-                <tr key={c.id} className={`hover:bg-slate-50/60 transition-colors ${selectedIds.has(c.id) ? 'bg-violet-50/60' : ''}`}>
+                <tr key={c.id} className={`hover:bg-slate-50/60 transition-colors ${selectedIds.has(c.id) ? 'bg-violet-50/60' : selectedNfseIds.has(c.id) ? 'bg-red-50/60' : ''}`}>
                   {/* Checkbox garantidora */}
                   {isContabilidade && controlaGarantidora && (
                     <td className="px-3 py-3.5">
@@ -2414,6 +2492,27 @@ export default function Cobrancas() {
                             })
                           }}
                           className="w-4 h-4 accent-violet-600 cursor-pointer"
+                        />
+                      ) : (
+                        <span className="w-4 h-4 inline-block"/>
+                      )}
+                    </td>
+                  )}
+                  {/* Checkbox NFS-e */}
+                  {isActive && !(isContabilidade && controlaGarantidora) && (
+                    <td className="px-3 py-3.5">
+                      {c.nfseStatus === 'emitida' && c.nfseId ? (
+                        <input
+                          type="checkbox"
+                          checked={selectedNfseIds.has(c.id)}
+                          onChange={e => {
+                            setSelectedNfseIds(prev => {
+                              const next = new Set(prev)
+                              e.target.checked ? next.add(c.id) : next.delete(c.id)
+                              return next
+                            })
+                          }}
+                          className="w-4 h-4 accent-red-600 cursor-pointer"
                         />
                       ) : (
                         <span className="w-4 h-4 inline-block"/>
