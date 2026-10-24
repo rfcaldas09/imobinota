@@ -2534,7 +2534,13 @@ export default function Cobrancas() {
                       <p className="font-medium text-slate-800">{c.tenant}</p>
                     </div>
                   </td>
-                  <td className="px-3 py-3.5 text-slate-500 hidden md:table-cell w-40 max-w-[10rem] truncate overflow-hidden">{c.property}</td>
+                  <td className="px-3 py-3.5 text-slate-500 hidden md:table-cell w-40 max-w-[10rem]">
+                    <span className="break-words text-xs leading-snug">
+                      {c.property && c.property.length > 80
+                        ? c.property.slice(0, 80) + '…'
+                        : c.property}
+                    </span>
+                  </td>
                   <td className="px-5 py-3.5 text-center text-slate-500 hidden lg:table-cell">
                     {c.dueDay ? `Dia ${c.dueDay}` : '—'}
                   </td>
