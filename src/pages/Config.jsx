@@ -1564,10 +1564,12 @@ export default function Config() {
                     placeholder="1" mono />
                 </Row>
 
-                {/* ── Instruções de cobrança — apenas Viacredi ── */}
-                {cnabForm.banco === 'viacredi' && (
+                {/* ── Instruções de cobrança — Viacredi e Banrisul (CNAB 240) ── */}
+                {(cnabForm.banco === 'viacredi' || cnabForm.banco === 'banrisul') && (
                   <div className="border-t border-indigo-100 pt-3 space-y-3">
-                    <p className="text-xs font-semibold text-indigo-700">Instruções de cobrança (Viacredi/AILOS)</p>
+                    <p className="text-xs font-semibold text-indigo-700">
+                      Instruções de cobrança ({cnabForm.banco === 'banrisul' ? 'Banrisul' : 'Viacredi/AILOS'})
+                    </p>
 
                     {/* Juros de mora */}
                     <div className="grid grid-cols-2 gap-3">
