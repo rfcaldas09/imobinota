@@ -1627,6 +1627,25 @@ export default function Config() {
                         </Row>
                       )}
                     </div>
+
+                    {/* Multa */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <Row label="Multa por atraso">
+                        <select value={cnabForm.multa_cod ?? '0'} onChange={e => cnabFormSet('multa_cod', e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                          <option value="0">Sem multa</option>
+                          <option value="1">Valor fixo (R$)</option>
+                          <option value="2">Percentual (%)</option>
+                        </select>
+                      </Row>
+                      {cnabForm.multa_cod && cnabForm.multa_cod !== '0' && (
+                        <Row label={cnabForm.multa_cod === '1' ? 'Valor fixo (R$)' : 'Percentual (%)'}>
+                          <Inp value={cnabForm.multa_val || ''}
+                            onChange={e => cnabFormSet('multa_val', e.target.value.replace(/[^0-9,.]/g, '').slice(0, 8))}
+                            placeholder={cnabForm.multa_cod === '1' ? '10.00' : '2.00'} mono />
+                        </Row>
+                      )}
+                    </div>
                   </div>
                 )}
 

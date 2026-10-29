@@ -334,18 +334,24 @@ function gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco }) {
   linhas.push(buildLotHeader240({ info, cnpj, empresa, cc, seqRemessa, hoje, lotVer: info.lotVer }))
   seqGlobal++
 
-  // ── Segmentos P + Q por emissão
+  // ── Segmentos P + Q (+ R opcional para multa) por emissão
+  const temMulta = cc.multa_cod && cc.multa_cod !== '0'
   emissoes.forEach((em, idx) => {
     const nn  = nossoNumero240(em, idx + 1, info.cod, cc)
     linhas.push(buildSegP240({ info, cc, em, nn, seqLote: seqLote++, hoje }))
     seqGlobal++
     linhas.push(buildSegQ240({ em, seqLote: seqLote++, banco: info.cod }))
     seqGlobal++
+    if (temMulta) {
+      linhas.push(buildSegR240({ info, cc, seqLote: seqLote++ }))
+      seqGlobal++
+    }
     totalValor += parseFloat(em.valor_servico || 0)
   })
 
   // ── Lot trailer
-  const qtdReg = emissoes.length * 2 + 2  // P+Q + header+trailer do lote
+  const segsPerTitulo = temMulta ? 3 : 2  // P+Q ou P+Q+R
+  const qtdReg = emissoes.length * segsPerTitulo + 2  // segs + header+trailer do lote
   linhas.push(buildLotTrailer240({ info, qtdReg, totalTitulos: emissoes.length, valorTotal: totalValor }))
   seqGlobal++
 
@@ -561,6 +567,49 @@ function buildSegQ240({ em, seqLote, banco }) {
   r += ' '.repeat(20)               // 213-232 nosso num banco corresp (20A brancos)
   r += ' '.repeat(8)                // 233-240 CNAB brancos (8A)
   if (r.length !== 240) throw new Error(`SegQ240: ${r.length}`)
+  return r
+}
+
+function buildSegR240({ info, cc, seqLote }) {
+  // Manual AILOS v14 – Seção 4.2.2.6 Registro Detalhe Segmento R (Opcional – Multa)
+  // Campos G073 (cód multa), G074 (data multa), G075 (valor/percentual multa)
+  const multaCod = cc.multa_cod || '0'   // '1'=valor fixo, '2'=percentual
+  const multaVal = multaCod !== '0'
+    ? String(Math.round(parseFloat((cc.multa_val || '0').replace(',', '.')) * 100)).padStart(15, '0')
+    : '0'.repeat(15)
+  const multaData = '00000000'  // sem data = assume vencimento do título
+
+  let r = ''
+  r += info.cod                // 001-003 banco
+  r += '0001'                  // 004-007 lote
+  r += '3'                     // 008 tipo registro detalhe
+  r += N(seqLote, 5)           // 009-013 seq no lote
+  r += 'R'                     // 014 segmento
+  r += ' '                     // 015 CNAB branco
+  r += '01'                    // 016-017 cód. movimento remessa
+  r += '0'                     // 018 cód. desconto 2 (0=sem)
+  r += '00000000'              // 019-026 data desconto 2
+  r += '0'.repeat(15)          // 027-041 valor desconto 2 (13N+2dec)
+  r += '0'                     // 042 cód. desconto 3 (0=sem)
+  r += '00000000'              // 043-050 data desconto 3
+  r += '0'.repeat(15)          // 051-065 valor desconto 3 (13N+2dec)
+  r += multaCod                // 066 código da multa (G073)
+  r += multaData               // 067-074 data da multa (G074)
+  r += multaVal                // 075-089 valor/percentual multa (G075, 13N+2dec)
+  r += ' '.repeat(10)          // 090-099 informação ao sacado (C036)
+  r += ' '.repeat(40)          // 100-139 mensagem 3 (C037)
+  r += ' '.repeat(40)          // 140-179 mensagem 4 (C037)
+  r += ' '.repeat(20)          // 180-199 CNAB brancos
+  r += '00000000'              // 200-207 cód. ocorrência sacado (C038)
+  r += '000'                   // 208-210 banco débito
+  r += '00000'                 // 211-215 agência débito
+  r += ' '                     // 216 DV agência débito
+  r += '0'.repeat(12)          // 217-228 conta débito
+  r += ' '                     // 229 DV conta débito
+  r += ' '                     // 230 DV ag/conta
+  r += '0'                     // 231 ident. emissão aviso débito
+  r += ' '.repeat(9)           // 232-240 CNAB brancos
+  if (r.length !== 240) throw new Error(`SegR240: ${r.length}`)
   return r
 }
 
