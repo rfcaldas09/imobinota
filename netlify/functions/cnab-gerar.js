@@ -1,4 +1,4 @@
-// Netlify Function — gera arquivo CNAB remessa (400 Bradesco ou 240 Viacredi/Banrisul)
+// Netlify Function — gera arquivo CNAB remessa (400 Bradesco/Itaú ou 240 Viacredi/Banrisul)
 // POST { userId, emissaoIds: [uuid, ...], contaId }
 // Retorna { cnabText, filename, totalTitulos, valorTotal }
 
@@ -96,6 +96,8 @@ async function handle(event) {
       return { statusCode: 422, body: JSON.stringify({ error: 'Carteira Bradesco não configurada.' }) }
     }
     ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB400({ cc, profile, emissoes, seqRemessa, hoje }))
+  } else if (banco === 'itau') {
+    ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB400Itau({ cc, profile, emissoes, seqRemessa, hoje }))
   } else {
     // Viacredi (085) ou Banrisul (041)
     ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco }))
@@ -117,6 +119,8 @@ async function handle(event) {
   let filename
 
   if (banco === 'bradesco') {
+    filename = `CB${dd}${mm}${seq2}.REM`
+  } else if (banco === 'itau') {
     filename = `CB${dd}${mm}${seq2}.REM`
   } else if (banco === 'banrisul') {
     filename = `R${String(seqRemessa).padStart(7, '0')}.240`
@@ -304,6 +308,158 @@ function buildTransacao400({ cc, em, nossoNumero, hoje, seq }) {
 function buildTrailer400(seq) {
   const r = '9' + ' '.repeat(393) + N(seq, 6)
   if (r.length !== 400) throw new Error(`Trailer400: ${r.length}`)
+  return r
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  CNAB 400 — Itaú (341)
+// ══════════════════════════════════════════════════════════════════
+function gerarCNAB400Itau({ cc, profile, emissoes, seqRemessa, hoje }) {
+  const linhas = []
+  let seq = 1
+  const temMulta = cc.multa_cod && cc.multa_cod !== '0'
+
+  linhas.push(buildHeaderItau400({ cc, profile, hoje, seq: seq++ }))
+  let totalValor = 0
+  emissoes.forEach((em, idx) => {
+    const nossoNumero = N((em.numero_nfse || em.numero_dps || String(idx + 1)).replace(/\D/g, ''), 8)
+    linhas.push(buildDetalheItau400({ cc, em, nossoNumero, hoje, seq: seq++, profile }))
+    if (temMulta) {
+      linhas.push(buildMultaItau400({ cc, seq: seq++ }))
+    }
+    totalValor += parseFloat(em.valor_servico || 0)
+  })
+  linhas.push(buildTrailerItau400(seq))
+
+  return {
+    cnabText:     linhas.join('\r\n') + '\r\n',
+    totalTitulos: emissoes.length,
+    valorTotal:   totalValor,
+  }
+}
+
+function buildHeaderItau400({ cc, profile, hoje, seq }) {
+  let r = ''
+  r += '0'                                    // 001 tipo registro
+  r += '1'                                    // 002 operação remessa
+  r += 'REMESSA'                              // 003-009
+  r += '01'                                   // 010-011 cód serviço
+  r += A('COBRANCA', 15)                      // 012-026 literal serviço
+  r += N(cc.agencia, 4)                       // 027-030 agência
+  r += '00'                                   // 031-032 zeros
+  r += N(cc.conta, 5)                         // 033-037 conta
+  r += (cc.conta_dv || '0')                   // 038 DAC ag/conta
+  r += ' '.repeat(8)                          // 039-046 brancos
+  r += A(profile.company_name || 'EMPRESA', 30) // 047-076 nome empresa
+  r += '341'                                  // 077-079 cód banco
+  r += A('BANCO ITAU SA', 15)                 // 080-094 nome banco
+  r += fmtDataDDMMaa(hoje)                    // 095-100 data geração DDMMAA
+  r += ' '.repeat(294)                        // 101-394 brancos
+  r += N(seq, 6)                              // 395-400 sequencial
+  if (r.length !== 400) throw new Error(`HeaderItau400: ${r.length}`)
+  return r
+}
+
+function buildDetalheItau400({ cc, em, nossoNumero, hoje, seq, profile }) {
+  const cd       = parseCobData(em)
+  const venc     = vencimento30dias(em.created_at)
+  const emDt     = new Date(em.created_at || hoje)
+  const cpfCnpj  = (cd.cpf || cd.cnpj || '').replace(/\D/g, '')
+  const tipoPag  = cpfCnpj.length <= 11 ? '01' : '02'
+  const cnpjEmp  = N((profile.cnpj || '').replace(/\D/g, ''), 14)
+  const end      = cd.tomadorEnd || {}
+  const logNum   = A([end.logradouro, end.numero].filter(Boolean).join(', '), 40)
+  const bairro   = A(end.bairro || '', 12)
+  const cepRaw   = (end.cep || '').replace(/\D/g, '').padEnd(8, '0')
+  const cidade   = A(end.cidade || '', 15)
+  const estado   = A(end.uf || end.estado || '', 2)
+  const numDoc   = A(em.numero_nfse || em.numero_dps || '', 10)
+
+  // Mora: valor diário em centavos
+  let moraVal = '0'.repeat(13)
+  let dtMora  = '000000'
+  if (cc.mora_cod && cc.mora_cod !== '0') {
+    const mv = parseFloat((cc.mora_val || '0').replace(',', '.'))
+    if (cc.mora_cod === '1') {
+      moraVal = String(Math.round(mv * 100)).padStart(13, '0')
+    } else if (cc.mora_cod === '2') {
+      // percentual mensal → valor diário
+      const valTitulo = parseFloat(em.valor_servico || 0)
+      moraVal = String(Math.round(valTitulo * mv / 100 / 30 * 100)).padStart(13, '0')
+    }
+    dtMora = fmtDataDDMMaa(venc)  // mora começa no vencimento
+  }
+
+  let r = ''
+  r += '1'                                                           // 001 tipo registro
+  r += '02'                                                          // 002-003 cod inscrição empresa (CNPJ)
+  r += cnpjEmp                                                       // 004-017 CNPJ empresa
+  r += N(cc.agencia, 4)                                              // 018-021 agência
+  r += '00'                                                          // 022-023 zeros
+  r += N(cc.conta, 5)                                                // 024-028 conta
+  r += (cc.conta_dv || '0')                                          // 029 DAC ag/conta
+  r += '    '                                                        // 030-033 brancos
+  r += '0000'                                                        // 034-037 instrução/alegação
+  r += A('', 25)                                                     // 038-062 uso da empresa
+  r += nossoNumero                                                   // 063-070 nosso número (8 digits)
+  r += '0'.repeat(13)                                                // 071-083 qtde moeda (zeros = Real)
+  r += '109'                                                         // 084-086 nº carteira
+  r += ' '.repeat(21)                                                // 087-107 uso do banco
+  r += 'I'                                                           // 108 código da carteira
+  r += '01'                                                          // 109-110 ocorrência (remessa)
+  r += numDoc                                                        // 111-120 nº documento
+  r += fmtDataDDMMaa(venc)                                           // 121-126 vencimento
+  r += String(valorCents(em.valor_servico)).padStart(13, '0')        // 127-139 valor título
+  r += '341'                                                         // 140-142 banco cobrador
+  r += '00000'                                                       // 143-147 agência cobradora (zeros)
+  r += '01'                                                          // 148-149 espécie
+  r += 'N'                                                           // 150 aceite
+  r += fmtDataDDMMaa(emDt)                                           // 151-156 data emissão
+  r += '00'                                                          // 157-158 instrução 1
+  r += '00'                                                          // 159-160 instrução 2
+  r += moraVal                                                       // 161-173 juros 1 dia (valor diário)
+  r += '000000'                                                      // 174-179 data desconto
+  r += '0'.repeat(13)                                                // 180-192 valor desconto
+  r += '0'.repeat(13)                                                // 193-205 IOF
+  r += '0'.repeat(13)                                                // 206-218 abatimento
+  r += tipoPag                                                       // 219-220 cod inscrição pagador
+  r += N(cpfCnpj, 14)                                               // 221-234 CPF/CNPJ pagador
+  r += A(em.tomador_nome, 30)                                        // 235-264 nome pagador
+  r += ' '.repeat(10)                                                // 265-274 brancos
+  r += logNum                                                        // 275-314 logradouro (40)
+  r += bairro                                                        // 315-326 bairro (12)
+  r += cepRaw.slice(0, 8).padEnd(8, '0')                            // 327-334 CEP (8 digits)
+  r += cidade                                                        // 335-349 cidade (15)
+  r += estado                                                        // 350-351 UF (2)
+  r += ' '.repeat(30)                                                // 352-381 sacador/avalista
+  r += '    '                                                        // 382-385 brancos
+  r += dtMora                                                        // 386-391 data mora
+  r += '00'                                                          // 392-393 prazo protesto
+  r += ' '                                                           // 394 branco
+  r += N(seq, 6)                                                     // 395-400 sequencial
+  if (r.length !== 400) throw new Error(`DetalheItau400: ${r.length}`)
+  return r
+}
+
+function buildMultaItau400({ cc, seq }) {
+  const multaCod = cc.multa_cod || '0'
+  const multaVal = multaCod !== '0'
+    ? String(Math.round(parseFloat((cc.multa_val || '0').replace(',', '.')) * 100)).padStart(13, '0')
+    : '0'.repeat(13)
+  let r = ''
+  r += '2'                // 001 tipo registro multa
+  r += multaCod           // 002 código multa (1=valor, 2=percentual)
+  r += '00000000'         // 003-010 data multa (zeros = usa vencimento)
+  r += multaVal           // 011-023 valor/percentual
+  r += ' '.repeat(371)    // 024-394 brancos (371 = 394-24+1)
+  r += N(seq, 6)          // 395-400 sequencial
+  if (r.length !== 400) throw new Error(`MultaItau400: ${r.length}`)
+  return r
+}
+
+function buildTrailerItau400(seq) {
+  const r = '9' + ' '.repeat(393) + N(seq, 6)
+  if (r.length !== 400) throw new Error(`TrailerItau400: ${r.length}`)
   return r
 }
 

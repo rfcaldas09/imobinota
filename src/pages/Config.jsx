@@ -1460,7 +1460,7 @@ export default function Config() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="font-semibold text-slate-800 text-sm">📄 Remessa CNAB — Geração de Boletos</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Cadastre as contas bancárias para gerar remessas. Bradesco = CNAB 400; Viacredi / Banrisul = CNAB 240.</p>
+                <p className="text-xs text-slate-400 mt-0.5">Cadastre as contas bancárias para gerar remessas. Bradesco/Itaú = CNAB 400; Viacredi / Banrisul = CNAB 240.</p>
               </div>
               <button
                 type="button"
@@ -1479,7 +1479,7 @@ export default function Config() {
                 <div key={cc.id || idx} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2">
                   <div>
                     <span className="text-xs font-semibold text-slate-700">{cc.label || cc.banco}</span>
-                    <span className="text-xs text-slate-400 ml-2">{cc.banco === 'bradesco' ? 'CNAB 400' : 'CNAB 240'} · Ag {cc.agencia}{cc.agencia_dv ? '-' + cc.agencia_dv : ''} / CC {cc.conta}{cc.conta_dv ? '-' + cc.conta_dv : ''}</span>
+                    <span className="text-xs text-slate-400 ml-2">{['bradesco','itau'].includes(cc.banco) ? 'CNAB 400' : 'CNAB 240'} · Ag {cc.agencia}{cc.agencia_dv ? '-' + cc.agencia_dv : ''} / CC {cc.conta}{cc.conta_dv ? '-' + cc.conta_dv : ''}</span>
                   </div>
                   <div className="flex gap-2">
                     <button type="button" onClick={() => setCnabForm({ ...cc })}
@@ -1502,6 +1502,7 @@ export default function Config() {
                   <select value={cnabForm.banco} onChange={e => cnabFormSet('banco', e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
                     <option value="bradesco">Bradesco (237) — CNAB 400</option>
+                    <option value="itau">Itaú (341) — CNAB 400</option>
                     <option value="viacredi">Viacredi / Cecred (085) — CNAB 240</option>
                     <option value="banrisul">Banrisul (041) — CNAB 240</option>
                   </select>
@@ -1519,11 +1520,13 @@ export default function Config() {
                 )}
 
                 <div className="grid grid-cols-2 gap-3">
-                  <Row label="Código do banco (Carteira)" hint="Ex: 09 (Bradesco), 01 (Viacredi/Banrisul)">
-                    <Inp value={cnabForm.carteira || ''} onChange={e => cnabFormSet('carteira', e.target.value.replace(/\D/g, '').slice(0, 3))}
-                      onBlur={() => { if (cnabForm.carteira) cnabFormSet('carteira', cnabForm.carteira.padStart(2, '0')) }}
-                      placeholder="09" mono />
-                  </Row>
+                  {cnabForm.banco !== 'itau' && (
+                    <Row label="Código do banco (Carteira)" hint="Ex: 09 (Bradesco), 01 (Viacredi/Banrisul)">
+                      <Inp value={cnabForm.carteira || ''} onChange={e => cnabFormSet('carteira', e.target.value.replace(/\D/g, '').slice(0, 3))}
+                        onBlur={() => { if (cnabForm.carteira) cnabFormSet('carteira', cnabForm.carteira.padStart(2, '0')) }}
+                        placeholder="09" mono />
+                    </Row>
+                  )}
                   <div className="grid grid-cols-3 gap-2">
                     <div className="col-span-2">
                       <Row label="Agência">
@@ -1564,21 +1567,22 @@ export default function Config() {
                     placeholder="1" mono />
                 </Row>
 
-                {/* ── Instruções de cobrança — Viacredi e Banrisul (CNAB 240) ── */}
-                {(cnabForm.banco === 'viacredi' || cnabForm.banco === 'banrisul') && (
+                {/* ── Instruções de cobrança — Viacredi, Banrisul (CNAB 240) e Itaú (CNAB 400) ── */}
+                {(cnabForm.banco === 'viacredi' || cnabForm.banco === 'banrisul' || cnabForm.banco === 'itau') && (
                   <div className="border-t border-indigo-100 pt-3 space-y-3">
                     <p className="text-xs font-semibold text-indigo-700">
-                      Instruções de cobrança ({cnabForm.banco === 'banrisul' ? 'Banrisul' : 'Viacredi/AILOS'})
+                      Instruções de cobrança ({cnabForm.banco === 'banrisul' ? 'Banrisul' : cnabForm.banco === 'itau' ? 'Itaú' : 'Viacredi/AILOS'})
                     </p>
 
                     {/* Juros de mora */}
                     <div className="grid grid-cols-2 gap-3">
                       <Row label="Juros de mora">
-                        <select value={cnabForm.mora_cod ?? '3'} onChange={e => cnabFormSet('mora_cod', e.target.value)}
+                        <select value={cnabForm.mora_cod ?? (cnabForm.banco === 'itau' ? '0' : '3')} onChange={e => cnabFormSet('mora_cod', e.target.value)}
                           className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                          <option value="3">Dispensado (sem juros)</option>
-                          <option value="1">Valor fixo por dia (R$)</option>
-                          <option value="2">Taxa mensal (%)</option>
+                          {cnabForm.banco === 'itau'
+                            ? <><option value="0">Sem juros</option><option value="1">Valor fixo por dia (R$)</option><option value="2">Taxa mensal (%)</option></>
+                            : <><option value="3">Dispensado (sem juros)</option><option value="1">Valor fixo por dia (R$)</option><option value="2">Taxa mensal (%)</option></>
+                          }
                         </select>
                       </Row>
                       {(cnabForm.mora_cod === '1' || cnabForm.mora_cod === '2') && (
@@ -1590,7 +1594,8 @@ export default function Config() {
                       )}
                     </div>
 
-                    {/* Protesto */}
+                    {/* Protesto / Baixa — apenas CNAB 240 */}
+                    {cnabForm.banco !== 'itau' && (<>
                     <div className="grid grid-cols-2 gap-3">
                       <Row label="Protesto automático">
                         <select value={cnabForm.protesto_cod ?? '0'} onChange={e => cnabFormSet('protesto_cod', e.target.value)}
@@ -1609,7 +1614,6 @@ export default function Config() {
                       )}
                     </div>
 
-                    {/* Baixa automática */}
                     <div className="grid grid-cols-2 gap-3">
                       <Row label="Baixa automática">
                         <select value={cnabForm.baixa_cod ?? '0'} onChange={e => cnabFormSet('baixa_cod', e.target.value)}
@@ -1627,6 +1631,7 @@ export default function Config() {
                         </Row>
                       )}
                     </div>
+                    </>)}
 
                     {/* Multa */}
                     <div className="grid grid-cols-2 gap-3">
