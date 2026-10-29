@@ -1564,6 +1564,70 @@ export default function Config() {
                     placeholder="1" mono />
                 </Row>
 
+                {/* ── Instruções de cobrança — apenas Viacredi ── */}
+                {cnabForm.banco === 'viacredi' && (
+                  <div className="border-t border-indigo-100 pt-3 space-y-3">
+                    <p className="text-xs font-semibold text-indigo-700">Instruções de cobrança (Viacredi/AILOS)</p>
+
+                    {/* Juros de mora */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <Row label="Juros de mora">
+                        <select value={cnabForm.mora_cod ?? '3'} onChange={e => cnabFormSet('mora_cod', e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                          <option value="3">Dispensado (sem juros)</option>
+                          <option value="1">Valor fixo por dia (R$)</option>
+                          <option value="2">Taxa mensal (%)</option>
+                        </select>
+                      </Row>
+                      {(cnabForm.mora_cod === '1' || cnabForm.mora_cod === '2') && (
+                        <Row label={cnabForm.mora_cod === '1' ? 'Valor por dia (R$)' : 'Taxa mensal (%)'}>
+                          <Inp value={cnabForm.mora_val || ''}
+                            onChange={e => cnabFormSet('mora_val', e.target.value.replace(/[^0-9.,]/g, ''))}
+                            placeholder={cnabForm.mora_cod === '1' ? '0.50' : '2.00'} mono />
+                        </Row>
+                      )}
+                    </div>
+
+                    {/* Protesto */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <Row label="Protesto automático">
+                        <select value={cnabForm.protesto_cod ?? '0'} onChange={e => cnabFormSet('protesto_cod', e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                          <option value="0">Não protestar</option>
+                          <option value="1">Protestar</option>
+                          <option value="2">Negativar (Serasa)</option>
+                        </select>
+                      </Row>
+                      {cnabForm.protesto_cod && cnabForm.protesto_cod !== '0' && (
+                        <Row label="Prazo para protesto (dias)">
+                          <Inp value={cnabForm.protesto_prazo || ''}
+                            onChange={e => cnabFormSet('protesto_prazo', e.target.value.replace(/\D/g, '').slice(0, 2))}
+                            placeholder="5" mono />
+                        </Row>
+                      )}
+                    </div>
+
+                    {/* Baixa automática */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <Row label="Baixa automática">
+                        <select value={cnabForm.baixa_cod ?? '0'} onChange={e => cnabFormSet('baixa_cod', e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                          <option value="0">Não baixar</option>
+                          <option value="1">Baixar automaticamente</option>
+                          <option value="2">Devolver ao cedente</option>
+                        </select>
+                      </Row>
+                      {cnabForm.baixa_cod && cnabForm.baixa_cod !== '0' && (
+                        <Row label="Prazo para baixa (dias)">
+                          <Inp value={cnabForm.baixa_prazo || ''}
+                            onChange={e => cnabFormSet('baixa_prazo', e.target.value.replace(/\D/g, '').slice(0, 3))}
+                            placeholder="30" mono />
+                        </Row>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-2 justify-end pt-1">
                   <button type="button" onClick={() => setCnabForm(null)}
                     className="px-4 py-1.5 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition">

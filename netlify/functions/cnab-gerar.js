@@ -456,6 +456,26 @@ function buildSegP240({ info, cc, em, nn, seqLote, hoje }) {
   const nroDoc   = A((em.numero_nfse || em.numero_dps || String(seqLote)), 15)
   const usoEmp   = A((em.numero_nfse || em.numero_dps || ''), 25)
 
+  // ── Instruções de cobrança configuráveis (cc.mora_cod, protesto, baixa)
+  // Juros de mora: '3'=dispensado, '1'=valor/dia, '2'=taxa mensal
+  const moraCod  = cc.mora_cod || '3'
+  const moraVal  = moraCod !== '3'
+    ? String(Math.round(parseFloat((cc.mora_val || '0').replace(',', '.')) * 100)).padStart(15, '0')
+    : '0'.repeat(15)
+  const moraData = moraCod !== '3' ? '00000000' : '00000000'  // aplica a partir do dia seguinte ao venc
+
+  // Protesto: '0'=sem, '1'=protestar, '2'=negativar Serasa
+  const protestoCod   = cc.protesto_cod || '0'
+  const protestoPrazo = protestoCod !== '0'
+    ? String(parseInt(cc.protesto_prazo || '5', 10)).padStart(2, '0').slice(-2)
+    : '00'
+
+  // Baixa: '0'=sem, '1'=baixar, '2'=devolver
+  const baixaCod   = cc.baixa_cod || '0'
+  const baixaPrazo = baixaCod !== '0'
+    ? String(parseInt(cc.baixa_prazo || '30', 10)).padStart(3, '0').slice(-3)
+    : '   '  // brancos quando sem baixa
+
   let r = ''
   r += info.cod                    // 001-003
   r += '0001'                      // 004-007
@@ -483,19 +503,19 @@ function buildSegP240({ info, cc, em, nn, seqLote, hoje }) {
   r += '00'                        // 107-108 espécie documento
   r += 'N'                         // 109 aceite (N = não aceite)
   r += fmtDataDDMMAAAA(emDt)       // 110-117 data emissão (8N)
-  r += '3'                         // 118 cód. mora (3 = isento/dispensado)
-  r += '00000000'                  // 119-126 data mora
-  r += '0'.repeat(15)              // 127-141 valor mora (15N)
+  r += moraCod                     // 118 cód. mora
+  r += moraData                    // 119-126 data início mora
+  r += moraVal                     // 127-141 valor/taxa mora (15N)
   r += '0'                         // 142 cód. desconto 1 (0 = sem desconto)
   r += '00000000'                  // 143-150 data desconto 1
   r += '0'.repeat(15)              // 151-165 valor desconto 1 (15N)
   r += '0'.repeat(15)              // 166-180 IOF (15N)
   r += '0'.repeat(15)              // 181-195 abatimento (15N)
   r += usoEmp                      // 196-220 uso empresa cedente (25A)
-  r += '0'                         // 221 cód. protesto (0 = sem)
-  r += '00'                        // 222-223 prazo protesto
-  r += '0'                         // 224 cód. baixa/devolução (0 = sem)
-  r += '   '                       // 225-227 prazo baixa (brancos)
+  r += protestoCod                 // 221 cód. protesto
+  r += protestoPrazo               // 222-223 prazo protesto
+  r += baixaCod                    // 224 cód. baixa/devolução
+  r += baixaPrazo                  // 225-227 prazo baixa (3A ou brancos)
   r += '09'                        // 228-229 código moeda (09 = Real)
   r += '0'.repeat(10)              // 230-239 nº contrato (zeros)
   r += ' '                         // 240 uso livre
