@@ -1675,17 +1675,15 @@ export default function NfseAvulsa() {
 
   // Abre picker de conta ou gera direto se só há 1 conta
   const handleCNABClick = async () => {
-    // Carrega contas do perfil se ainda não carregou
-    let contas = cnabContas
-    if (contas.length === 0) {
-      try {
-        const { data: prof } = await supabase.from('profiles').select('cnab_config').eq('id', user.id).single()
-        const raw = prof?.cnab_config
-        if (Array.isArray(raw)) contas = raw
-        else if (raw && typeof raw === 'object' && raw.banco) contas = [{ id: 'legacy', label: raw.banco, ...raw }]
-        setCnabContas(contas)
-      } catch { /* ignora */ }
-    }
+    // Sempre recarrega contas do perfil para refletir mudanças recentes em Config
+    let contas = []
+    try {
+      const { data: prof } = await supabase.from('profiles').select('cnab_config').eq('id', user.id).single()
+      const raw = prof?.cnab_config
+      if (Array.isArray(raw)) contas = raw
+      else if (raw && typeof raw === 'object' && raw.banco) contas = [{ id: 'legacy', label: raw.banco, ...raw }]
+      setCnabContas(contas)
+    } catch { /* ignora */ }
     if (contas.length === 0) {
       alert('Nenhuma conta bancária configurada. Vá em Configurações → Integrações → CNAB.')
       return
@@ -2350,7 +2348,7 @@ export default function NfseAvulsa() {
                             onClick={() => { setCnabPickerOpen(false); handleGerarCNAB(cc.id) }}
                             className="w-full text-left px-3 py-2.5 text-sm hover:bg-slate-50 transition">
                             <span className="font-semibold text-slate-700">{cc.label || cc.banco}</span>
-                            <span className="text-slate-400 ml-2 text-xs">{cc.banco === 'bradesco' ? 'CNAB 400' : 'CNAB 240'}</span>
+                            <span className="text-slate-400 ml-2 text-xs">{['bradesco','itau'].includes(cc.banco) ? 'CNAB 400' : 'CNAB 240'}</span>
                           </button>
                         ))}
                         <button type="button" onClick={() => setCnabPickerOpen(false)}
