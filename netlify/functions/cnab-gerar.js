@@ -312,7 +312,7 @@ function buildTrailer400(seq) {
 //  FEBRABAN padrão cobrança
 // ══════════════════════════════════════════════════════════════════
 const BANCO_INFO = {
-  viacredi: { cod: '085', nome: 'VIACREDI', lotVer: '045', carteira: '10' },
+  viacredi: { cod: '085', nome: 'VIACREDI', lotVer: '045', carteira: '1' },
   banrisul:  { cod: '041', nome: 'BANRISUL',  lotVer: '060', carteira: '11' },
   sicoob:   { cod: '756', nome: 'SICOOB',    lotVer: '045', carteira: '01' },
 }
@@ -417,41 +417,44 @@ function buildFileHeader240({ info, cnpj, empresa, cc, seqRemessa, hoje }) {
 }
 
 function buildLotHeader240({ info, cnpj, empresa, cc, seqRemessa, hoje, lotVer }) {
+  // Manual AILOS v14 – Seção 4.2.2.3 Registro Header de Lote
   let r = ''
-  r += info.cod     // 001-003
-  r += '0001'       // 004-007 lote 1
-  r += '1'          // 008 tipo
-  r += 'R'          // 009 operação remessa
-  r += '01'         // 010-011 tipo serviço cobrança
-  r += '  '         // 012-013 CNAB
-  r += lotVer       // 014-016 versão layout lote
-  r += ' '          // 017 CNAB
-  r += '2'          // 018 tipo inscrição
-  r += cnpj         // 019-032
-  r += A(N(cc.agencia,5) + N(cc.conta, 12), 20) // 033-052 convênio
-  r += N(cc.agencia, 5)           // 053-057
-  r += A(cc.agencia_dv || ' ', 1) // 058
-  r += N(cc.conta, 12)            // 059-070
-  r += A(cc.conta_dv || ' ', 1)   // 071
-  r += ' '                        // 072
-  r += empresa                    // 073-102
-  r += ' '.repeat(40)             // 103-142 informação livre
-  r += fmtDataDDMMAAAA(hoje)      // 143-150 data gravação
-  r += fmtDataDDMMAAAA(hoje)      // 151-158 data crédito (mesmo)
-  r += fmtHoraHHMMSS(hoje)        // 159-164 hora
-  r += N(seqRemessa, 8)           // 165-172 nº remessa
-  r += ' '.repeat(68)             // 173-240
+  r += info.cod                    // 001-003
+  r += '0001'                      // 004-007 lote 1
+  r += '1'                         // 008 tipo registro
+  r += 'R'                         // 009 operação remessa
+  r += '01'                        // 010-011 tipo serviço cobrança
+  r += '  '                        // 012-013 CNAB
+  r += lotVer                      // 014-016 versão layout lote
+  r += ' '                         // 017 CNAB
+  r += '2'                         // 018 tipo inscrição CNPJ
+  r += '0' + cnpj                  // 019-033 (15N: '0' + 14-digit CNPJ)
+  r += A(cc.convenio || (N(cc.agencia, 5) + N(cc.conta, 12)), 20) // 034-053 convênio
+  r += N(cc.agencia, 5)            // 054-058 agência
+  r += A(cc.agencia_dv || ' ', 1)  // 059 DV agência
+  r += N(cc.conta, 12)             // 060-071 conta
+  r += A(cc.conta_dv || ' ', 1)    // 072 DV conta
+  r += ' '                         // 073 DV ag/conta = branco
+  r += empresa                     // 074-103 nome empresa (30A)
+  r += ' '.repeat(40)              // 104-143 informação 1 = brancos
+  r += ' '.repeat(40)              // 144-183 informação 2 = brancos
+  r += N(seqRemessa, 8)            // 184-191 nº remessa (8N)
+  r += fmtDataDDMMAAAA(hoje)       // 192-199 data gravação (8N)
+  r += fmtDataDDMMAAAA(hoje)       // 200-207 data crédito (8N)
+  r += ' '.repeat(33)              // 208-240 CNAB brancos
   if (r.length !== 240) throw new Error(`LotHeader240: ${r.length}`)
   return r
 }
 
 function buildSegP240({ info, cc, em, nn, seqLote, hoje }) {
+  // Manual AILOS v14 – Seção 4.2.2.4 Registro Detalhe Segmento P (Remessa)
   const cd       = parseCobData(em)
   const venc     = vencimento30dias(em.created_at)
   const emDt     = new Date(em.created_at || hoje)
-  const carteira = cc.carteira || info.carteira || '01'
-  const valor13  = String(valorCents(em.valor_servico)).padStart(13, '0')
-  const numDoc   = A((em.numero_nfse || em.numero_dps || String(seqLote)).slice(0, 25), 25)
+  const carteira = N(cc.carteira || info.carteira || '1', 1)  // 1 char
+  const valor15  = String(valorCents(em.valor_servico)).padStart(15, '0')
+  const nroDoc   = A((em.numero_nfse || em.numero_dps || String(seqLote)), 15)
+  const usoEmp   = A((em.numero_nfse || em.numero_dps || ''), 25)
 
   let r = ''
   r += info.cod                    // 001-003
@@ -459,46 +462,49 @@ function buildSegP240({ info, cc, em, nn, seqLote, hoje }) {
   r += '3'                         // 008
   r += N(seqLote, 5)               // 009-013
   r += 'P'                         // 014
-  r += ' '                         // 015
-  r += '01'                        // 016-017 inclusão
-  r += N(cc.agencia, 5)            // 018-022
-  r += A(cc.agencia_dv || ' ', 1)  // 023
-  r += N(cc.conta, 12)             // 024-035
-  r += A(cc.conta_dv || ' ', 1)    // 036
-  r += ' '                         // 037
-  r += nn                          // 038-057 nosso número (20)
-  r += N(carteira, 2)              // 058-059
-  r += '1'                         // 060 tipo cobrança (simples)
-  r += '2'                         // 061 forma emissão (cliente)
-  r += '2'                         // 062 emissão bloqueto (2=cliente emite)
-  r += fmtDataDDMMAAAA(venc)       // 063-070 vencimento
-  r += valor13                     // 071-083
-  r += '00000'                     // 084-088 ag. cobradora
-  r += ' '                         // 089
-  r += '00'                        // 090-091 espécie (00 = padrão AILOS/Banrisul)
-  r += '0'                         // 092 aceite (0 = não aceite, padrão bancos RS)
-  r += fmtDataDDMMAAAA(emDt)       // 093-100 emissão
-  r += '3'                         // 101 mora isento
-  r += '00000000'                  // 102-109 data mora
-  r += '0'.repeat(13)              // 110-122 valor mora
-  r += '0'                         // 123 desconto 1 tipo
-  r += '00000000'                  // 124-131 data desconto 1
-  r += '0'.repeat(13)              // 132-144 valor desconto 1
-  r += '0'                         // 145 desconto 2 tipo
-  r += '00000000'                  // 146-153
-  r += '0'.repeat(13)              // 154-166
-  r += '0'                         // 167 desconto 3
-  r += '00000000'                  // 168-175
-  r += '0'.repeat(13)              // 176-188
-  r += '0'.repeat(13)              // 189-201 IOF
-  r += '0'.repeat(13)              // 202-214 abatimento
-  r += numDoc                      // 215-239
-  r += ' '                         // 240
+  r += ' '                         // 015 CNAB
+  r += '01'                        // 016-017 cód. movimento inclusão
+  r += N(cc.agencia, 5)            // 018-022 agência
+  r += A(cc.agencia_dv || ' ', 1)  // 023 DV ag
+  r += N(cc.conta, 12)             // 024-035 conta
+  r += A(cc.conta_dv || ' ', 1)    // 036 DV conta
+  r += ' '                         // 037 DV ag/conta
+  r += nn                          // 038-057 nosso número (20A)
+  r += carteira                    // 058 carteira (1N)
+  r += '1'                         // 059 tipo cadastramento (1=Cobrança Simples)
+  r += '1'                         // 060 tipo documento (default '1')
+  r += '2'                         // 061 emissão boleto (2=cliente emite)
+  r += '2'                         // 062 distribuição boleto (2=cliente distribui)
+  r += nroDoc                      // 063-077 nº documento (15A, left-aligned)
+  r += fmtDataDDMMAAAA(venc)       // 078-085 vencimento (8N)
+  r += valor15                     // 086-100 valor nominal (15N, 2 dec implícitos)
+  r += '00000'                     // 101-105 ag. cobradora (zeros)
+  r += ' '                         // 106 DV ag. cobradora (branco)
+  r += '00'                        // 107-108 espécie documento
+  r += 'N'                         // 109 aceite (N = não aceite)
+  r += fmtDataDDMMAAAA(emDt)       // 110-117 data emissão (8N)
+  r += '3'                         // 118 cód. mora (3 = isento/dispensado)
+  r += '00000000'                  // 119-126 data mora
+  r += '0'.repeat(15)              // 127-141 valor mora (15N)
+  r += '0'                         // 142 cód. desconto 1 (0 = sem desconto)
+  r += '00000000'                  // 143-150 data desconto 1
+  r += '0'.repeat(15)              // 151-165 valor desconto 1 (15N)
+  r += '0'.repeat(15)              // 166-180 IOF (15N)
+  r += '0'.repeat(15)              // 181-195 abatimento (15N)
+  r += usoEmp                      // 196-220 uso empresa cedente (25A)
+  r += '0'                         // 221 cód. protesto (0 = sem)
+  r += '00'                        // 222-223 prazo protesto
+  r += '0'                         // 224 cód. baixa/devolução (0 = sem)
+  r += '   '                       // 225-227 prazo baixa (brancos)
+  r += '09'                        // 228-229 código moeda (09 = Real)
+  r += '0'.repeat(10)              // 230-239 nº contrato (zeros)
+  r += ' '                         // 240 uso livre
   if (r.length !== 240) throw new Error(`SegP240: ${r.length}`)
   return r
 }
 
 function buildSegQ240({ em, seqLote, banco }) {
+  // Manual AILOS v14 – Seção 4.2.2.5 Registro Detalhe Segmento Q (Remessa)
   const cd       = parseCobData(em)
   const cpfCnpj  = (cd.cpf || cd.cnpj || '').replace(/\D/g, '')
   const tipoInsc = cpfCnpj.length <= 11 ? '1' : '2'
@@ -506,7 +512,8 @@ function buildSegQ240({ em, seqLote, banco }) {
   const logNum   = A([end.logradouro, end.numero].filter(Boolean).join(', '), 40)
   const bairro   = A(end.bairro || '', 15)
   const cepRaw   = (end.cep || '').replace(/\D/g, '')
-  const cep8     = N(cepRaw, 8)
+  const cep5     = N(cepRaw.slice(0, 5), 5)
+  const cepSuf   = N(cepRaw.slice(5, 8), 3)
   const cidade   = A(end.municipio || end.cidade || '', 15)
   const uf       = A(end.uf || '', 2)
 
@@ -516,43 +523,40 @@ function buildSegQ240({ em, seqLote, banco }) {
   r += '3'                          // 008
   r += N(seqLote, 5)                // 009-013
   r += 'Q'                          // 014
-  r += ' '                          // 015
-  r += '01'                         // 016-017
-  r += tipoInsc                     // 018
-  r += N(cpfCnpj, 14)               // 019-032
-  r += A(em.tomador_nome, 40)       // 033-072
-  r += logNum                       // 073-112
-  r += bairro                       // 113-127
-  r += cep8                         // 128-135
-  r += cidade                       // 136-150
-  r += uf                           // 151-152
-  r += '0'                          // 153 tipo sacador = 0 (sem)
-  r += '0'.repeat(14)               // 154-167 CNPJ sacador
-  r += A('', 40)                    // 168-207 nome sacador
-  r += '000'                        // 208-210 banco correspondente
-  r += '0'.repeat(20)               // 211-230 nosso número correspondente
-  r += ' '.repeat(10)               // 231-240
+  r += ' '                          // 015 CNAB
+  r += '01'                         // 016-017 cód. movimento
+  r += tipoInsc                     // 018 tipo inscrição (1=CPF, 2=CNPJ)
+  r += N(cpfCnpj, 15)               // 019-033 número inscrição (15N)
+  r += A(em.tomador_nome, 40)       // 034-073 nome (40A)
+  r += logNum                       // 074-113 endereço (40A)
+  r += bairro                       // 114-128 bairro (15A)
+  r += cep5                         // 129-133 CEP (5N)
+  r += cepSuf                       // 134-136 sufixo CEP (3N)
+  r += cidade                       // 137-151 cidade (15A)
+  r += uf                           // 152-153 UF (2A)
+  r += '0'                          // 154 tipo sacador/avalista = 0 (sem)
+  r += '0'.repeat(15)               // 155-169 CNPJ sacador/avalista (15N zeros)
+  r += A('', 40)                    // 170-209 nome sacador/avalista (40A brancos)
+  r += '000'                        // 210-212 banco correspondente (3N zeros)
+  r += ' '.repeat(20)               // 213-232 nosso num banco corresp (20A brancos)
+  r += ' '.repeat(8)                // 233-240 CNAB brancos (8A)
   if (r.length !== 240) throw new Error(`SegQ240: ${r.length}`)
   return r
 }
 
 function buildLotTrailer240({ info, qtdReg, totalTitulos, valorTotal }) {
-  // FEBRABAN CNAB 240 Lot Trailer layout
+  // Manual AILOS v14 – Seção 4.2.2.3.1 Registro Trailer do Lote
   // 018-023: Qtd registros lote (6N)
   // 024-029: Qtd títulos cobrança simples (6N)
-  // 030-046: Valor total cobrança simples (17N)
+  // 030-046: Valor total cobrança simples (17N = 15 dig + 2 dec)
   // 047-052: Qtd cobrança vinculada (6N) = 0
   // 053-069: Valor cobrança vinculada (17N) = 0
   // 070-075: Qtd cobrança caucionada (6N) = 0
-  // 076-092: Valor caucionada (17N) = 0
+  // 076-092: Valor cobrança caucionada (17N) = 0
   // 093-098: Qtd cobrança descontada (6N) = 0
-  // 099-115: Valor descontada (17N) = 0
-  // 116-121: Qtd cobrança desconto (6N) = 0
-  // 122-138: Valor desconto (17N) = 0
-  // 139-144: Qtd cobrança simples coobrigação (6N) = 0
-  // 145-161: Valor simples coobrigação (17N) = 0
-  // 162-169: Nº aviso bancário (8A)
-  // 170-240: CNAB (71A)
+  // 099-115: Valor cobrança descontada (17N) = 0
+  // 116-123: Nº aviso de lançamento (8A)
+  // 124-240: CNAB brancos (117A)
   const valor17 = String(valorCents(valorTotal)).padStart(17, '0')
   let r = ''
   r += info.cod            // 001-003
@@ -561,19 +565,15 @@ function buildLotTrailer240({ info, qtdReg, totalTitulos, valorTotal }) {
   r += ' '.repeat(9)       // 009-017
   r += N(qtdReg, 6)        // 018-023
   r += N(totalTitulos, 6)  // 024-029
-  r += valor17             // 030-046
-  r += '000000'            // 047-052
-  r += '0'.repeat(17)      // 053-069
-  r += '000000'            // 070-075
-  r += '0'.repeat(17)      // 076-092
-  r += '000000'            // 093-098
-  r += '0'.repeat(17)      // 099-115
-  r += '000000'            // 116-121
-  r += '0'.repeat(17)      // 122-138
-  r += '000000'            // 139-144
-  r += '0'.repeat(17)      // 145-161
-  r += '        '          // 162-169 aviso
-  r += ' '.repeat(71)      // 170-240
+  r += valor17             // 030-046 valor total simples (17N)
+  r += '000000'            // 047-052 qtd vinculada
+  r += '0'.repeat(17)      // 053-069 valor vinculada
+  r += '000000'            // 070-075 qtd caucionada
+  r += '0'.repeat(17)      // 076-092 valor caucionada
+  r += '000000'            // 093-098 qtd descontada
+  r += '0'.repeat(17)      // 099-115 valor descontada
+  r += '        '          // 116-123 nº aviso lançamento (8A brancos)
+  r += ' '.repeat(117)     // 124-240 CNAB brancos
   if (r.length !== 240) throw new Error(`LotTrailer240: ${r.length}`)
   return r
 }
