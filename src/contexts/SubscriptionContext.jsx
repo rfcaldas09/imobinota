@@ -25,9 +25,15 @@ export function SubscriptionProvider({ children }) {
       .eq('id', targetId)
       .maybeSingle()
 
-    // Se retornou null mas o usuário está autenticado, pode ser JWT expirado.
+    // Se retornou null mas o usuário está autenticado, pode ser JWT expirado
+    // OU (para afiliados) RLS bloqueando leitura do pai antes da policy ser aplicada.
     // Força refresh de sessão e tenta novamente uma vez.
     if (!data && !error) {
+      if (parentUserId) {
+        // Afiliado não conseguiu ler o profile do pai — provavelmente RLS.
+        // A policy "affiliate_reads_parent_plan" (migration 20261030) deve corrigir.
+        console.warn('[SubscriptionContext] Afiliado não conseguiu ler profile do pai. Verifique a policy RLS affiliate_reads_parent_plan no Supabase.')
+      }
       const { error: refreshError } = await supabase.auth.refreshSession()
       if (!refreshError) {
         const { data: retried } = await supabase

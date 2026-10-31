@@ -468,9 +468,9 @@ function buildTrailerItau400(seq) {
 //  FEBRABAN padrão cobrança
 // ══════════════════════════════════════════════════════════════════
 const BANCO_INFO = {
-  viacredi: { cod: '085', nome: 'VIACREDI', lotVer: '045', carteira: '1' },
-  banrisul:  { cod: '041', nome: 'BANRISUL',  lotVer: '060', carteira: '11' },
-  sicoob:   { cod: '756', nome: 'SICOOB',    lotVer: '045', carteira: '01' },
+  viacredi: { cod: '085', nome: 'VIACREDI', lotVer: '045', carteira: '1', convenio: '101004' },
+  banrisul:  { cod: '041', nome: 'BANRISUL',  lotVer: '060', carteira: '11', convenio: '' },
+  sicoob:   { cod: '756', nome: 'SICOOB',    lotVer: '045', carteira: '01', convenio: '' },
 }
 
 function gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco }) {
@@ -555,8 +555,8 @@ function buildFileHeader240({ info, cnpj, empresa, cc, seqRemessa, hoje }) {
   r += ' '.repeat(9)                // 009-017
   r += '2'                          // 018 tipo inscrição CNPJ
   r += cnpj                         // 019-032 (14N)
-  // 033-052: código convênio (20A) - agência+conta para identificação
-  r += A(N(cc.agencia, 5) + N(cc.conta, 12), 20)  // 033-052
+  // 033-052: código convênio (20A) — usa cc.convenio, senão info.convenio, senão agência+conta
+  r += A(cc.convenio || info.convenio || (N(cc.agencia, 5) + N(cc.conta, 12)), 20)  // 033-052
   r += N(cc.agencia, 5)             // 053-057
   r += A(cc.agencia_dv || ' ', 1)   // 058
   r += N(cc.conta, 12)              // 059-070
@@ -591,7 +591,7 @@ function buildLotHeader240({ info, cnpj, empresa, cc, seqRemessa, hoje, lotVer }
   r += ' '                         // 017 CNAB
   r += '2'                         // 018 tipo inscrição CNPJ
   r += '0' + cnpj                  // 019-033 (15N: '0' + 14-digit CNPJ)
-  r += A(cc.convenio || (N(cc.agencia, 5) + N(cc.conta, 12)), 20) // 034-053 convênio
+  r += A(cc.convenio || info.convenio || (N(cc.agencia, 5) + N(cc.conta, 12)), 20) // 034-053 convênio
   r += N(cc.agencia, 5)            // 054-058 agência
   r += A(cc.agencia_dv || ' ', 1)  // 059 DV agência
   r += N(cc.conta, 12)             // 060-071 conta
@@ -632,8 +632,8 @@ function buildSegP240({ info, cc, em, nn, seqLote, hoje }) {
     ? String(parseInt(cc.protesto_prazo || '5', 10)).padStart(2, '0').slice(-2)
     : '00'
 
-  // Baixa: '0'=sem, '1'=baixar, '2'=devolver
-  const baixaCod   = cc.baixa_cod || '0'
+  // Baixa: '0'=sem, '1'=baixar, '2'=devolver (Viacredi exige '2')
+  const baixaCod   = cc.baixa_cod || '2'
   const baixaPrazo = baixaCod !== '0'
     ? String(parseInt(cc.baixa_prazo || '30', 10)).padStart(3, '0').slice(-3)
     : '   '  // brancos quando sem baixa
@@ -662,7 +662,9 @@ function buildSegP240({ info, cc, em, nn, seqLote, hoje }) {
   r += valor15                     // 086-100 valor nominal (15N, 2 dec implícitos)
   r += '00000'                     // 101-105 ag. cobradora (zeros)
   r += ' '                         // 106 DV ag. cobradora (branco)
-  r += '00'                        // 107-108 espécie documento
+  // Espécie: '02'=DM (Duplicata Mercantil), '04'=DS (Duplicata Serviços) — NFS-e → DS
+  const especieDoc = cc.especie_doc || '04'
+  r += especieDoc                  // 107-108 espécie documento
   r += 'N'                         // 109 aceite (N = não aceite)
   r += fmtDataDDMMAAAA(emDt)       // 110-117 data emissão (8N)
   r += moraCod                     // 118 cód. mora
@@ -685,6 +687,18 @@ function buildSegP240({ info, cc, em, nn, seqLote, hoje }) {
   return r
 }
 
+// Mapeamento primeiros 2 dígitos do código IBGE → UF
+const IBGE_UF = {
+  '11':'RO','12':'AC','13':'AM','14':'RR','15':'PA','16':'AP','17':'TO',
+  '21':'MA','22':'PI','23':'CE','24':'RN','25':'PB','26':'PE','27':'AL','28':'SE','29':'BA',
+  '31':'MG','32':'ES','33':'RJ','35':'SP',
+  '41':'PR','42':'SC','43':'RS',
+  '50':'MS','51':'MT','52':'GO','53':'DF',
+}
+function ufFromCodMun(codMun) {
+  return IBGE_UF[(String(codMun || '')).slice(0, 2)] || ''
+}
+
 function buildSegQ240({ em, seqLote, banco }) {
   // Manual AILOS v14 – Seção 4.2.2.5 Registro Detalhe Segmento Q (Remessa)
   const cd       = parseCobData(em)
@@ -696,8 +710,9 @@ function buildSegQ240({ em, seqLote, banco }) {
   const cepRaw   = (end.cep || '').replace(/\D/g, '')
   const cep5     = N(cepRaw.slice(0, 5), 5)
   const cepSuf   = N(cepRaw.slice(5, 8), 3)
-  const cidade   = A(end.municipio || end.cidade || '', 15)
-  const uf       = A(end.uf || '', 2)
+  // tomadorEnd salva munNome (não municipio/cidade) e não tem uf — deriva do codMun IBGE
+  const cidade   = A(end.munNome || end.municipio || end.cidade || '', 15)
+  const uf       = A(end.uf || ufFromCodMun(end.codMun) || '', 2)
 
   let r = ''
   r += banco                        // 001-003
