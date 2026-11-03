@@ -93,3 +93,37 @@ BEGIN
     );
   END IF;
 END$$;
+
+-- 5. Pai pode ler inquilinos dos afiliados (nome aparece na coluna Cliente)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'inquilinos'
+      AND policyname = 'parent_reads_affiliate_inquilinos'
+  ) THEN
+    CREATE POLICY parent_reads_affiliate_inquilinos ON inquilinos
+    FOR SELECT
+    USING (
+      user_id = auth.uid()
+      OR public.auth_user_is_parent_of(user_id)
+    );
+  END IF;
+END$$;
+
+-- 6. Pai pode ler nfse_emissoes dos afiliados (status das notas na listagem)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'nfse_emissoes'
+      AND policyname = 'parent_reads_affiliate_nfse_emissoes'
+  ) THEN
+    CREATE POLICY parent_reads_affiliate_nfse_emissoes ON nfse_emissoes
+    FOR SELECT
+    USING (
+      user_id = auth.uid()
+      OR public.auth_user_is_parent_of(user_id)
+    );
+  END IF;
+END$$;

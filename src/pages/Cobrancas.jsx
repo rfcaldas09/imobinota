@@ -111,9 +111,10 @@ const mapCob = (row, lastNfse = null) => {
     status:          row.status || 'Pendente',
     mesRef:          row.mes_referencia,
     emissao:         row.data_emissao,
-    nfseStatus:      lastNfse?.status      || null,
-    nfseNumero:      lastNfse?.numero_nfse || null,
-    nfseId:          lastNfse?.id          || null,
+    nfseStatus:      lastNfse?.status       || null,
+    nfseNumero:      lastNfse?.numero_nfse  || null,
+    nfseId:          lastNfse?.id           || null,
+    nfseChave:       lastNfse?.chave_acesso || null,
     // modo contabilidade (locação imobiliária)
     certPfxPath:  row.contratos?.cert_pfx_path || null,
     certSenhaEnc: row.contratos?.cert_senha    || null,
@@ -423,7 +424,8 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
 }
 
 // ── Modal de emissão de NFS-e ─────────────────────────────────────
-function NfseModal({ cob, user, activeUserId = null, onClose }) {
+function NfseModal({ cob, user, activeUserId = null, nfseProvedor = 'sefin', focusHomologacao = false, onClose }) {
+  const emitFn = nfseProvedor === 'focus' ? 'nfse-emitir-focus' : 'nfse-emitir'
   const [state, setState]       = useState('idle') // idle | loading | ok | error
   const [result, setResult]     = useState(null)
   const [errMsg, setErrMsg]     = useState('')
@@ -488,13 +490,13 @@ function NfseModal({ cob, user, activeUserId = null, onClose }) {
     setErrMsg('')
     try {
       const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
-      const res = await fetch('/.netlify/functions/nfse-emitir', {
+      const res = await fetch(`/.netlify/functions/${emitFn}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}) },
         body: JSON.stringify({
           userId:     effUserId,
           cobId:      cob.id,
-          homologacao: homolog,
+          homologacao: nfseProvedor === 'focus' ? focusHomologacao : false,
           cobData: {
             mesRef:           cob.mesRef,
             tenant:           cob.tenant,
@@ -768,7 +770,8 @@ function NfseViewModal({ cob, user, activeUserId = null, onClose }) {
     setCancellingId(em.id)
     try {
       const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
-      const res = await fetch('/.netlify/functions/nfse-cancelar', {
+      const cancelFnView = em.chave_acesso?.startsWith('FOCUS:') ? 'nfse-cancelar-focus' : 'nfse-cancelar'
+      const res = await fetch(`/.netlify/functions/${cancelFnView}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}) },
         body: JSON.stringify({ userId: effUserId, emissaoId: em.id }),
@@ -1162,7 +1165,8 @@ function GarantidoraPixModal({ cobrancas, pixKey, user, onClose }) {
 }
 
 // ── Modal Gerar e Enviar em Massa ─────────────────────────────────
-function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilidade, controlaGarantidora, activeUserId = null, onClose, onDone }) {
+function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilidade, controlaGarantidora, activeUserId = null, nfseProvedor = 'sefin', focusHomologacao = false, onClose, onDone }) {
+  const emitFn = nfseProvedor === 'focus' ? 'nfse-emitir-focus' : 'nfse-emitir'
   const { isActive } = useSubscription()
   const [step, setStep]         = useState('pick') // pick | selecao | discriminacao | running | done
   const [action, setAction]     = useState('nfse')
@@ -1358,13 +1362,13 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
 
       try {
         const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
-        const resp = await fetch('/.netlify/functions/nfse-emitir', {
+        const resp = await fetch(`/.netlify/functions/${emitFn}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}) },
           body: JSON.stringify({
             userId:      effUserId,
             cobId:       cob.id,
-            homologacao: false,
+            homologacao: nfseProvedor === 'focus' ? focusHomologacao : false,
             cobData: {
               mesRef:           cob.mesRef,
               tenant:           cob.tenant,
@@ -2031,7 +2035,8 @@ export default function Cobrancas() {
     setInlineCancelling(c.id)
     try {
       const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
-      const res = await fetch('/.netlify/functions/nfse-cancelar', {
+      const cancelFnInline = c.nfseChave?.startsWith('FOCUS:') ? 'nfse-cancelar-focus' : 'nfse-cancelar'
+      const res = await fetch(`/.netlify/functions/${cancelFnInline}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}) },
         body: JSON.stringify({ userId: effectiveUserId, emissaoId: c.nfseId }),
@@ -2055,7 +2060,8 @@ export default function Cobrancas() {
     let erros = 0
     for (const c of alvo) {
       try {
-        const res = await fetch('/.netlify/functions/nfse-cancelar', {
+        const cancelFnBulk = c.nfseChave?.startsWith('FOCUS:') ? 'nfse-cancelar-focus' : 'nfse-cancelar'
+        const res = await fetch(`/.netlify/functions/${cancelFnBulk}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}) },
           body: JSON.stringify({ userId: effectiveUserId, emissaoId: c.nfseId }),
@@ -2143,11 +2149,20 @@ export default function Cobrancas() {
       .then(({ data }) => setAffiliates(data || []))
   }, [user, isContabilidade])
 
-  // Carrega chave PIX do perfil (ainda necessária para o BoletoPIXModal)
+  // Carrega chave PIX e configuração NFS-e do perfil (segue effectiveUserId)
+  const [nfseProvedor, setNfseProvedor]           = useState('sefin')
+  const [focusHomologacao, setFocusHomologacao]   = useState(false)
   useEffect(() => {
     if (!effectiveUserId) return
-    supabase.from('profiles').select('pix_key_recebimento').eq('id', effectiveUserId).single()
-      .then(({ data }) => setPixKey(data?.pix_key_recebimento || null))
+    supabase.from('profiles')
+      .select('pix_key_recebimento, nfse_provedor, focus_homologacao')
+      .eq('id', effectiveUserId)
+      .single()
+      .then(({ data }) => {
+        setPixKey(data?.pix_key_recebimento || null)
+        setNfseProvedor(data?.nfse_provedor || 'sefin')
+        setFocusHomologacao(!!data?.focus_homologacao)
+      })
   }, [effectiveUserId])
 
   // ── Carrega cobranças do mês ──────────────────────────────────
@@ -2205,7 +2220,7 @@ export default function Cobrancas() {
     if (cobIds.length) {
       const { data: emissoes } = await supabase
         .from('nfse_emissoes')
-        .select('id, cobranca_id, status, numero_nfse, created_at')
+        .select('id, cobranca_id, status, numero_nfse, chave_acesso, created_at')
         .eq('user_id', uid)
         .in('cobranca_id', cobIds)
         .order('created_at', { ascending: false })
@@ -2845,6 +2860,8 @@ export default function Cobrancas() {
           isContabilidade={isContabilidade}
           controlaGarantidora={controlaGarantidora}
           activeUserId={activeUserId}
+          nfseProvedor={nfseProvedor}
+          focusHomologacao={focusHomologacao}
           onClose={() => { setShowBatch(false); load() }}
           onDone={() => load()}
         />
@@ -2869,6 +2886,8 @@ export default function Cobrancas() {
           cob={nfseCob}
           user={user}
           activeUserId={activeUserId}
+          nfseProvedor={nfseProvedor}
+          focusHomologacao={focusHomologacao}
           onClose={() => { setNfseCob(null); load() }}
         />
       )}
