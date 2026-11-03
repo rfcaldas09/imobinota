@@ -1435,6 +1435,15 @@ export default function NfseAvulsa() {
     setEmitDone(false)
     emitStopRef.current = false
 
+    // Busca provedor sempre do banco antes de emitir — evita stale state / race condition
+    const { data: provProfile } = await supabase
+      .from('profiles')
+      .select('nfse_provedor, focus_homologacao')
+      .eq('id', effectiveUserId)
+      .maybeSingle()
+    const provedorFinal       = provProfile?.nfse_provedor   || nfseDefaults.nfseProvedor || 'sefin'
+    const focusHomologFinal   = provProfile?.focus_homologacao ?? nfseDefaults.focusHomologacao ?? false
+
     const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
 
     const delay = ms => new Promise(r => setTimeout(r, ms))
@@ -1443,7 +1452,7 @@ export default function NfseAvulsa() {
       setEmitCurrent(i)
       const item = snapshot[i]
       try {
-        const isFocus = (nfseDefaults.nfseProvedor === 'focus')
+        const isFocus = (provedorFinal === 'focus')
         const emitFn  = isFocus ? 'nfse-emitir-focus' : 'nfse-emitir'
         const res = await fetch(`/.netlify/functions/${emitFn}`, {
           method: 'POST',
@@ -1486,7 +1495,7 @@ export default function NfseAvulsa() {
               // Reforma Tributária — NBS por nota (sobrepõe perfil quando preenchido)
               codNbs: item.nbs || null,
             },
-            homologacao: isFocus ? nfseDefaults.focusHomologacao : false,
+            homologacao: isFocus ? focusHomologFinal : false,
           }),
         })
         const data = await res.json()
@@ -1726,7 +1735,9 @@ export default function NfseAvulsa() {
       const cobData = fresh?.cob_data_json || em.cob_data_json
 
       const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
-      const isFocusR = (nfseDefaults.nfseProvedor === 'focus')
+      const { data: provR } = await supabase.from('profiles')
+        .select('nfse_provedor, focus_homologacao').eq('id', effectiveUserId).maybeSingle()
+      const isFocusR = ((provR?.nfse_provedor || nfseDefaults.nfseProvedor || 'sefin') === 'focus')
       const emitFnR  = isFocusR ? 'nfse-emitir-focus' : 'nfse-emitir'
       const res = await fetch(`/.netlify/functions/${emitFnR}`, {
         method: 'POST',
@@ -1738,7 +1749,7 @@ export default function NfseAvulsa() {
           userId:     effectiveUserId,
           cobId:      null,
           cobData,
-          homologacao: isFocusR ? nfseDefaults.focusHomologacao : false,
+          homologacao: isFocusR ? (provR?.focus_homologacao ?? nfseDefaults.focusHomologacao ?? false) : false,
         }),
       })
       const data = await res.json()
@@ -1857,11 +1868,15 @@ export default function NfseAvulsa() {
         codNbs:                  formData.nbs                      || null,
       }
 
-      const isFocusCR = (nfseDefaults.nfseProvedor === 'focus')
+      // Busca provedor do banco para evitar stale state
+      const { data: provCR } = await supabase.from('profiles')
+        .select('nfse_provedor, focus_homologacao').eq('id', effectiveUserId).maybeSingle()
+      const isFocusCR = ((provCR?.nfse_provedor || nfseDefaults.nfseProvedor || 'sefin') === 'focus')
       const emitFnCR  = isFocusCR ? 'nfse-emitir-focus' : 'nfse-emitir'
+      const focusHomologCR = provCR?.focus_homologacao ?? nfseDefaults.focusHomologacao ?? false
       const emitRes = await fetch(`/.netlify/functions/${emitFnCR}`, {
         method: 'POST', headers,
-        body: JSON.stringify({ userId: effectiveUserId, cobId: null, cobData, homologacao: isFocusCR ? nfseDefaults.focusHomologacao : false }),
+        body: JSON.stringify({ userId: effectiveUserId, cobId: null, cobData, homologacao: isFocusCR ? focusHomologCR : false }),
       })
       const emitData = await emitRes.json()
       if (!emitRes.ok || !emitData.ok) throw new Error(`Erro ao emitir nova nota: ${emitData.error || 'Falha na emissão'}`)
