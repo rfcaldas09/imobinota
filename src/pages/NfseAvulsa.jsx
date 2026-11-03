@@ -1248,9 +1248,23 @@ function EmissaoProgress({ items, results, current, done }) {
 
 // ── Página principal ───────────────────────────────────────────────
 export default function NfseAvulsa() {
-  const { user } = useAuth()
+  const { user, isContabilidade } = useAuth()
   const { isActive: planAtivo = true } = useSubscription() ?? {}
-  const lsKey = user ? `nfsa_pending_${user.id}` : null
+  const lsKey = user ? `nfsa_pending_${user.id}` : null  // rascunho sempre do usuário logado
+
+  // ── Dropdown de afiliados (visível só para usuários contabilidade) ──
+  const [affiliates, setAffiliates] = useState([])
+  const [activeUserId, setActiveUserId] = useState(null) // null = próprio usuário
+  const effectiveUserId = activeUserId ?? user?.id
+
+  // Carrega lista de afiliados se for contabilidade
+  useEffect(() => {
+    if (!user || !isContabilidade) return
+    supabase.from('profiles')
+      .select('id, company_name, cnpj')
+      .eq('parent_user_id', user.id)
+      .then(({ data }) => setAffiliates(data || []))
+  }, [user, isContabilidade])
 
   // Defaults de retenção do perfil do usuário
   const [retDefaults, setRetDefaults] = useState(NAT_RET_DEFAULT)
@@ -1259,10 +1273,10 @@ export default function NfseAvulsa() {
   const [nfseDefaults, setNfseDefaults] = useState({}) // município e IM do prestador (defaults por nota)
   const [profileLc116, setProfileLc116] = useState('')  // código LC116 padrão do perfil
   useEffect(() => {
-    if (!user) return
+    if (!effectiveUserId) return
     supabase.from('profiles')
       .select('ret_irrf, ret_csll, ret_cofins, ret_pis, ret_inss, aliquota_iss, nfse_nbs, nfse_cst, nfse_cindop, nfse_cclasstrib, nfse_municipio_ibge, inscricao_municipal, nfse_codigo_servico, nfse_provedor, focus_homologacao')
-      .eq('id', user.id)
+      .eq('id', effectiveUserId)
       .maybeSingle()
       .then(({ data }) => {
         if (data) {
@@ -1286,7 +1300,7 @@ export default function NfseAvulsa() {
           setProfileLc116(data.nfse_codigo_servico || '')
         }
       })
-  }, [user])
+  }, [effectiveUserId])
 
   // Fila de tomadores pendentes (persiste em localStorage)
   const [pending, setPending]       = useState([])
@@ -1330,12 +1344,12 @@ export default function NfseAvulsa() {
   const [histHasMore, setHistHasMore] = useState(false)
 
   const loadHistory = useCallback(async (offset = 0, append = false) => {
-    if (!user) return
+    if (!effectiveUserId) return
     setLoadingHistory(true)
     const { data } = await supabase
       .from('nfse_emissoes')
       .select('id, numero_nfse, numero_dps, tomador_nome, valor_servico, competencia, status, created_at, erro_msg, chave_acesso, cob_data_json')
-      .eq('user_id', user.id)
+      .eq('user_id', effectiveUserId)
       .is('cobranca_id', null)
       .order('created_at', { ascending: false })
       .range(offset, offset + HIST_PAGE_SIZE - 1)
@@ -1344,7 +1358,7 @@ export default function NfseAvulsa() {
     setHistHasMore(rows.length === HIST_PAGE_SIZE)
     setHistOffset(offset)
     setLoadingHistory(false)
-  }, [user])
+  }, [effectiveUserId])
 
   const loadMoreHistory = () => {
     const nextOffset = histOffset + HIST_PAGE_SIZE
@@ -1438,7 +1452,7 @@ export default function NfseAvulsa() {
             ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
           },
           body: JSON.stringify({
-            userId:  user.id,
+            userId:  effectiveUserId,
             cobId:   null,
             cobData: {
               tenant:          item.nome,
@@ -1528,7 +1542,7 @@ export default function NfseAvulsa() {
     const { data } = await supabase
       .from('nfse_emissoes')
       .select('id, numero_nfse, tomador_nome, valor_servico, competencia, status, cob_data_json')
-      .eq('user_id', user.id)
+      .eq('user_id', effectiveUserId)
       .is('cobranca_id', null)
       .eq('status', 'emitida')
       .eq('competencia', mesAnteriorStr)
@@ -1648,7 +1662,7 @@ export default function NfseAvulsa() {
       const res = await fetch('/.netlify/functions/cnab-gerar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, emissaoIds: emitidaIds, contaId }),
+        body: JSON.stringify({ userId: effectiveUserId, emissaoIds: emitidaIds, contaId }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -1678,7 +1692,7 @@ export default function NfseAvulsa() {
     // Sempre recarrega contas do perfil para refletir mudanças recentes em Config
     let contas = []
     try {
-      const { data: prof } = await supabase.from('profiles').select('cnab_config').eq('id', user.id).single()
+      const { data: prof } = await supabase.from('profiles').select('cnab_config').eq('id', effectiveUserId).single()
       const raw = prof?.cnab_config
       if (Array.isArray(raw)) contas = raw
       else if (raw && typeof raw === 'object' && raw.banco) contas = [{ id: 'legacy', label: raw.banco, ...raw }]
@@ -1721,7 +1735,7 @@ export default function NfseAvulsa() {
           ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
         },
         body: JSON.stringify({
-          userId:     user.id,
+          userId:     effectiveUserId,
           cobId:      null,
           cobData,
           homologacao: isFocusR ? nfseDefaults.focusHomologacao : false,
@@ -1803,7 +1817,7 @@ export default function NfseAvulsa() {
         const cancelFnRe = em.chave_acesso?.startsWith('FOCUS:') ? 'nfse-cancelar-focus' : 'nfse-cancelar'
         const cancelRes = await fetch(`/.netlify/functions/${cancelFnRe}`, {
           method: 'POST', headers,
-          body: JSON.stringify({ userId: user.id, emissaoId: em.id }),
+          body: JSON.stringify({ userId: effectiveUserId, emissaoId: em.id }),
         })
         const cancelData = await cancelRes.json()
         if (!cancelRes.ok) throw new Error(`Erro ao cancelar: ${cancelData.error || 'Falha no cancelamento'}`)
@@ -1847,7 +1861,7 @@ export default function NfseAvulsa() {
       const emitFnCR  = isFocusCR ? 'nfse-emitir-focus' : 'nfse-emitir'
       const emitRes = await fetch(`/.netlify/functions/${emitFnCR}`, {
         method: 'POST', headers,
-        body: JSON.stringify({ userId: user.id, cobId: null, cobData, homologacao: isFocusCR ? nfseDefaults.focusHomologacao : false }),
+        body: JSON.stringify({ userId: effectiveUserId, cobId: null, cobData, homologacao: isFocusCR ? nfseDefaults.focusHomologacao : false }),
       })
       const emitData = await emitRes.json()
       if (!emitRes.ok || !emitData.ok) throw new Error(`Erro ao emitir nova nota: ${emitData.error || 'Falha na emissão'}`)
@@ -1888,7 +1902,7 @@ export default function NfseAvulsa() {
     for (const em of emitidas) {
       // PDF
       try {
-        const res  = await fetch('/.netlify/functions/nfse-pdf', { method: 'POST', headers, body: JSON.stringify({ userId: user.id, emissaoId: em.id }) })
+        const res  = await fetch('/.netlify/functions/nfse-pdf', { method: 'POST', headers, body: JSON.stringify({ userId: effectiveUserId, emissaoId: em.id }) })
         const data = await res.json()
         if (res.ok && data.pdfBase64) {
           const bytes = Uint8Array.from(atob(data.pdfBase64), c => c.charCodeAt(0))
@@ -1899,7 +1913,7 @@ export default function NfseAvulsa() {
 
       // XML
       try {
-        const res  = await fetch('/.netlify/functions/nfse-xml', { method: 'POST', headers, body: JSON.stringify({ userId: user.id, emissaoId: em.id }) })
+        const res  = await fetch('/.netlify/functions/nfse-xml', { method: 'POST', headers, body: JSON.stringify({ userId: effectiveUserId, emissaoId: em.id }) })
         const data = await res.json()
         if (res.ok && data.xmlBase64) {
           const bytes = Uint8Array.from(atob(data.xmlBase64), c => c.charCodeAt(0))
@@ -1958,7 +1972,7 @@ export default function NfseAvulsa() {
     const { data: allRows, error } = await supabase
       .from('nfse_emissoes')
       .select('id, numero_nfse, tomador_nome, status')
-      .eq('user_id', user.id)
+      .eq('user_id', effectiveUserId)
       .eq('status', 'emitida')
       .order('numero_nfse', { ascending: true })
 
@@ -1996,7 +2010,7 @@ export default function NfseAvulsa() {
             'Content-Type': 'application/json',
             ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
           },
-          body: JSON.stringify({ userId: user.id, emissaoId: row.id }),
+          body: JSON.stringify({ userId: effectiveUserId, emissaoId: row.id }),
         })
         const data = await res.json()
         if (res.ok) {
@@ -2033,7 +2047,7 @@ export default function NfseAvulsa() {
           'Content-Type': 'application/json',
           ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
         },
-        body: JSON.stringify({ userId: user.id, emissaoId: em.id }),
+        body: JSON.stringify({ userId: effectiveUserId, emissaoId: em.id }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao cancelar')
@@ -2055,7 +2069,7 @@ export default function NfseAvulsa() {
           'Content-Type': 'application/json',
           ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
         },
-        body: JSON.stringify({ userId: user.id, emissaoId }),
+        body: JSON.stringify({ userId: effectiveUserId, emissaoId }),
       })
       const data = await res.json()
       if (!res.ok || !data.pdfBase64) throw new Error(data.error || 'Erro ao gerar PDF')
@@ -2080,7 +2094,7 @@ export default function NfseAvulsa() {
           'Content-Type': 'application/json',
           ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
         },
-        body: JSON.stringify({ userId: user.id, emissaoId }),
+        body: JSON.stringify({ userId: effectiveUserId, emissaoId }),
       })
       const data = await res.json()
       if (!res.ok || !data.xmlBase64) throw new Error(data.error || 'XML não disponível')
@@ -2126,6 +2140,24 @@ export default function NfseAvulsa() {
           Emita notas fiscais sem vínculo com contratos. Ideal para atendimentos avulsos.
         </p>
       </div>
+
+      {/* ── Dropdown de afiliados (só para contabilidade com afiliados) ── */}
+      {isContabilidade && affiliates.length > 0 && (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
+          <span className="text-xs font-semibold text-amber-700 whitespace-nowrap">👤 Emitindo para:</span>
+          <select
+            value={activeUserId ?? ''}
+            onChange={e => setActiveUserId(e.target.value || null)}
+            className="flex-1 text-xs font-medium border border-amber-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 min-w-[200px]">
+            <option value="">Você mesmo</option>
+            {affiliates.map(a => (
+              <option key={a.id} value={a.id}>
+                {a.company_name || a.cnpj || a.id}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* ── 2. KPI Cards + toggle de período ─────────────────── */}
       <div>

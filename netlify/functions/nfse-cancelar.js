@@ -20,6 +20,7 @@ const crypto     = require('crypto')
 const zlib       = require('zlib')
 const forge      = require('node-forge')
 const xmlCrypto  = require('xml-crypto')
+const { checkParentAuth } = require('./_parent-auth')
 
 const SEFIN_BASE_PROD = 'https://sefin.nfse.gov.br/SefinNacional/nfse'
 const SEFIN_BASE_TEST = 'https://sefin.producaorestrita.nfse.gov.br/SefinNacional/nfse'
@@ -43,6 +44,10 @@ exports.handler = async (event) => {
   if (!userId || !emissaoId) {
     return { statusCode: 400, body: JSON.stringify({ error: 'userId e emissaoId são obrigatórios' }) }
   }
+
+  // Valida que o caller (JWT) é o próprio userId ou seu pai (contabilidade)
+  const authError = await checkParentAuth(event, userId)
+  if (authError) return authError
 
   const SUPABASE_URL = process.env.SUPABASE_URL
   const SERVICE_KEY  = process.env.SUPABASE_SERVICE_KEY

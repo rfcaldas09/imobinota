@@ -6,6 +6,7 @@
 // GET  /?userId=...&emissaoId=... (menos seguro, para debugging)
 
 const { buildNfsePdf, extrairCamposPdf } = require('./nfse-pdf-lib')
+const { checkParentAuth } = require('./_parent-auth')
 
 exports.handler = async (event) => {
   try {
@@ -36,6 +37,10 @@ async function handle(event) {
   if (!userId || !emissaoId) {
     return { statusCode: 400, body: JSON.stringify({ error: 'userId e emissaoId são obrigatórios' }) }
   }
+
+  // Valida que o caller (JWT) é o próprio userId ou seu pai (contabilidade)
+  const authError = await checkParentAuth(event, userId)
+  if (authError) return authError
 
   // Busca emissão (garante que pertence ao userId)
   const emRes = await supabaseFetch(SUPABASE_URL, SERVICE_KEY,

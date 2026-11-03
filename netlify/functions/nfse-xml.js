@@ -1,6 +1,8 @@
 // Netlify Function — retorna o XML de uma NFS-e já emitida
 // POST { userId, emissaoId } → 200 { xmlBase64, filename }
 
+const { checkParentAuth } = require('./_parent-auth')
+
 exports.handler = async (event) => {
   try {
     return await handle(event)
@@ -30,6 +32,10 @@ async function handle(event) {
   if (!userId || !emissaoId) {
     return { statusCode: 400, body: JSON.stringify({ error: 'userId e emissaoId são obrigatórios' }) }
   }
+
+  // Valida que o caller (JWT) é o próprio userId ou seu pai (contabilidade)
+  const authError = await checkParentAuth(event, userId)
+  if (authError) return authError
 
   // Busca emissão (garante que pertence ao userId)
   const res = await fetch(

@@ -13,6 +13,7 @@ const crypto     = require('crypto')
 const zlib       = require('zlib')
 const xmlCrypto  = require('xml-crypto')
 const { buildNfsePdf, extrairCamposPdf } = require('./nfse-pdf-lib')
+const { checkParentAuth } = require('./_parent-auth')
 
 // ── URLs do SEFIN Nacional ────────────────────────────────────────
 // Produção:    POST https://sefin.nfse.gov.br/SefinNacional/nfse
@@ -62,6 +63,10 @@ async function handle(event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'userId e cobData são obrigatórios' }) }
   }
   // cobId pode ser null para emissões avulsas (sem cobrança vinculada)
+
+  // Valida que o caller (JWT) é o próprio userId ou seu pai (contabilidade)
+  const authError = await checkParentAuth(event, userId)
+  if (authError) return authError
 
   const SUPABASE_URL = process.env.SUPABASE_URL
   const SERVICE_KEY  = process.env.SUPABASE_SERVICE_KEY

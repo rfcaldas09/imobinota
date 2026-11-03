@@ -423,7 +423,7 @@ function BoletoPIXModal({ cob, pixKey, onClose }) {
 }
 
 // ── Modal de emissão de NFS-e ─────────────────────────────────────
-function NfseModal({ cob, user, onClose }) {
+function NfseModal({ cob, user, activeUserId = null, onClose }) {
   const [state, setState]       = useState('idle') // idle | loading | ok | error
   const [result, setResult]     = useState(null)
   const [errMsg, setErrMsg]     = useState('')
@@ -433,13 +433,17 @@ function NfseModal({ cob, user, onClose }) {
   const [pdfLoading, setPdfLoading] = useState(false)
   const [xmlLoading, setXmlLoading] = useState(false)
 
+  const effUserId = activeUserId ?? user?.id
+
   const downloadPdf = async () => {
     if (!result?.emissaoId) return
     setPdfLoading(true)
     try {
+      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
       const res  = await fetch('/.netlify/functions/nfse-pdf', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, emissaoId: result.emissaoId }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}) },
+        body: JSON.stringify({ userId: effUserId, emissaoId: result.emissaoId }),
       })
       const data = await res.json()
       if (!res.ok || data.error) { alert(`Erro ao baixar PDF: ${data.error}`); return }
@@ -456,9 +460,11 @@ function NfseModal({ cob, user, onClose }) {
     if (!result?.emissaoId) return
     setXmlLoading(true)
     try {
+      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
       const res  = await fetch('/.netlify/functions/nfse-xml', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, emissaoId: result.emissaoId }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}) },
+        body: JSON.stringify({ userId: effUserId, emissaoId: result.emissaoId }),
       })
       const data = await res.json()
       if (!res.ok || data.error) { alert(`Erro ao baixar XML: ${data.error}`); return }
@@ -481,11 +487,12 @@ function NfseModal({ cob, user, onClose }) {
     setState('loading')
     setErrMsg('')
     try {
+      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
       const res = await fetch('/.netlify/functions/nfse-emitir', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}) },
         body: JSON.stringify({
-          userId:     user.id,
+          userId:     effUserId,
           cobId:      cob.id,
           homologacao: homolog,
           cobData: {
@@ -726,13 +733,15 @@ function NfseModal({ cob, user, onClose }) {
 }
 
 // ── Modal: Ver NFS-e emitidas para uma cobrança ───────────────────
-function NfseViewModal({ cob, user, onClose }) {
+function NfseViewModal({ cob, user, activeUserId = null, onClose }) {
   const [emissoes, setEmissoes] = useState([])
   const [loading, setLoading]   = useState(true)
   const [pdfLoading, setPdfLoading] = useState(null)
   const [xmlLoading, setXmlLoading] = useState(null)
   const [cancelConfirmId, setCancelConfirmId] = useState(null)
   const [cancellingId,    setCancellingId]    = useState(null)
+
+  const effUserId = activeUserId ?? user?.id
 
   useEffect(() => {
     const handle = e => { if (e.key === 'Escape') onClose() }
@@ -745,13 +754,13 @@ function NfseViewModal({ cob, user, onClose }) {
     supabase
       .from('nfse_emissoes')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', effUserId)
       .eq('cobranca_id', cob.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => { setEmissoes(data || []); setLoading(false) })
   }
 
-  useEffect(() => { loadEmissoes() }, [cob.id, user.id])
+  useEffect(() => { loadEmissoes() }, [cob.id, effUserId])
 
   const handleCancelar = async (em) => {
     if (cancelConfirmId !== em.id) { setCancelConfirmId(em.id); return }
@@ -762,7 +771,7 @@ function NfseViewModal({ cob, user, onClose }) {
       const res = await fetch('/.netlify/functions/nfse-cancelar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}) },
-        body: JSON.stringify({ userId: user.id, emissaoId: em.id }),
+        body: JSON.stringify({ userId: effUserId, emissaoId: em.id }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao cancelar')
@@ -780,7 +789,7 @@ function NfseViewModal({ cob, user, onClose }) {
       const res = await fetch('/.netlify/functions/nfse-pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, emissaoId: em.id }),
+        body: JSON.stringify({ userId: effUserId, emissaoId: em.id }),
       })
       const data = await res.json()
       if (!res.ok || data.error) { alert(`Erro ao gerar PDF: ${data.error}`); return }
@@ -806,7 +815,7 @@ function NfseViewModal({ cob, user, onClose }) {
       const res = await fetch('/.netlify/functions/nfse-xml', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, emissaoId: em.id }),
+        body: JSON.stringify({ userId: effUserId, emissaoId: em.id }),
       })
       const data = await res.json()
       if (!res.ok || data.error) { alert(`Erro ao baixar XML: ${data.error}`); return }
@@ -1153,7 +1162,7 @@ function GarantidoraPixModal({ cobrancas, pixKey, user, onClose }) {
 }
 
 // ── Modal Gerar e Enviar em Massa ─────────────────────────────────
-function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilidade, controlaGarantidora, onClose, onDone }) {
+function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilidade, controlaGarantidora, activeUserId = null, onClose, onDone }) {
   const { isActive } = useSubscription()
   const [step, setStep]         = useState('pick') // pick | selecao | discriminacao | running | done
   const [action, setAction]     = useState('nfse')
@@ -1168,6 +1177,9 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
   const [discMap, setDiscMap]   = useState({})
   const [confirming, setConfirming] = useState(false) // guard anti-duplo-clique
 
+  // ID efetivo: afiliado selecionado ou próprio usuário logado
+  const effUserId = activeUserId ?? user?.id
+
   useEffect(() => {
     if (!user || !contracts.length) return
     setPreview(null)
@@ -1175,7 +1187,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
 
     // Busca cobrancas do mês e, para cada uma, a última NFS-e emitida
     supabase.from('cobrancas').select('id, contrato_id')
-      .eq('user_id', user.id).eq('mes_referencia', ref)
+      .eq('user_id', effUserId).eq('mes_referencia', ref)
       .then(async ({ data: cobs }) => {
         const cobsByContrato = {}
         for (const c of (cobs || [])) cobsByContrato[c.contrato_id] = c.id
@@ -1231,7 +1243,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
     const { data: cobsDoMes } = await supabase
       .from('cobrancas')
       .select('id, valor_total, mes_referencia, contrato_id, contratos(imovel, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, seguro_financeiro, seguro_incendio, iptu, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss, toma_logradouro, toma_numero, toma_bairro, toma_cep, toma_cod_mun, toma_mun_nome, imovel_cib, imovel_inscricao_fiscal, imovel_finalidade, imovel_logradouro, imovel_numero, imovel_complemento, imovel_bairro, imovel_cep, imovel_cod_mun, imovel_mun_nome, cod_nbs, cert_pfx_path, cert_senha), inquilinos(nome, cpf, email)')
-      .eq('user_id', user.id)
+      .eq('user_id', effUserId)
       .eq('mes_referencia', ref)
       .in('contrato_id', activeContracts.map(c => c.id))
 
@@ -1294,7 +1306,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
 
     // ── Passo 1: cria cobrancas (pula as que já existem) ──────────
     try {
-      const res = await emitirCobrancas(user.id, activeContracts, mesRef)
+      const res = await emitirCobrancas(effUserId, activeContracts, mesRef)
       if (res.error) {
         setResult({ created: 0, skipped: res.skipped, fails: 0, error: res.error })
         setStep('done')
@@ -1345,11 +1357,12 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
       const discriminacao = discMapLocal[cob.id] || cob.discriminacaoServico || null
 
       try {
+        const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
         const resp = await fetch('/.netlify/functions/nfse-emitir', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}) },
           body: JSON.stringify({
-            userId:      user.id,
+            userId:      effUserId,
             cobId:       cob.id,
             homologacao: false,
             cobData: {
@@ -1758,7 +1771,8 @@ function StatusBadge({ status }) {
 }
 
 // ── Modal: Adicionar cobrança manualmente ─────────────────────────
-function AdicionarCobrancaModal({ contracts, user, onClose, onDone }) {
+function AdicionarCobrancaModal({ contracts, user, activeUserId = null, onClose, onDone }) {
+  const effUserId = activeUserId ?? user?.id
   const today = new Date()
   const defaultMes = new Date(today.getFullYear(), today.getMonth(), 1)
 
@@ -1798,7 +1812,7 @@ function AdicionarCobrancaModal({ contracts, user, onClose, onDone }) {
     setSaving(true)
     try {
       const contract = contracts.find(c => c.id === selectedId)
-      const result = await emitirUmaCobranca(user.id, {
+      const result = await emitirUmaCobranca(effUserId, {
         id:               selectedId,
         inquilino_id:     contract?.inquilino_id || null,
         value:            Number(f.value),
@@ -1936,6 +1950,13 @@ export default function Cobrancas() {
   const [cobrancas, setCobrancas] = useState([])
   const [contracts, setContracts] = useState([])
   const [loading, setLoading]     = useState(true)
+
+  // ── Dropdown de afiliados (visível só para usuários contabilidade) ──
+  const [affiliates, setAffiliates] = useState([])    // lista de perfis afiliados
+  const [activeUserId, setActiveUserId] = useState(null) // null = próprio usuário
+
+  // effectiveUserId: usa afiliado selecionado ou o próprio usuário logado
+  const effectiveUserId = activeUserId ?? user?.id
   const [filter, setFilter]           = useState('Todos')
   const [filterLocacao, setFilterLocacao] = useState('')  // '' = todos
   const [showBatch, setShowBatch]     = useState(false)
@@ -1965,9 +1986,11 @@ export default function Cobrancas() {
     if (!c.nfseId) return
     setInlinePdfId(c.id)
     try {
+      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
       const res  = await fetch('/.netlify/functions/nfse-pdf', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, emissaoId: c.nfseId }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}) },
+        body: JSON.stringify({ userId: effectiveUserId, emissaoId: c.nfseId }),
       })
       const data = await res.json()
       if (!res.ok || data.error) { alert(`Erro ao baixar PDF: ${data.error}`); return }
@@ -1984,9 +2007,11 @@ export default function Cobrancas() {
     if (!c.nfseId) return
     setInlineXmlId(c.id)
     try {
+      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
       const res  = await fetch('/.netlify/functions/nfse-xml', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, emissaoId: c.nfseId }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}) },
+        body: JSON.stringify({ userId: effectiveUserId, emissaoId: c.nfseId }),
       })
       const data = await res.json()
       if (!res.ok || data.error) { alert(`Erro ao baixar XML: ${data.error}`); return }
@@ -2009,7 +2034,7 @@ export default function Cobrancas() {
       const res = await fetch('/.netlify/functions/nfse-cancelar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}) },
-        body: JSON.stringify({ userId: user.id, emissaoId: c.nfseId }),
+        body: JSON.stringify({ userId: effectiveUserId, emissaoId: c.nfseId }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao cancelar')
@@ -2033,7 +2058,7 @@ export default function Cobrancas() {
         const res = await fetch('/.netlify/functions/nfse-cancelar', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}) },
-          body: JSON.stringify({ userId: user.id, emissaoId: c.nfseId }),
+          body: JSON.stringify({ userId: effectiveUserId, emissaoId: c.nfseId }),
         })
         const data = await res.json()
         if (!res.ok) erros++
@@ -2065,12 +2090,14 @@ export default function Cobrancas() {
     let done = 0
     const cobsEmitidas = cobrancas.filter(c => c.nfseStatus === 'emitida' && c.nfseId)
 
+    const jwtZip = (await supabase.auth.getSession())?.data?.session?.access_token
     for (const c of cobsEmitidas) {
       // PDF
       try {
         const res  = await fetch('/.netlify/functions/nfse-pdf', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: user.id, emissaoId: c.nfseId }),
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(jwtZip ? { Authorization: `Bearer ${jwtZip}` } : {}) },
+          body: JSON.stringify({ userId: effectiveUserId, emissaoId: c.nfseId }),
         })
         const data = await res.json()
         if (res.ok && data.pdfBase64) {
@@ -2083,8 +2110,9 @@ export default function Cobrancas() {
       // XML
       try {
         const res  = await fetch('/.netlify/functions/nfse-xml', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: user.id, emissaoId: c.nfseId }),
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(jwtZip ? { Authorization: `Bearer ${jwtZip}` } : {}) },
+          body: JSON.stringify({ userId: effectiveUserId, emissaoId: c.nfseId }),
         })
         const data = await res.json()
         if (res.ok && data.xmlBase64) {
@@ -2106,12 +2134,21 @@ export default function Cobrancas() {
     setZipLoading(false)
   }
 
+  // ── Carrega lista de afiliados (apenas para usuários contabilidade) ─
+  useEffect(() => {
+    if (!user || !isContabilidade) return
+    supabase.from('profiles')
+      .select('id, company_name, cnpj')
+      .eq('parent_user_id', user.id)
+      .then(({ data }) => setAffiliates(data || []))
+  }, [user, isContabilidade])
+
   // Carrega chave PIX do perfil (ainda necessária para o BoletoPIXModal)
   useEffect(() => {
-    if (!user) return
-    supabase.from('profiles').select('pix_key_recebimento').eq('id', user.id).single()
+    if (!effectiveUserId) return
+    supabase.from('profiles').select('pix_key_recebimento').eq('id', effectiveUserId).single()
       .then(({ data }) => setPixKey(data?.pix_key_recebimento || null))
-  }, [user])
+  }, [effectiveUserId])
 
   // ── Carrega cobranças do mês ──────────────────────────────────
   const load = async () => {
@@ -2119,12 +2156,13 @@ export default function Cobrancas() {
     setLoading(true)
     const ref    = mesStr(mesRef)
     const curRef = mesStr(new Date())
+    const uid    = effectiveUserId  // afiliado selecionado ou próprio usuário
 
     // 1. Busca contratos ativos primeiro (necessário para auto-gerar cobranças)
     const { data: ctrs } = await supabase
       .from('contratos')
       .select('id, inquilino_id, imovel, valor_aluguel, seguro_financeiro, seguro_incendio, iptu, dia_vencimento, status, discriminacao_servico, solicitar_discriminacao_mensal, inquilinos(nome)')
-      .eq('user_id', user.id)
+      .eq('user_id', uid)
       .eq('status', 'Ativo')
       .order('inquilinos(nome)', { ascending: true })
 
@@ -2147,7 +2185,7 @@ export default function Cobrancas() {
 
     // 2. Auto-gera cobranças para meses futuros (idempotente — já existentes são ignoradas)
     if (ref > curRef && mappedCtrs.length > 0) {
-      const { created } = await emitirCobrancas(user.id, mappedCtrs, mesRef)
+      const { created } = await emitirCobrancas(uid, mappedCtrs, mesRef)
       if (created > 0) setAutoGerou(created)
     } else {
       setAutoGerou(0)
@@ -2157,7 +2195,7 @@ export default function Cobrancas() {
     const { data, error } = await supabase
       .from('cobrancas')
       .select('*, situacao_cobranca, valor_atualizado, contratos(imovel, seguro_financeiro, seguro_incendio, iptu, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss, toma_logradouro, toma_numero, toma_bairro, toma_cep, toma_cod_mun, toma_mun_nome, imovel_cib, imovel_inscricao_fiscal, imovel_finalidade, imovel_logradouro, imovel_numero, imovel_complemento, imovel_bairro, imovel_cep, imovel_cod_mun, imovel_mun_nome, cod_nbs, cert_pfx_path, cert_senha, pct_multa, pct_juros_mes, situacao_locacao), inquilinos(nome, cpf, email)')
-      .eq('user_id', user.id)
+      .eq('user_id', uid)
       .eq('mes_referencia', ref)
       .order('created_at', { ascending: false })
 
@@ -2168,7 +2206,7 @@ export default function Cobrancas() {
       const { data: emissoes } = await supabase
         .from('nfse_emissoes')
         .select('id, cobranca_id, status, numero_nfse, created_at')
-        .eq('user_id', user.id)
+        .eq('user_id', uid)
         .in('cobranca_id', cobIds)
         .order('created_at', { ascending: false })
       // Prefere a NFS-e emitida mais recente por cobrança;
@@ -2196,7 +2234,7 @@ export default function Cobrancas() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [user, mesRef])
+  useEffect(() => { load() }, [user, mesRef, activeUserId])
 
   // ── KPIs ───────────────────────────────────────────────────────
   const kpi = useMemo(() => {
@@ -2315,6 +2353,24 @@ export default function Cobrancas() {
           </div>
         ))}
       </div>
+
+      {/* ── Dropdown de afiliados (só para contabilidade com afiliados) ── */}
+      {isContabilidade && affiliates.length > 0 && (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
+          <span className="text-xs font-semibold text-amber-700 whitespace-nowrap">👤 Emitindo para:</span>
+          <select
+            value={activeUserId ?? ''}
+            onChange={e => { setActiveUserId(e.target.value || null); setFilter('Todos') }}
+            className="flex-1 text-xs font-medium border border-amber-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400 min-w-[200px]">
+            <option value="">Você mesmo</option>
+            {affiliates.map(a => (
+              <option key={a.id} value={a.id}>
+                {a.company_name || a.cnpj || a.id}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* ── Filtros + Ações ────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3">
@@ -2788,6 +2844,7 @@ export default function Cobrancas() {
           mesRef={mesRef}
           isContabilidade={isContabilidade}
           controlaGarantidora={controlaGarantidora}
+          activeUserId={activeUserId}
           onClose={() => { setShowBatch(false); load() }}
           onDone={() => load()}
         />
@@ -2811,6 +2868,7 @@ export default function Cobrancas() {
         <NfseModal
           cob={nfseCob}
           user={user}
+          activeUserId={activeUserId}
           onClose={() => { setNfseCob(null); load() }}
         />
       )}
@@ -2818,6 +2876,7 @@ export default function Cobrancas() {
         <NfseViewModal
           cob={nfseViewCob}
           user={user}
+          activeUserId={activeUserId}
           onClose={() => setNfseViewCob(null)}
         />
       )}
@@ -2825,6 +2884,7 @@ export default function Cobrancas() {
         <AdicionarCobrancaModal
           contracts={contracts}
           user={user}
+          activeUserId={activeUserId}
           onClose={() => setAddCob(false)}
           onDone={() => { setAddCob(false); load() }}
         />
