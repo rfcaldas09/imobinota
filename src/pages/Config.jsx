@@ -1598,14 +1598,14 @@ export default function Config() {
                     {cnabForm.banco !== 'itau' && (<>
                     <div className="grid grid-cols-2 gap-3">
                       <Row label="Protesto automático">
-                        <select value={cnabForm.protesto_cod ?? '0'} onChange={e => cnabFormSet('protesto_cod', e.target.value)}
+                        <select value={cnabForm.protesto_cod ?? '3'} onChange={e => cnabFormSet('protesto_cod', e.target.value)}
                           className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                          <option value="0">Não protestar</option>
+                          <option value="3">Não protestar (isento)</option>
                           <option value="1">Protestar</option>
                           <option value="2">Negativar (Serasa)</option>
                         </select>
                       </Row>
-                      {cnabForm.protesto_cod && cnabForm.protesto_cod !== '0' && (
+                      {cnabForm.protesto_cod && !['0','3'].includes(cnabForm.protesto_cod) && (
                         <Row label="Prazo para protesto (dias)">
                           <Inp value={cnabForm.protesto_prazo || ''}
                             onChange={e => cnabFormSet('protesto_prazo', e.target.value.replace(/\D/g, '').slice(0, 2))}

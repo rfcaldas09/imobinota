@@ -1656,6 +1656,7 @@ export default function NfseAvulsa() {
   }
 
   // ── Gerar arquivo CNAB (400 Bradesco ou 240 Viacredi/Banrisul) ─
+  // Para Viacredi: empacota REM + PDFs individuais em um ZIP via jszip
   const handleGerarCNAB = async (contaId) => {
     const emitidaIds = Array.from(selectedHistIds).filter(id => {
       const em = filteredHistory.find(e => e.id === id)
@@ -1668,6 +1669,7 @@ export default function NfseAvulsa() {
     setCnabPickerOpen(false)
     setCnabGenerating(true)
     try {
+      // ── 1. Gera arquivo CNAB ────────────────────────────────
       const res = await fetch('/.netlify/functions/cnab-gerar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1679,16 +1681,73 @@ export default function NfseAvulsa() {
         return
       }
       const { cnabText, filename, totalTitulos, valorTotal } = data
-      const blob = new Blob([cnabText], { type: 'text/plain;charset=ascii' })
-      const url  = URL.createObjectURL(blob)
+
+      // Detecta se é Viacredi para gerar boletos PDF
+      const contaSel = cnabContas.find(c => c.id === contaId) || cnabContas[0]
+      const isViacredi = (contaSel?.banco || '').toLowerCase() === 'viacredi'
+
+      if (!isViacredi) {
+        // Outros bancos: só baixa o CNAB
+        const blob = new Blob([cnabText], { type: 'text/plain;charset=ascii' })
+        const url  = URL.createObjectURL(blob)
+        const a    = document.createElement('a')
+        a.href = url; a.download = filename
+        document.body.appendChild(a); a.click()
+        document.body.removeChild(a); URL.revokeObjectURL(url)
+        alert(`Arquivo ${filename} gerado!\n${totalTitulos} título(s) · R$ ${Number(valorTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`)
+        return
+      }
+
+      // ── 2. Viacredi: gera PDF individual por emissão ────────
+      const pdfResults = await Promise.all(
+        emitidaIds.map(async (emId) => {
+          try {
+            const r = await fetch('/.netlify/functions/boleto-pdf', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: effectiveUserId, emissaoIds: [emId], contaId }),
+            })
+            const d = await r.json()
+            if (!r.ok || !d.pdfBase64) return { emId, error: d.error || 'Falha' }
+            return { emId, pdfBase64: d.pdfBase64, filename: d.filename }
+          } catch (e) {
+            return { emId, error: e.message }
+          }
+        })
+      )
+
+      const pdfOk     = pdfResults.filter(p => p.pdfBase64)
+      const pdfErrors = pdfResults.filter(p => p.error)
+
+      // ── 3. Monta ZIP com REM + PDFs ─────────────────────────
+      const JSZip = (await import('jszip')).default
+      const zip   = new JSZip()
+
+      zip.file(filename, cnabText, { binary: false })
+
+      for (const p of pdfOk) {
+        const em = filteredHistory.find(e => e.id === p.emId)
+        const nf = em?.numero_nfse || em?.numero_dps || p.emId.slice(0, 8)
+        // Converte base64 → Uint8Array
+        const bin  = atob(p.pdfBase64)
+        const buf  = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i)
+        zip.file(`boleto_NF${nf}.pdf`, buf, { binary: true })
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' })
+      const zipName = filename.replace(/\.(txt|rem)$/i, '') + '_boletos.zip'
+      const url  = URL.createObjectURL(zipBlob)
       const a    = document.createElement('a')
-      a.href     = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-      alert(`Arquivo ${filename} gerado!\n${totalTitulos} título(s) · R$ ${Number(valorTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`)
+      a.href = url; a.download = zipName
+      document.body.appendChild(a); a.click()
+      document.body.removeChild(a); URL.revokeObjectURL(url)
+
+      const pdfMsg = pdfErrors.length
+        ? `\n⚠️ ${pdfErrors.length} boleto(s) não gerado(s): ${pdfErrors.map(p => p.emId.slice(0,8)).join(', ')}`
+        : `\n✅ ${pdfOk.length} boleto(s) PDF incluído(s) no ZIP`
+      alert(`ZIP ${zipName} gerado!\n${totalTitulos} título(s) · R$ ${Number(valorTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}${pdfMsg}`)
+
     } catch (err) {
       alert(`Erro ao gerar CNAB: ${err.message}`)
     } finally {

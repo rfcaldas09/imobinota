@@ -626,17 +626,25 @@ function buildSegP240({ info, cc, em, nn, seqLote, hoje }) {
     : '0'.repeat(15)
   const moraData = moraCod !== '3' ? '00000000' : '00000000'  // aplica a partir do dia seguinte ao venc
 
-  // Protesto: '0'=sem, '1'=protestar, '2'=negativar Serasa
-  const protestoCod   = cc.protesto_cod || '0'
-  const protestoPrazo = protestoCod !== '0'
+  // Protesto: '1'=protestar, '2'=negativar Serasa, '3'=isento (Viacredi não aceita '0')
+  const protestoCodRaw = cc.protesto_cod
+  const protestoCod    = (['1', '2', '3'].includes(protestoCodRaw)) ? protestoCodRaw : '3'
+  const protestoPrazo  = protestoCod !== '3'
     ? String(parseInt(cc.protesto_prazo || '5', 10)).padStart(2, '0').slice(-2)
     : '00'
 
-  // Baixa: '0'=sem, '1'=baixar, '2'=devolver (Viacredi exige '2')
-  const baixaCod   = cc.baixa_cod || '2'
-  const baixaPrazo = baixaCod !== '0'
-    ? String(parseInt(cc.baixa_prazo || '30', 10)).padStart(3, '0').slice(-3)
-    : '   '  // brancos quando sem baixa
+  // Baixa: '1'=baixar auto, '2'=devolver/decurso de prazo
+  // Viacredi (085) exige código '2' + prazo '000' (prazo é configurado na conta do banco)
+  let baixaCod, baixaPrazo
+  if (info.cod === '085') {
+    baixaCod   = '2'
+    baixaPrazo = '000'
+  } else {
+    baixaCod   = cc.baixa_cod || '2'
+    baixaPrazo = baixaCod !== '0'
+      ? String(parseInt(cc.baixa_prazo || '30', 10)).padStart(3, '0').slice(-3)
+      : '   '  // brancos quando sem baixa
+  }
 
   let r = ''
   r += info.cod                    // 001-003
