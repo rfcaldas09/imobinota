@@ -7,6 +7,14 @@
 
 const PDFDocument = require('pdfkit/js/pdfkit.standalone.js')
 const { checkParentAuth } = require('./_parent-auth')
+const fs   = require('fs')
+const path = require('path')
+
+// Logo Viacredi/AILOS (carregado uma vez na inicialização do módulo)
+let VIACREDI_LOGO_BUF = null
+try {
+  VIACREDI_LOGO_BUF = fs.readFileSync(path.join(__dirname, 'assets', 'viacredi-logo.png'))
+} catch (_) { /* logo ausente — usa texto */ }
 
 // ══════════════════════════════════════════════════════════
 //  Helpers CNAB / Barcode
@@ -241,14 +249,48 @@ function drawBoleto(doc, b) {
   let y = 36
 
   // ── CABEÇALHO ─────────────────────────────────────────────
-  // Faixa azul
-  doc.rect(ML, y, W, 28).fill(BLUE)
-  doc.font('Helvetica-Bold').fontSize(13).fillColor('#FFFFFF')
-     .text('VIACREDI  |  085-X', ML + 8, y + 7, { width: 200, lineBreak: false })
-  doc.font('Courier-Bold').fontSize(9.5).fillColor('#FFFFFF')
-     .text(b.linhaDigitavel, ML + 220, y + 9, { width: W - 228, align: 'right', lineBreak: false })
+  const HDR_H  = 32            // altura total do cabeçalho
+  const LOGO_W = 170           // largura do painel branco do logo
+  const CODE_W = 60            // largura do painel com código do banco
 
-  y += 36
+  // Painel branco (logo)
+  doc.rect(ML, y, LOGO_W, HDR_H).fill('#FFFFFF')
+  // Painel azul (código + linha digitável)
+  doc.rect(ML + LOGO_W, y, W - LOGO_W, HDR_H).fill(BLUE)
+
+  // Logo Viacredi ou texto fallback
+  if (VIACREDI_LOGO_BUF) {
+    // 448×220 → ajusta para caber na altura do painel com padding 4px
+    const lh = HDR_H - 8
+    const lw = Math.round(lh * 448 / 220)
+    const lx = ML + (LOGO_W - lw) / 2
+    const ly = y + 4
+    doc.image(VIACREDI_LOGO_BUF, lx, ly, { width: lw, height: lh })
+  } else {
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(BLUE)
+       .text('VIACREDI', ML + 8, y + 10, { width: LOGO_W - 12, lineBreak: false })
+  }
+
+  // Linha separadora vertical (logo | código)
+  doc.moveTo(ML + LOGO_W, y).lineTo(ML + LOGO_W, y + HDR_H)
+     .strokeColor('#CCCCCC').lineWidth(0.6).stroke()
+
+  // Código do banco
+  doc.font('Helvetica-Bold').fontSize(11).fillColor('#FFFFFF')
+     .text('085-X', ML + LOGO_W + 2, y + 11,
+       { width: CODE_W - 4, align: 'center', lineBreak: false })
+
+  // Linha separadora vertical (código | linha digitável)
+  doc.moveTo(ML + LOGO_W + CODE_W, y).lineTo(ML + LOGO_W + CODE_W, y + HDR_H)
+     .strokeColor('rgba(255,255,255,0.4)').lineWidth(0.6).stroke()
+
+  // Linha digitável
+  const ldX = ML + LOGO_W + CODE_W + 6
+  const ldW = W - LOGO_W - CODE_W - 10
+  doc.font('Courier-Bold').fontSize(9.5).fillColor('#FFFFFF')
+     .text(b.linhaDigitavel, ldX, y + 11, { width: ldW, align: 'right', lineBreak: false })
+
+  y += HDR_H + 4
   hline(y, BLUE, 0.6)
   y += 2
 
@@ -394,16 +436,18 @@ async function handle(event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'Supabase não configurado' }) }
   }
 
-  let userId, emissaoIds, contaId
+  let userId, emissaoIds, contaId, vencimentoParam
   if (event.httpMethod === 'POST') {
     const b = JSON.parse(event.body || '{}')
-    userId     = b.userId
-    emissaoIds = b.emissaoIds || (b.emissaoId ? [b.emissaoId] : [])
-    contaId    = b.contaId
+    userId         = b.userId
+    emissaoIds     = b.emissaoIds || (b.emissaoId ? [b.emissaoId] : [])
+    contaId        = b.contaId
+    vencimentoParam = b.vencimento || ''
   } else {
-    userId     = event.queryStringParameters?.userId
-    emissaoIds = (event.queryStringParameters?.emissaoIds || '').split(',').filter(Boolean)
-    contaId    = event.queryStringParameters?.contaId
+    userId         = event.queryStringParameters?.userId
+    emissaoIds     = (event.queryStringParameters?.emissaoIds || '').split(',').filter(Boolean)
+    contaId        = event.queryStringParameters?.contaId
+    vencimentoParam = event.queryStringParameters?.vencimento || ''
   }
 
   if (!userId || !Array.isArray(emissaoIds) || emissaoIds.length === 0) {
@@ -447,7 +491,7 @@ async function handle(event) {
   const ids = emissaoIds.map(id => `"${id}"`).join(',')
   const emissoes = await sbFetch(SB_URL, SB_KEY,
     `nfse_emissoes?id=in.(${ids})&user_id=eq.${userId}` +
-    `&select=id,numero_nfse,numero_dps,tomador_nome,valor_servico,created_at,competencia,cob_data_json`
+    `&select=id,numero_nfse,numero_dps,tomador_nome,valor_servico,created_at,competencia,cob_data_json,vencimento_boleto`
   )
 
   if (!emissoes || emissoes.length === 0) {
@@ -461,7 +505,13 @@ async function handle(event) {
   const boletos = emissoes.map((em, idx) => {
     const cob    = em.cob_data_json || {}
     const seq    = em.numero_nfse || em.numero_dps || String(idx + 1)
-    const venc   = cob.vencimento || cob.dataVencimento || ''
+    // Prioridade: param body > vencimento_boleto salvo > cob_data_json > hoje+30d
+    const vencBase = vencimentoParam || em.vencimento_boleto || cob.vencimento || cob.dataVencimento || ''
+    let venc = vencBase
+    if (!venc) {
+      const d30 = new Date(); d30.setDate(d30.getDate() + 30)
+      venc = d30.toISOString().slice(0, 10)
+    }
     const valor  = em.valor_servico || cob.totalValue || 0
     const sacado = em.tomador_nome || cob.tenant || ''
 
@@ -491,7 +541,8 @@ async function handle(event) {
       sacado,
       sacadoCpf:       cob.cpf || '',
       sacadoEndereco:  cob.property || cob.endereco || '',
-      instrucoes:      cob.instrucoes ||
+      instrucoes:      cc.instrucao ||
+                       cob.instrucoes ||
                        `Referente a: ${em.competencia || cob.mesRef || ''}` +
                        (cob.property ? `\nImóvel: ${cob.property}` : ''),
       barcode,

@@ -1651,6 +1651,17 @@ export default function Config() {
                         </Row>
                       )}
                     </div>
+
+                    {/* Instrução no boleto */}
+                    <Row label="Instrução no boleto (texto impresso para o pagador)">
+                      <textarea
+                        value={cnabForm.instrucao || ''}
+                        onChange={e => cnabFormSet('instrucao', e.target.value.slice(0, 200))}
+                        placeholder="Ex: Cobrar juros de 1% ao mês após o vencimento."
+                        rows={2}
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono" />
+                      <p className="text-xs text-slate-400 mt-1">Máx. 200 caracteres. Deixe em branco para usar texto automático (competência + imóvel).</p>
+                    </Row>
                   </div>
                 )}
 

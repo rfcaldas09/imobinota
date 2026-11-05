@@ -1626,6 +1626,8 @@ export default function NfseAvulsa() {
   const [cnabGenerating, setCnabGenerating] = useState(false)
   const [cnabPickerOpen, setCnabPickerOpen] = useState(false)
   const [cnabContas, setCnabContas]         = useState([])  // carregado do perfil
+  const [cnabModalOpen, setCnabModalOpen]   = useState(false)
+  const [cnabVencimento, setCnabVencimento] = useState('')  // 'YYYY-MM-DD'
 
   const toggleHistSelect = (id) => {
     setSelectedHistIds(prev => {
@@ -1657,7 +1659,7 @@ export default function NfseAvulsa() {
 
   // ── Gerar arquivo CNAB (400 Bradesco ou 240 Viacredi/Banrisul) ─
   // Para Viacredi: empacota REM + PDFs individuais em um ZIP via jszip
-  const handleGerarCNAB = async (contaId) => {
+  const handleGerarCNAB = async (contaId, vencimento) => {
     const emitidaIds = Array.from(selectedHistIds).filter(id => {
       const em = filteredHistory.find(e => e.id === id)
       return em && em.status === 'emitida'
@@ -1667,13 +1669,14 @@ export default function NfseAvulsa() {
       return
     }
     setCnabPickerOpen(false)
+    setCnabModalOpen(false)
     setCnabGenerating(true)
     try {
       // ── 1. Gera arquivo CNAB ────────────────────────────────
       const res = await fetch('/.netlify/functions/cnab-gerar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: effectiveUserId, emissaoIds: emitidaIds, contaId }),
+        body: JSON.stringify({ userId: effectiveUserId, emissaoIds: emitidaIds, contaId, vencimento }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -1705,7 +1708,7 @@ export default function NfseAvulsa() {
             const r = await fetch('/.netlify/functions/boleto-pdf', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ userId: effectiveUserId, emissaoIds: [emId], contaId }),
+              body: JSON.stringify({ userId: effectiveUserId, emissaoIds: [emId], contaId, vencimento }),
             })
             const d = await r.json()
             if (!r.ok || !d.pdfBase64) return { emId, error: d.error || 'Falha' }
@@ -1755,7 +1758,7 @@ export default function NfseAvulsa() {
     }
   }
 
-  // Abre picker de conta ou gera direto se só há 1 conta
+  // Abre modal de vencimento + seleção de conta antes de gerar
   const handleCNABClick = async () => {
     // Sempre recarrega contas do perfil para refletir mudanças recentes em Config
     let contas = []
@@ -1770,11 +1773,10 @@ export default function NfseAvulsa() {
       alert('Nenhuma conta bancária configurada. Vá em Configurações → Integrações → CNAB.')
       return
     }
-    if (contas.length === 1) {
-      handleGerarCNAB(contas[0].id)
-    } else {
-      setCnabPickerOpen(true)
-    }
+    // Calcula sugestão: hoje + 30 dias
+    const sugestao = new Date(); sugestao.setDate(sugestao.getDate() + 30)
+    setCnabVencimento(sugestao.toISOString().slice(0, 10))
+    setCnabModalOpen(true)
   }
 
   const handleReprocess = async (em) => {
@@ -2442,23 +2444,40 @@ export default function NfseAvulsa() {
                       : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>}
                     Gerar arquivo CNAB (Boleto) ({selectedHistIds.size})
                   </button>
-                  {cnabPickerOpen && (
+                  {cnabModalOpen && (
                     <>
-                      {/* Backdrop transparente para fechar ao clicar fora */}
-                      <div className="fixed inset-0 z-40" onClick={() => setCnabPickerOpen(false)} />
-                      <div className="fixed z-50 bg-white border border-slate-200 rounded-xl shadow-xl min-w-[220px] py-1"
+                      <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setCnabModalOpen(false)} />
+                      <div className="fixed z-50 bg-white border border-slate-200 rounded-xl shadow-xl w-80 p-4"
                         style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
-                        <p className="text-xs text-slate-400 px-3 py-1.5 border-b border-slate-100">Selecione a conta bancária:</p>
-                        {cnabContas.map(cc => (
-                          <button key={cc.id} type="button"
-                            onClick={() => { setCnabPickerOpen(false); handleGerarCNAB(cc.id) }}
-                            className="w-full text-left px-3 py-2.5 text-sm hover:bg-slate-50 transition">
-                            <span className="font-semibold text-slate-700">{cc.label || cc.banco}</span>
-                            <span className="text-slate-400 ml-2 text-xs">{['bradesco','itau'].includes(cc.banco) ? 'CNAB 400' : 'CNAB 240'}</span>
+                        <p className="font-semibold text-slate-700 mb-3 text-sm">Gerar arquivo CNAB</p>
+                        <label className="block text-xs text-slate-500 mb-1">Data de vencimento do boleto</label>
+                        <input type="date" value={cnabVencimento}
+                          onChange={e => setCnabVencimento(e.target.value)}
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        {cnabContas.length > 1 && (
+                          <>
+                            <label className="block text-xs text-slate-500 mb-1">Conta bancária</label>
+                            <div className="flex flex-col gap-1 mb-4">
+                              {cnabContas.map(cc => (
+                                <button key={cc.id} type="button"
+                                  onClick={() => handleGerarCNAB(cc.id, cnabVencimento)}
+                                  className="w-full text-left px-3 py-2.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 transition">
+                                  <span className="font-semibold text-slate-700">{cc.label || cc.banco}</span>
+                                  <span className="text-slate-400 ml-2 text-xs">{['bradesco','itau'].includes(cc.banco) ? 'CNAB 400' : 'CNAB 240'}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                        {cnabContas.length <= 1 && (
+                          <button type="button"
+                            onClick={() => handleGerarCNAB(cnabContas[0]?.id, cnabVencimento)}
+                            className="w-full bg-blue-600 text-white rounded-lg py-2 text-sm font-semibold hover:bg-blue-700 transition mb-2">
+                            Gerar arquivo
                           </button>
-                        ))}
-                        <button type="button" onClick={() => setCnabPickerOpen(false)}
-                          className="w-full text-left px-3 py-2 text-sm text-slate-400 hover:bg-slate-50 border-t border-slate-100">
+                        )}
+                        <button type="button" onClick={() => setCnabModalOpen(false)}
+                          className="w-full text-center text-sm text-slate-400 hover:text-slate-600 py-1">
                           Cancelar
                         </button>
                       </div>

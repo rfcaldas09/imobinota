@@ -26,11 +26,12 @@ async function handle(event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Body inválido' }) }
   }
 
-  const { userId, emissaoIds, contaId } = body
+  const { userId, emissaoIds, contaId, vencimento } = body
   if (!userId) return { statusCode: 400, body: JSON.stringify({ error: 'userId é obrigatório' }) }
   if (!Array.isArray(emissaoIds) || emissaoIds.length === 0) {
     return { statusCode: 400, body: JSON.stringify({ error: 'emissaoIds é obrigatório' }) }
   }
+  // vencimento: 'DD/MM/AAAA' passado pelo frontend; opcional (fallback = created_at + 30 dias)
 
   // ── Busca perfil + cnab_config ────────────────────────────────
   const profRes = await supabaseFetch(SUPABASE_URL, SERVICE_KEY,
@@ -95,12 +96,12 @@ async function handle(event) {
     if (!cc.carteira) {
       return { statusCode: 422, body: JSON.stringify({ error: 'Carteira Bradesco não configurada.' }) }
     }
-    ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB400({ cc, profile, emissoes, seqRemessa, hoje }))
+    ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB400({ cc, profile, emissoes, seqRemessa, hoje, vencimento }))
   } else if (banco === 'itau') {
-    ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB400Itau({ cc, profile, emissoes, seqRemessa, hoje }))
+    ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB400Itau({ cc, profile, emissoes, seqRemessa, hoje, vencimento }))
   } else {
     // Viacredi (085) ou Banrisul (041)
-    ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco }))
+    ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco, vencimento }))
   }
 
   // ── Incrementa seq_remessa ────────────────────────────────────
@@ -111,6 +112,22 @@ async function handle(event) {
     `profiles?id=eq.${userId}`, 'PATCH',
     { cnab_config: Array.isArray(raw) ? novasContas : { ...cc, seq_remessa: seqRemessa + 1 } }
   )
+
+  // ── Salva vencimento_boleto em cada emissão (se informado) ────
+  if (vencimento) {
+    // Converte DD/MM/AAAA → AAAA-MM-DD para armazenar como DATE no Supabase
+    let vencISO = vencimento
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(vencimento)) {
+      const [d2, m2, y2] = vencimento.split('/')
+      vencISO = `${y2}-${m2}-${d2}`
+    }
+    // PATCH em lote usando IN (Supabase REST)
+    const idsParam = emissaoIds.map(id => `"${id}"`).join(',')
+    await supabaseFetch(SUPABASE_URL, SERVICE_KEY,
+      `nfse_emissoes?id=in.(${idsParam})&user_id=eq.${userId}`, 'PATCH',
+      { vencimento_boleto: vencISO }
+    ).catch(e => console.warn('[cnab-gerar] vencimento_boleto patch:', e.message))
+  }
 
   // ── Nome do arquivo ───────────────────────────────────────────
   const dd   = String(hoje.getDate()).padStart(2, '0')
@@ -175,6 +192,21 @@ function vencimento30dias(createdAt) {
   return d
 }
 
+/** Converte vencimento informado pelo usuário (DD/MM/AAAA) para Date.
+ *  Fallback: created_at + 30 dias */
+function resolveVencimento(vencParam, createdAt) {
+  if (vencParam) {
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(vencParam)) {
+      const [d, m, y] = vencParam.split('/')
+      return new Date(`${y}-${m}-${d}T12:00:00Z`)
+    }
+    if (/^\d{4}-\d{2}-\d{2}/.test(vencParam)) {
+      return new Date(vencParam.slice(0, 10) + 'T12:00:00Z')
+    }
+  }
+  return vencimento30dias(createdAt)
+}
+
 function parseCobData(em) {
   try {
     return typeof em.cob_data_json === 'string'
@@ -189,7 +221,7 @@ function valorCents(v) {
 // ══════════════════════════════════════════════════════════════════
 //  CNAB 400 — Bradesco
 // ══════════════════════════════════════════════════════════════════
-function gerarCNAB400({ cc, profile, emissoes, seqRemessa, hoje }) {
+function gerarCNAB400({ cc, profile, emissoes, seqRemessa, hoje, vencimento }) {
   const linhas = []
   let seq = 1
 
@@ -197,7 +229,7 @@ function gerarCNAB400({ cc, profile, emissoes, seqRemessa, hoje }) {
   let totalValor = 0
   emissoes.forEach((em, idx) => {
     const nossoNumero = N((em.numero_nfse || em.numero_dps || String(idx + 1)).replace(/\D/g, ''), 11)
-    linhas.push(buildTransacao400({ cc, em, nossoNumero, hoje, seq: seq++ }))
+    linhas.push(buildTransacao400({ cc, em, nossoNumero, hoje, seq: seq++, vencimento }))
     totalValor += parseFloat(em.valor_servico || 0)
   })
   linhas.push(buildTrailer400(seq))
@@ -245,10 +277,10 @@ function buildHeader400({ cc, profile, seqRemessa, hoje, seq }) {
   return r
 }
 
-function buildTransacao400({ cc, em, nossoNumero, hoje, seq }) {
+function buildTransacao400({ cc, em, nossoNumero, hoje, seq, vencimento }) {
   const cd      = parseCobData(em)
   const dac     = calcDacNossoNumero(cc.carteira, nossoNumero)
-  const venc    = vencimento30dias(em.created_at)
+  const venc    = resolveVencimento(vencimento, em.created_at)
   const emDt    = new Date(em.created_at || hoje)
   const cpfCnpj = (cd.cpf || '').replace(/\D/g, '')
   const tipoPag = cpfCnpj.length <= 11 ? '01' : '02'
@@ -314,7 +346,7 @@ function buildTrailer400(seq) {
 // ══════════════════════════════════════════════════════════════════
 //  CNAB 400 — Itaú (341)
 // ══════════════════════════════════════════════════════════════════
-function gerarCNAB400Itau({ cc, profile, emissoes, seqRemessa, hoje }) {
+function gerarCNAB400Itau({ cc, profile, emissoes, seqRemessa, hoje, vencimento }) {
   const linhas = []
   let seq = 1
   const temMulta = cc.multa_cod && cc.multa_cod !== '0'
@@ -323,7 +355,7 @@ function gerarCNAB400Itau({ cc, profile, emissoes, seqRemessa, hoje }) {
   let totalValor = 0
   emissoes.forEach((em, idx) => {
     const nossoNumero = N((em.numero_nfse || em.numero_dps || String(idx + 1)).replace(/\D/g, ''), 8)
-    linhas.push(buildDetalheItau400({ cc, em, nossoNumero, hoje, seq: seq++, profile }))
+    linhas.push(buildDetalheItau400({ cc, em, nossoNumero, hoje, seq: seq++, profile, vencimento }))
     if (temMulta) {
       linhas.push(buildMultaItau400({ cc, seq: seq++ }))
     }
@@ -360,9 +392,9 @@ function buildHeaderItau400({ cc, profile, hoje, seq }) {
   return r
 }
 
-function buildDetalheItau400({ cc, em, nossoNumero, hoje, seq, profile }) {
+function buildDetalheItau400({ cc, em, nossoNumero, hoje, seq, profile, vencimento }) {
   const cd       = parseCobData(em)
-  const venc     = vencimento30dias(em.created_at)
+  const venc     = resolveVencimento(vencimento, em.created_at)
   const emDt     = new Date(em.created_at || hoje)
   const cpfCnpj  = (cd.cpf || cd.cnpj || '').replace(/\D/g, '')
   const tipoPag  = cpfCnpj.length <= 11 ? '01' : '02'
@@ -473,7 +505,7 @@ const BANCO_INFO = {
   sicoob:   { cod: '756', nome: 'SICOOB',    lotVer: '045', carteira: '01', convenio: '' },
 }
 
-function gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco }) {
+function gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco, vencimento }) {
   const info     = BANCO_INFO[banco] || BANCO_INFO.viacredi
   const cnpj     = N((profile.cnpj || '').replace(/\D/g, ''), 14)
   const empresa  = A(profile.company_name || 'EMPRESA', 30)
@@ -494,7 +526,7 @@ function gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco }) {
   const temMulta = cc.multa_cod && cc.multa_cod !== '0'
   emissoes.forEach((em, idx) => {
     const nn  = nossoNumero240(em, idx + 1, info.cod, cc)
-    linhas.push(buildSegP240({ info, cc, em, nn, seqLote: seqLote++, hoje }))
+    linhas.push(buildSegP240({ info, cc, em, nn, seqLote: seqLote++, hoje, vencimento }))
     seqGlobal++
     linhas.push(buildSegQ240({ em, seqLote: seqLote++, banco: info.cod }))
     seqGlobal++
@@ -608,10 +640,10 @@ function buildLotHeader240({ info, cnpj, empresa, cc, seqRemessa, hoje, lotVer }
   return r
 }
 
-function buildSegP240({ info, cc, em, nn, seqLote, hoje }) {
+function buildSegP240({ info, cc, em, nn, seqLote, hoje, vencimento }) {
   // Manual AILOS v14 – Seção 4.2.2.4 Registro Detalhe Segmento P (Remessa)
   const cd       = parseCobData(em)
-  const venc     = vencimento30dias(em.created_at)
+  const venc     = resolveVencimento(vencimento, em.created_at)
   const emDt     = new Date(em.created_at || hoje)
   const carteira = N(cc.carteira || info.carteira || '1', 1)  // 1 char
   const valor15  = String(valorCents(em.valor_servico)).padStart(15, '0')
