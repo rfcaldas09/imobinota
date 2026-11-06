@@ -1688,7 +1688,7 @@ export default function NfseAvulsa() {
       // Detecta se o banco suporta geração de PDF de boleto
       const contaSel  = cnabContas.find(c => c.id === contaId) || cnabContas[0]
       const bancoNorm = (contaSel?.banco || '').toLowerCase()
-      const suportaPdf = bancoNorm === 'viacredi' || bancoNorm === 'bradesco'
+      const suportaPdf = bancoNorm === 'viacredi' || bancoNorm === 'bradesco' || bancoNorm === 'itau'
 
       if (!suportaPdf) {
         // Bancos sem boleto PDF: só baixa o CNAB
