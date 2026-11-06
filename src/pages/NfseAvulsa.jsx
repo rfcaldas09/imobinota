@@ -1685,12 +1685,13 @@ export default function NfseAvulsa() {
       }
       const { cnabText, filename, totalTitulos, valorTotal } = data
 
-      // Detecta se é Viacredi para gerar boletos PDF
-      const contaSel = cnabContas.find(c => c.id === contaId) || cnabContas[0]
-      const isViacredi = (contaSel?.banco || '').toLowerCase() === 'viacredi'
+      // Detecta se o banco suporta geração de PDF de boleto
+      const contaSel  = cnabContas.find(c => c.id === contaId) || cnabContas[0]
+      const bancoNorm = (contaSel?.banco || '').toLowerCase()
+      const suportaPdf = bancoNorm === 'viacredi' || bancoNorm === 'bradesco'
 
-      if (!isViacredi) {
-        // Outros bancos: só baixa o CNAB
+      if (!suportaPdf) {
+        // Bancos sem boleto PDF: só baixa o CNAB
         const blob = new Blob([cnabText], { type: 'text/plain;charset=ascii' })
         const url  = URL.createObjectURL(blob)
         const a    = document.createElement('a')
@@ -1701,7 +1702,7 @@ export default function NfseAvulsa() {
         return
       }
 
-      // ── 2. Viacredi: gera PDF individual por emissão ────────
+      // ── 2. Gera PDF individual por emissão (Viacredi + Bradesco) ──
       const pdfResults = await Promise.all(
         emitidaIds.map(async (emId) => {
           try {
