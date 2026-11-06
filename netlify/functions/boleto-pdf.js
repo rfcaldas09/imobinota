@@ -64,6 +64,68 @@ function fatorVencimento(dataStr) {
   return 1000 + Math.round((d - base) / 86400000)
 }
 
+// ══════════════════════════════════════════════════════════
+//  Bradesco (237)
+// ══════════════════════════════════════════════════════════
+
+/** Fator de vencimento Bradesco: dias desde 07/10/1997
+ *  Ciclo 1000–9999 (9000 passos), reinicia após 9999.
+ */
+function fatorVencimentoBradesco(dataStr) {
+  if (!dataStr) return 0
+  let d
+  if (dataStr.includes('/')) {
+    const [dd, mm, yyyy] = dataStr.split('/')
+    d = new Date(`${yyyy}-${mm}-${dd}T12:00:00Z`)
+  } else {
+    d = new Date(dataStr.slice(0, 10) + 'T12:00:00Z')
+  }
+  const base = new Date('1997-10-07T12:00:00Z')
+  const days = Math.round((d - base) / 86400000)
+  // Mantém range 1000..9999
+  return ((days - 1000) % 9000) + 1000
+}
+
+/** DV Nosso Número Bradesco — Módulo 11 "base 7"
+ *  Entrada: carteira(2) + nossoNumero(11) = 13 chars
+ *  Pesos: [2,7,6,5,4,3,2,7,6,5,4,3,2] da esquerda para a direita
+ *  resto=0 → '0';  resto=1 → 'P';  outros → String(11 - resto)
+ */
+function dvNNBradesco(carteira, nn) {
+  const s = N(carteira, 2) + N(nn, 11)
+  const W = [2, 7, 6, 5, 4, 3, 2, 7, 6, 5, 4, 3, 2]
+  let sum = 0
+  for (let i = 0; i < 13; i++) sum += parseInt(s[i]) * W[i]
+  const r = sum % 11
+  if (r === 0) return '0'
+  if (r === 1) return 'P'
+  return String(11 - r)
+}
+
+/** Código de barras Bradesco 44 dígitos */
+function buildBarcodeBradesco({ agencia, conta, contaDv, carteira, seq, vencimento, valor }) {
+  const banco  = '237'
+  const moeda  = '9'
+  const fator  = fatorVencimentoBradesco(vencimento)
+  const fStr   = String(fator).padStart(4, '0')
+  const vCents = Math.round(
+    parseFloat(String(valor).replace(/[^\d,.]/g, '').replace(',', '.')) * 100
+  )
+  const vStr = String(vCents).padStart(10, '0')
+  const nn   = N(String(seq).replace(/\D/g, ''), 11)
+
+  // Campo livre (25 chars): agencia(4) + carteira(2) + nossoNumero(11) + conta(7) + '0'
+  const cl = N(agencia, 4) + N(carteira, 2) + nn + N(conta, 7) + '0'
+
+  const semDV = banco + moeda + fStr + vStr + cl
+  const dv    = dvMod11Barcode(semDV)
+  return banco + moeda + String(dv) + fStr + vStr + cl
+}
+
+// ══════════════════════════════════════════════════════════
+//  Viacredi (085)
+// ══════════════════════════════════════════════════════════
+
 /**
  * Nosso número Viacredi (17 chars úteis):
  *   conta_7dig + dvConta(1) + seq_9dig
@@ -255,17 +317,16 @@ function drawBoleto(doc, b) {
   // Painel azul (código + linha digitável)
   doc.rect(ML + LOGO_W, y, W - LOGO_W, HDR_H).fill(BLUE)
 
-  // Logo Viacredi ou texto fallback
-  if (VIACREDI_LOGO_URI) {
-    // 448×220 → ajusta para caber na altura do painel com padding 4px
+  // Logo ou nome do banco
+  if (b.bankLogoUri) {
     const lh = HDR_H - 8
-    const lw = Math.round(lh * 448 / 220)
+    const lw = Math.round(lh * (b.bankLogoW || 448) / (b.bankLogoH || 220))
     const lx = ML + (LOGO_W - lw) / 2
     const ly = y + 4
-    doc.image(VIACREDI_LOGO_URI, lx, ly, { width: lw, height: lh })
+    doc.image(b.bankLogoUri, lx, ly, { width: lw, height: lh })
   } else {
     doc.font('Helvetica-Bold').fontSize(11).fillColor(BLUE)
-       .text('VIACREDI', ML + 8, y + 10, { width: LOGO_W - 12, lineBreak: false })
+       .text(b.bankLabel || '', ML + 8, y + 10, { width: LOGO_W - 12, lineBreak: false })
   }
 
   // Linha separadora vertical (logo | código)
@@ -274,7 +335,7 @@ function drawBoleto(doc, b) {
 
   // Código do banco
   doc.font('Helvetica-Bold').fontSize(11).fillColor('#FFFFFF')
-     .text('085-X', ML + LOGO_W + 2, y + 11,
+     .text(b.bankCode || '', ML + LOGO_W + 2, y + 11,
        { width: CODE_W - 4, align: 'center', lineBreak: false })
 
   // Linha separadora vertical (código | linha digitável)
@@ -307,14 +368,14 @@ function drawBoleto(doc, b) {
   // ── ROW: agência/convênio | nosso número | vencimento | valor ──
   const c1 = W * 0.28, c2 = W * 0.28, c3 = W * 0.18, c4 = W * 0.26
   let rx = ML
-  lbl('AGÊNCIA / CONVÊNIO', rx + 2, y, c1); rx += c1
+  lbl(b.agenciaLabel || 'AGÊNCIA / CONVÊNIO', rx + 2, y, c1); rx += c1
   vline(ML + c1, y, y + 24); lbl('NOSSO NÚMERO', rx + 2, y, c2); rx += c2
   vline(ML + c1 + c2, y, y + 24); lbl('VENCIMENTO', rx + 2, y, c3); rx += c3
   vline(ML + c1 + c2 + c3, y, y + 24); lbl('VALOR DO DOCUMENTO', rx + 2, y, c4)
   y += 8
   rx = ML
   doc.font('Helvetica').fontSize(8).fillColor(DGRAY)
-  doc.text(`${b.agencia} / ${b.convenio}`, rx + 2, y, { width: c1 - 4, lineBreak: false }); rx += c1
+  doc.text(b.agenciaValue || `${b.agencia} / ${b.convenio}`, rx + 2, y, { width: c1 - 4, lineBreak: false }); rx += c1
   doc.text(b.nossoNumeroFmt, rx + 2, y, { width: c2 - 4, lineBreak: false }); rx += c2
   doc.text(b.vencimento, rx + 2, y, { width: c3 - 4, lineBreak: false }); rx += c3
   doc.font('Helvetica-Bold').fontSize(8).text(`R$ ${fmtMoney(b.valor)}`, rx + 2, y, { width: c4 - 4, lineBreak: false })
@@ -480,8 +541,10 @@ async function handle(event) {
   }
 
   const banco = (cc.banco || 'viacredi').toLowerCase()
-  if (banco !== 'viacredi') {
-    return { statusCode: 422, body: JSON.stringify({ error: `boleto-pdf.js suporta apenas Viacredi. Banco configurado: ${banco}` }) }
+  const isBradesco = banco === 'bradesco'
+  const isViacredi = banco === 'viacredi'
+  if (!isBradesco && !isViacredi) {
+    return { statusCode: 422, body: JSON.stringify({ error: `boleto-pdf.js suporta Viacredi e Bradesco. Banco configurado: ${banco}` }) }
   }
 
   // ── Busca emissões ────────────────────────────────────────
@@ -512,26 +575,61 @@ async function handle(event) {
     const valor  = em.valor_servico || cob.totalValue || 0
     const sacado = em.tomador_nome || cob.tenant || ''
 
-    const nn      = nossoNumero(cc.conta, cc.conta_dv, seq)
-    const barcode = buildBarcode({
-      convenio:  cc.convenio  || '101004',
-      conta:     cc.conta,
-      contaDv:   cc.conta_dv  || '0',
-      carteira:  cc.carteira  || '1',
-      seq,
-      vencimento: venc,
-      valor,
-    })
+    let barcode, nossoNumeroFmt, agenciaLabel, agenciaValue, bankCode, bankLabel, bankLogoUri, bankLogoW, bankLogoH
 
-    const nnFormatado = `${N(cc.conta, 7)}-${cc.conta_dv || '0'} / ${N(String(seq).replace(/\D/g,''), 9)}`
+    if (isBradesco) {
+      // ── Bradesco (237) ──
+      const carteira = N(cc.carteira || '09', 2)
+      const nn       = N(String(seq).replace(/\D/g, ''), 11)
+      const nnDv     = dvNNBradesco(carteira, nn)
+
+      barcode = buildBarcodeBradesco({
+        agencia:  cc.agencia,
+        conta:    cc.conta,
+        contaDv:  cc.conta_dv || '0',
+        carteira,
+        seq,
+        vencimento: venc,
+        valor,
+      })
+
+      nossoNumeroFmt = `${carteira}/${nn}-${nnDv}`
+      agenciaLabel   = 'AGÊNCIA / CÓD. CEDENTE'
+      agenciaValue   = `${N(cc.agencia, 4)}-${cc.agencia_dv || '0'} / ${N(cc.conta, 7)}-${cc.conta_dv || '0'}`
+      bankCode       = '237-2'
+      bankLabel      = 'BRADESCO'
+      bankLogoUri    = null
+      bankLogoW      = null
+      bankLogoH      = null
+    } else {
+      // ── Viacredi (085) ──
+      barcode = buildBarcode({
+        convenio:  cc.convenio  || '101004',
+        conta:     cc.conta,
+        contaDv:   cc.conta_dv  || '0',
+        carteira:  cc.carteira  || '1',
+        seq,
+        vencimento: venc,
+        valor,
+      })
+
+      nossoNumeroFmt = `${N(cc.conta, 7)}-${cc.conta_dv || '0'} / ${N(String(seq).replace(/\D/g,''), 9)}`
+      agenciaLabel   = 'AGÊNCIA / CONVÊNIO'
+      agenciaValue   = `${cc.agencia ? `${N(cc.agencia, 5)}-${cc.agencia_dv || '0'}` : ''} / ${cc.convenio || '101004'}`
+      bankCode       = '085-X'
+      bankLabel      = 'VIACREDI'
+      bankLogoUri    = VIACREDI_LOGO_URI || null
+      bankLogoW      = 448
+      bankLogoH      = 220
+    }
 
     return {
       beneficiario:    profile.company_name || '',
       cnpj:            profile.cnpj || '',
       agencia:         cc.agencia ? `${N(cc.agencia, 5)}-${cc.agencia_dv || '0'}` : '',
-      convenio:        cc.convenio || '101004',
-      nossoNumeroFmt:  nnFormatado,
-      carteira:        cc.carteira || '1',
+      convenio:        cc.convenio || '',
+      nossoNumeroFmt,
+      carteira:        cc.carteira || (isBradesco ? '09' : '1'),
       vencimento:      fmtDate(venc),
       valor,
       dataDocumento:   dataHoje,
@@ -544,6 +642,14 @@ async function handle(event) {
                        (cob.property ? `\nImóvel: ${cob.property}` : ''),
       barcode,
       linhaDigitavel:  buildLinhaDigitavel(barcode),
+      // Bank display
+      bankCode,
+      bankLabel,
+      bankLogoUri,
+      bankLogoW,
+      bankLogoH,
+      agenciaLabel,
+      agenciaValue,
     }
   })
 
