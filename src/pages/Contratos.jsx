@@ -1317,7 +1317,7 @@ function DocModal({ type, contract: c, onClose, onToast }) {
   const [focusHomologacao, setFocusHomologacao] = useState(false)
 
   // Opção de gerar boleto + CNAB junto à NFS-e
-  const [gerarBoleto, setGerarBoleto]     = useState(false)
+  const [gerarBoleto, setGerarBoleto]     = useState(true)
   const [boletoContaId, setBoletoContaId] = useState('')
   const [cnabContas, setCnabContas]       = useState([])
   const [gerandoBoleto, setGerandoBoleto] = useState(false)
@@ -1852,13 +1852,9 @@ function ContractDrawer({ contract: c, onClose, onEdit, onScan, onDelete, onToas
             </div>
 
             <div className="space-y-2 pt-1">
-              <button onClick={() => setDocType('boleto')}
-                className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white py-2.5 rounded-xl font-semibold text-sm hover:bg-indigo-700 transition-colors">
-                <IcSend c="w-4 h-4"/> Enviar Cobrança (Boleto)
-              </button>
               <button onClick={() => setDocType('nfse')}
                 className="w-full flex items-center justify-center gap-2 bg-emerald-600 text-white py-2.5 rounded-xl font-semibold text-sm hover:bg-emerald-700 transition-colors">
-                📄 Emitir NFS-e
+                📄 Emitir NFS-e &amp; Boleto
               </button>
               <button onClick={() => { onClose(); onEdit(c) }}
                 className="w-full flex items-center justify-center gap-2 bg-slate-100 text-slate-700 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-200 transition-colors">
