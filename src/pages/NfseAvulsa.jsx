@@ -1959,7 +1959,32 @@ export default function NfseAvulsa() {
 
   // ── Download ZIP (todos PDF + XML do período) ─────────────────
   const [zipLoading, setZipLoading] = useState(false)
+  const [reconciling, setReconciling] = useState(false)
   const [zipProgress, setZipProgress] = useState({ done: 0, total: 0 })
+
+  const handleReconciliarFocus = async () => {
+    if (reconciling) return
+    setReconciling(true)
+    try {
+      const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
+      const res = await fetch('/.netlify/functions/focus-nfse-reconciliar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt}` },
+        body: JSON.stringify({ userId: effectiveUserId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      const msg = data.updated > 0
+        ? `${data.updated} nota(s) atualizada(s) com sucesso!`
+        : 'Nenhuma nota foi atualizada (ainda processando no Focus).'
+      alert(msg)
+      if (data.updated > 0) loadHistory()
+    } catch (e) {
+      alert('Erro ao reconciliar: ' + e.message)
+    } finally {
+      setReconciling(false)
+    }
+  }
 
   const downloadZipMes = async () => {
     const emitidas = filteredHistory.filter(em => em.status === 'emitida')
@@ -2495,6 +2520,18 @@ export default function NfseAvulsa() {
                   Excluir selecionadas ({selectedHistIds.size})
                 </button>
               </>
+            )}
+            {filteredHistory.some(em => em.status === 'processando' && (em.chave_acesso || '').startsWith('FOCUS:')) && (
+              <button
+                onClick={handleReconciliarFocus}
+                disabled={reconciling}
+                title="Consulta o Focus NFe e atualiza as notas que ficaram como processando"
+                className="flex items-center gap-1.5 border border-amber-300 text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-amber-100 disabled:opacity-50">
+                {reconciling
+                  ? <div className="w-3.5 h-3.5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"/>
+                  : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>}
+                {reconciling ? 'Consultando Focus…' : 'Atualizar notas processando'}
+              </button>
             )}
             <button
               onClick={() => { setShowBulkCancel(v => !v); setBulkCancelLog([]); setBulkCancelRunning(false) }}
