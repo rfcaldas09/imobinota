@@ -324,6 +324,7 @@ function buildPdf(boletos) {
 }
 
 function drawBoleto(doc, b) {
+  if ((b.bankLabel || '').toUpperCase() === 'VIACREDI') return drawBoletoViacredi(doc, b)
   const PW   = 595.28
   const PH   = 841.89
   const ML   = 36, MR = 36
@@ -498,6 +499,372 @@ function drawBoleto(doc, b) {
   doc.font('Courier').fontSize(10).fillColor(DGRAY)
      .text(b.linhaDigitavel, ML, bcY + bcH + 6, { width: W, align: 'center', lineBreak: false })
 }
+
+// ══════════════════════════════════════════════════════════
+//  PDF — layout boleto Viacredi (3 seções conforme modelo)
+// ══════════════════════════════════════════════════════════
+
+function drawBoletoViacredi(doc, b) {
+  const PW    = 595.28
+  const ML    = 36
+  const W     = PW - ML - 36   // 523.28
+
+  const DGRAY = '#333333'
+  const GRAY  = '#777777'
+  const LGRAY = '#CCCCCC'
+  const BLACK = '#000000'
+
+  function hline(y, color, lw) {
+    doc.moveTo(ML, y).lineTo(ML + W, y)
+       .strokeColor(color || LGRAY).lineWidth(lw || 0.4).stroke()
+  }
+  function vline(x, y1, y2) {
+    doc.moveTo(x, y1).lineTo(x, y2)
+       .strokeColor(LGRAY).lineWidth(0.4).stroke()
+  }
+  function lbl(txt, x, y, w) {
+    doc.font('Helvetica').fontSize(6).fillColor(GRAY)
+       .text(txt, x, y, { width: w, lineBreak: false })
+  }
+  function val(txt, x, y, w) {
+    doc.font('Helvetica').fontSize(8).fillColor(DGRAY)
+       .text(String(txt || ''), x, y, { width: w, lineBreak: false })
+  }
+  function valB(txt, x, y, w) {
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(DGRAY)
+       .text(String(txt || ''), x, y, { width: w, lineBreak: false })
+  }
+  function valR(txt, x, y, w) {
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(DGRAY)
+       .text(String(txt || ''), x, y, { width: w, align: 'right', lineBreak: false })
+  }
+
+  let y = 36
+
+  // ══════════════════════════════════════════════════════════
+  //  RECIBO DO BENEFICIÁRIO
+  // ══════════════════════════════════════════════════════════
+  doc.font('Helvetica-Bold').fontSize(8).fillColor(DGRAY)
+     .text('Recibo do Beneficiário', ML, y, { width: W, lineBreak: false })
+  y += 12
+  hline(y); y += 2
+
+  const rcbSplit = W * 0.56
+  const rcbRW   = W - rcbSplit
+  const rcbRX   = ML + rcbSplit + 4
+
+  const leftRows = [
+    ['Beneficiário:',         b.beneficiario      || ''],
+    ['Pagador:',              b.sacado            || ''],
+    ['Nº Documento:',         b.numeroDocumento   || ''],
+    ['Nosso Número:',         b.nossoNumeroDisplay || b.nossoNumeroFmt],
+    ['Vencimento:',           b.vencimento        || ''],
+    ['Banco:',                b.bankCode          || ''],
+    ['Agência/Beneficiário:', b.agenciaCodigo     || b.agenciaValue],
+    ['Valor Documento:',      `R$ ${fmtMoney(b.valor)}`],
+  ]
+  const rStartY = y
+  for (const [label, value] of leftRows) {
+    doc.font('Helvetica').fontSize(6.5).fillColor(GRAY)
+       .text(label, ML + 2, y, { width: 74, lineBreak: false })
+    doc.font('Helvetica').fontSize(8).fillColor(DGRAY)
+       .text(value, ML + 78, y, { width: rcbSplit - 82, lineBreak: false })
+    y += 12
+  }
+
+  let ry = rStartY
+  doc.font('Helvetica').fontSize(6.5).fillColor(GRAY)
+     .text('Recebi este documento em _____ / _____ / _____________', rcbRX, ry, { width: rcbRW - 8, lineBreak: false })
+  ry += 30
+  doc.moveTo(rcbRX, ry).lineTo(ML + W, ry).strokeColor(LGRAY).lineWidth(0.3).stroke()
+  doc.font('Helvetica').fontSize(6.5).fillColor(GRAY)
+     .text('Assinatura do Pagador', rcbRX, ry + 2, { width: rcbRW - 8, align: 'center', lineBreak: false })
+  ry += 20
+  doc.font('Helvetica').fontSize(6.5).fillColor(GRAY)
+     .text('(=) Valor Cobrado', rcbRX, ry, { width: rcbRW * 0.56, lineBreak: false })
+  doc.font('Helvetica-Bold').fontSize(8).fillColor(DGRAY)
+     .text(`R$ ${fmtMoney(b.valor)}`, rcbRX + rcbRW * 0.56, ry, { width: rcbRW * 0.44 - 8, align: 'right', lineBreak: false })
+  ry += 12
+  doc.font('Helvetica').fontSize(6.5).fillColor(GRAY)
+     .text('(=) Valor do Documento', rcbRX, ry, { width: rcbRW * 0.56, lineBreak: false })
+  doc.font('Helvetica-Bold').fontSize(8).fillColor(DGRAY)
+     .text(`R$ ${fmtMoney(b.valor)}`, rcbRX + rcbRW * 0.56, ry, { width: rcbRW * 0.44 - 8, align: 'right', lineBreak: false })
+  ry += 14
+
+  vline(ML + rcbSplit, rStartY - 2, Math.max(y, ry))
+  y = Math.max(y, ry) + 2
+  hline(y); y += 2
+
+  // ── corte 1 ───────────────────────────────────────────────
+  y += 6
+  doc.moveTo(ML, y).lineTo(ML + W, y)
+     .strokeColor(LGRAY).lineWidth(0.5).dash(4, { space: 4 }).stroke()
+  doc.undash()
+  doc.font('Helvetica').fontSize(6).fillColor(GRAY)
+     .text('Corte na linha pontilhada', ML, y - 8, { width: W, align: 'center', lineBreak: false })
+  y += 8
+
+  // ── linha digitável standalone ────────────────────────────
+  doc.font('Helvetica').fontSize(6.5).fillColor(GRAY)
+     .text('Linha digitável para ser utilizada em seu Internet Banking', ML, y, { width: W, lineBreak: false })
+  y += 9
+  doc.font('Courier-Bold').fontSize(10).fillColor(BLACK)
+     .text(b.linhaDigitavel, ML, y, { width: W, lineBreak: false })
+  y += 14
+
+  // ══════════════════════════════════════════════════════════
+  //  RECIBO DO PAGADOR
+  // ══════════════════════════════════════════════════════════
+  const HDR_H  = 32
+  const LOGO_W = 170
+  const CODE_W = 55
+
+  hline(y, LGRAY, 0.5)
+  if (b.bankLogoUri) {
+    const lh = HDR_H - 8
+    const lw = Math.round(lh * (b.bankLogoW || 448) / (b.bankLogoH || 220))
+    doc.image(b.bankLogoUri, ML + (LOGO_W - lw) / 2, y + 4, { width: lw, height: lh })
+  } else {
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(DGRAY)
+       .text(b.bankLabel || '', ML + 8, y + 10, { width: LOGO_W - 16, lineBreak: false })
+  }
+  vline(ML + LOGO_W, y, y + HDR_H)
+  doc.font('Helvetica-Bold').fontSize(11).fillColor(DGRAY)
+     .text(b.bankCode || '', ML + LOGO_W + 2, y + 11, { width: CODE_W - 4, align: 'center', lineBreak: false })
+  vline(ML + LOGO_W + CODE_W, y, y + HDR_H)
+  doc.font('Helvetica-Bold').fontSize(13).fillColor(DGRAY)
+     .text('RECIBO DO PAGADOR', ML + LOGO_W + CODE_W + 6, y + 10,
+       { width: W - LOGO_W - CODE_W - 10, align: 'right', lineBreak: false })
+  y += HDR_H
+  hline(y, LGRAY, 0.5); y += 2
+
+  // row 1
+  const rp1 = W * 0.38, rp2 = W * 0.22, rp3 = W * 0.09, rp4 = W * 0.11
+  const rp5 = W - rp1 - rp2 - rp3 - rp4
+  let rx = ML
+  lbl('Nome do Beneficiário', rx + 2, y + 2, rp1 - 4); rx += rp1
+  vline(ML + rp1, y, y + 22)
+  lbl('Agência / Código Beneficiário', rx + 2, y + 2, rp2 - 4); rx += rp2
+  vline(ML + rp1 + rp2, y, y + 22)
+  lbl('Espécie', rx + 2, y + 2, rp3 - 4); rx += rp3
+  vline(ML + rp1 + rp2 + rp3, y, y + 22)
+  lbl('Quantidade', rx + 2, y + 2, rp4 - 4); rx += rp4
+  vline(ML + rp1 + rp2 + rp3 + rp4, y, y + 22)
+  lbl('Nosso Número', rx + 2, y + 2, rp5 - 4)
+  y += 9; rx = ML
+  val(b.beneficiario, rx + 2, y, rp1 - 4); rx += rp1
+  val(b.agenciaCodigo || b.agenciaValue, rx + 2, y, rp2 - 4); rx += rp2
+  val('R$', rx + 2, y, rp3 - 4); rx += rp3
+  val('', rx + 2, y, rp4 - 4); rx += rp4
+  val(b.nossoNumeroDisplay || b.nossoNumeroFmt, rx + 2, y, rp5 - 4)
+  y += 13; hline(y); y += 2
+
+  // row 2
+  const rq1 = W * 0.15, rq2 = W * 0.15, rq3 = W * 0.22, rq4 = W * 0.18
+  const rq5 = W - rq1 - rq2 - rq3 - rq4
+  rx = ML
+  lbl('Número do Documento', rx + 2, y + 2, rq1 - 4); rx += rq1
+  vline(ML + rq1, y, y + 22)
+  lbl('Contrato', rx + 2, y + 2, rq2 - 4); rx += rq2
+  vline(ML + rq1 + rq2, y, y + 22)
+  lbl('CNPJ/CPF', rx + 2, y + 2, rq3 - 4); rx += rq3
+  vline(ML + rq1 + rq2 + rq3, y, y + 22)
+  lbl('Vencimento', rx + 2, y + 2, rq4 - 4); rx += rq4
+  vline(ML + rq1 + rq2 + rq3 + rq4, y, y + 22)
+  lbl('Valor do Documento', rx + 2, y + 2, rq5 - 4)
+  y += 9; rx = ML
+  val(b.numeroDocumento || '', rx + 2, y, rq1 - 4); rx += rq1
+  val('', rx + 2, y, rq2 - 4); rx += rq2
+  val(fmtCnpj(b.cnpj), rx + 2, y, rq3 - 4); rx += rq3
+  val(b.vencimento, rx + 2, y, rq4 - 4); rx += rq4
+  valR(`R$ ${fmtMoney(b.valor)}`, rx + 2, y, rq5 - 4)
+  y += 13; hline(y); y += 2
+
+  // row 3: pagador (blank)
+  lbl('Pagador', ML + 2, y + 2, W - 4)
+  y += 20; hline(y); y += 2
+
+  // row 4: informações
+  lbl('Informações', ML + 2, y + 2, 55)
+  doc.font('Helvetica').fontSize(7).fillColor(DGRAY)
+     .text('NÃO COBRAR QUALQUER TARIFA DE EMISSÃO DE CARNÊ/BOLETO OU OUTRA(S) TAXA(S) SEMELHANTE(S)',
+       ML + 58, y + 2, { width: W - 62, lineBreak: false })
+  y += 11
+  doc.font('Helvetica').fontSize(7.5).fillColor(DGRAY)
+     .text(b.agenciaCodigo || b.agenciaValue, ML + 2, y, { lineBreak: false })
+  y += 10
+  doc.font('Helvetica').fontSize(7.5).fillColor(DGRAY)
+     .text(b.numeroDocumento || '', ML + 2, y, { lineBreak: false })
+  y += 10; hline(y); y += 2
+
+  doc.font('Helvetica').fontSize(6.5).fillColor(GRAY)
+     .text('Autenticação Mecânica', ML, y + 4, { width: W, align: 'right', lineBreak: false })
+  y += 14
+
+  // ── corte 2 ───────────────────────────────────────────────
+  y += 4
+  doc.moveTo(ML, y).lineTo(ML + W, y)
+     .strokeColor(LGRAY).lineWidth(0.5).dash(4, { space: 4 }).stroke()
+  doc.undash()
+  doc.font('Helvetica').fontSize(6).fillColor(GRAY)
+     .text('Corte na linha pontilhada', ML, y - 8, { width: W, align: 'center', lineBreak: false })
+  y += 8
+
+  // ══════════════════════════════════════════════════════════
+  //  FICHA DE COMPENSAÇÃO
+  // ══════════════════════════════════════════════════════════
+  hline(y, LGRAY, 0.5)
+  if (b.bankLogoUri) {
+    const lh = HDR_H - 8
+    const lw = Math.round(lh * (b.bankLogoW || 448) / (b.bankLogoH || 220))
+    doc.image(b.bankLogoUri, ML + (LOGO_W - lw) / 2, y + 4, { width: lw, height: lh })
+  } else {
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(DGRAY)
+       .text(b.bankLabel || '', ML + 8, y + 10, { width: LOGO_W - 16, lineBreak: false })
+  }
+  vline(ML + LOGO_W, y, y + HDR_H)
+  doc.font('Helvetica-Bold').fontSize(11).fillColor(DGRAY)
+     .text(b.bankCode || '', ML + LOGO_W + 2, y + 11, { width: CODE_W - 4, align: 'center', lineBreak: false })
+  vline(ML + LOGO_W + CODE_W, y, y + HDR_H)
+  doc.font('Courier-Bold').fontSize(9).fillColor(DGRAY)
+     .text(b.linhaDigitavel, ML + LOGO_W + CODE_W + 6, y + 11,
+       { width: W - LOGO_W - CODE_W - 10, align: 'right', lineBreak: false })
+  y += HDR_H; hline(y, LGRAY, 0.5); y += 2
+
+  // local pagamento | vencimento
+  const lpW = W * 0.68, vncW = W - W * 0.68
+  lbl('Local de Pagamento', ML + 2, y + 2, lpW - 4)
+  vline(ML + lpW, y, y + 22)
+  lbl('Vencimento', ML + lpW + 2, y + 2, vncW - 4)
+  y += 9
+  doc.font('Helvetica').fontSize(7.5).fillColor(DGRAY)
+     .text('Pagar preferencialmente nas cooperativas do Sistema AILOS.', ML + 2, y, { width: lpW - 4, lineBreak: false })
+  valR(b.vencimento, ML + lpW + 2, y, vncW - 4)
+  y += 13; hline(y); y += 2
+
+  // beneficiário | cnpj | agência/código
+  const bfW = W * 0.42, cnW = W * 0.22, agW = W - W * 0.42 - W * 0.22
+  lbl('Beneficiário', ML + 2, y + 2, bfW - 4)
+  vline(ML + bfW, y, y + 22)
+  lbl('CNPJ/CPF', ML + bfW + 2, y + 2, cnW - 4)
+  vline(ML + bfW + cnW, y, y + 22)
+  lbl('Agência / Código Beneficiário', ML + bfW + cnW + 2, y + 2, agW - 4)
+  y += 9
+  valB(b.beneficiario, ML + 2, y, bfW - 4)
+  val(fmtCnpj(b.cnpj), ML + bfW + 2, y, cnW - 4)
+  val(b.agenciaCodigo || b.agenciaValue, ML + bfW + cnW + 2, y, agW - 4)
+  y += 13; hline(y); y += 2
+
+  // data doc | nº doc | espécie | aceite | data proc | nosso número
+  const dd1=W*0.14, dd2=W*0.14, dd3=W*0.09, dd4=W*0.07, dd5=W*0.15
+  const dd6 = W - dd1 - dd2 - dd3 - dd4 - dd5
+  rx = ML
+  lbl('Data do Documento', rx+2, y+2, dd1-4); rx+=dd1; vline(ML+dd1, y, y+22)
+  lbl('Nº do Documento', rx+2, y+2, dd2-4); rx+=dd2; vline(ML+dd1+dd2, y, y+22)
+  lbl('Espécie Doc.', rx+2, y+2, dd3-4); rx+=dd3; vline(ML+dd1+dd2+dd3, y, y+22)
+  lbl('Aceite', rx+2, y+2, dd4-4); rx+=dd4; vline(ML+dd1+dd2+dd3+dd4, y, y+22)
+  lbl('Data de Processamento', rx+2, y+2, dd5-4); rx+=dd5; vline(ML+dd1+dd2+dd3+dd4+dd5, y, y+22)
+  lbl('Nosso Número / Cód. do Documento', rx+2, y+2, dd6-4)
+  y += 9; rx = ML
+  val(b.dataDocumento, rx+2, y, dd1-4); rx+=dd1
+  val(b.numeroDocumento||'', rx+2, y, dd2-4); rx+=dd2
+  val('DM', rx+2, y, dd3-4); rx+=dd3
+  val('S', rx+2, y, dd4-4); rx+=dd4
+  val(b.dataDocumento, rx+2, y, dd5-4); rx+=dd5
+  val(b.nossoNumeroDisplay||b.nossoNumeroFmt, rx+2, y, dd6-4)
+  y += 13; hline(y); y += 2
+
+  // uso banco | carteira | esp moeda | qtd moeda | val moeda | valor doc
+  const finW = W * 0.30, ubL = W - W * 0.30
+  const ub1=ubL*0.17, ub2=ubL*0.14, ub3=ubL*0.14, ub4=ubL*0.28, ub5=ubL*0.27
+  rx = ML
+  lbl('Uso do Banco', rx+2, y+2, ub1-4); rx+=ub1; vline(ML+ub1, y, y+22)
+  lbl('Carteira', rx+2, y+2, ub2-4); rx+=ub2; vline(ML+ub1+ub2, y, y+22)
+  lbl('Espécie Moeda', rx+2, y+2, ub3-4); rx+=ub3; vline(ML+ub1+ub2+ub3, y, y+22)
+  lbl('Quantidade Moeda', rx+2, y+2, ub4-4); rx+=ub4; vline(ML+ub1+ub2+ub3+ub4, y, y+22)
+  lbl('Valor Moeda', rx+2, y+2, ub5-4)
+  vline(ML+ubL, y, y+22)
+  lbl('(=) Valor do Documento', ML+ubL+2, y+2, finW-4)
+  y += 9; rx = ML
+  val('', rx+2, y, ub1-4); rx+=ub1
+  val(b.carteira||'01', rx+2, y, ub2-4); rx+=ub2
+  val('R$', rx+2, y, ub3-4); rx+=ub3
+  val('', rx+2, y, ub4-4); rx+=ub4
+  val('', rx+2, y, ub5-4)
+  valR(`R$ ${fmtMoney(b.valor)}`, ML+ubL+2, y, finW-4)
+  y += 13; hline(y); y += 2
+
+  // instruções (esq) + financeiro (dir)
+  const instrY = y
+  const instrW = W - finW
+  const finX   = ML + instrW
+  const instrH = 6 * 16   // 96pt = 6 itens × 16pt
+
+  lbl('Instruções', ML + 2, instrY + 2, instrW - 4)
+  vline(finX, instrY, instrY + instrH)
+
+  if (b.instrucoes) {
+    doc.font('Helvetica').fontSize(7.5).fillColor(DGRAY)
+       .text(b.instrucoes, ML + 2, instrY + 10, {
+         width: instrW - 8,
+         height: instrH - 14,
+         lineBreak: true,
+       })
+  }
+
+  const finItems = [
+    ['(=) Valor do Documento',    `R$ ${fmtMoney(b.valor)}`],
+    ['(-) Desconto / Abatimento', 'R$ 0,00'],
+    ['(-) Outras Deduções',       'R$ 0,00'],
+    ['(+) Mora / Multa',          'R$ 0,00'],
+    ['(+) Outros Acréscimos',     ''],
+    ['(=) Valor Cobrado',         `R$ ${fmtMoney(b.valor)}`],
+  ]
+  let fy = instrY
+  for (const [label, amount] of finItems) {
+    lbl(label, finX + 2, fy + 2, finW - 4)
+    if (amount) valR(amount, finX + 2, fy + 9, finW - 4)
+    fy += 16
+    if (fy < instrY + instrH) {
+      doc.moveTo(finX, fy).lineTo(ML + W, fy).strokeColor(LGRAY).lineWidth(0.3).stroke()
+    }
+  }
+  y = instrY + instrH + 2; hline(y); y += 2
+
+  // pagador
+  lbl('Pagador', ML + 2, y + 2, W - 4)
+  y += 9
+  doc.font('Helvetica-Bold').fontSize(8).fillColor(DGRAY)
+     .text(`${b.sacado}${b.sacadoCpf ? ' - ' + fmtCnpj(b.sacadoCpf) : ''}`, ML + 2, y, { width: W - 4, lineBreak: false })
+  y += 10
+  if (b.sacadoEndereco) {
+    doc.font('Helvetica').fontSize(7.5).fillColor(DGRAY)
+       .text(b.sacadoEndereco, ML + 2, y, { width: W - 4, lineBreak: false })
+    y += 10
+  }
+  y += 4; hline(y); y += 2
+
+  // beneficiário | final | código de baixa
+  const bx1 = W * 0.50, bx2 = W * 0.20, bx3 = W * 0.30
+  lbl('Beneficiário', ML + 2, y + 2, bx1 - 4)
+  vline(ML + bx1, y, y + 18)
+  lbl('Final', ML + bx1 + 2, y + 2, bx2 - 4)
+  vline(ML + bx1 + bx2, y, y + 18)
+  lbl('Código de Baixa', ML + bx1 + bx2 + 2, y + 2, bx3 - 4)
+  y += 18; hline(y); y += 4
+
+  // código de barras
+  const bcH = 50
+  drawBarcodeITF(doc, b.barcode, ML + 4, y, W * 0.56, bcH)
+
+  doc.font('Helvetica').fontSize(6.5).fillColor(GRAY)
+     .text('Autenticação Mecânica', ML + W * 0.60, y + 2, { width: W * 0.20, lineBreak: false })
+  doc.font('Helvetica-Bold').fontSize(10).fillColor(DGRAY)
+     .text('FICHA DE COMPENSAÇÃO', ML + W * 0.60, y + 14, { width: W * 0.40 - 4, align: 'right', lineBreak: false })
+
+  hline(y + bcH + 6, LGRAY)
+}
+
 
 // ══════════════════════════════════════════════════════════
 //  Supabase helper
@@ -687,14 +1054,18 @@ async function handle(event) {
         valor,
       })
 
-      nossoNumeroFmt = `${N(cc.conta, 7)}-${cc.conta_dv || '0'} / ${N(String(seq).replace(/\D/g,''), 9)}`
-      agenciaLabel   = 'AGÊNCIA / CONVÊNIO'
-      agenciaValue   = `${cc.agencia ? `${N(cc.agencia, 5)}-${cc.agencia_dv || '0'}` : ''} / ${cc.convenio || '101004'}`
-      bankCode       = '085-X'
-      bankLabel      = 'VIACREDI'
-      bankLogoUri    = VIACREDI_LOGO_URI || null
-      bankLogoW      = 448
-      bankLogoH      = 220
+      nossoNumeroFmt    = `${N(cc.conta, 7)}-${cc.conta_dv || '0'} / ${N(String(seq).replace(/\D/g,''), 9)}`
+      agenciaLabel      = 'AGÊNCIA / CONVÊNIO'
+      agenciaValue      = `${cc.agencia ? `${N(cc.agencia, 5)}-${cc.agencia_dv || '0'}` : ''} / ${cc.convenio || '101004'}`
+      bankCode          = '085-0'
+      bankLabel         = 'VIACREDI'
+      bankLogoUri       = VIACREDI_LOGO_URI || null
+      bankLogoW         = 448
+      bankLogoH         = 220
+      // Viacredi-specific display fields (used by drawBoletoViacredi)
+      b_nossoNumeroDisplay = N(cc.conta, 7) + (cc.conta_dv || '0') + N(String(seq).replace(/\D/g,''), 9)
+      b_agenciaCodigo      = `${N(cc.agencia || '0', 4)}-${cc.agencia_dv || '0'}/${N(cc.conta, 7)}-${cc.conta_dv || '0'}`
+      b_numeroDocumento    = String(seq)
     }
 
     return {
@@ -703,6 +1074,9 @@ async function handle(event) {
       agencia:         cc.agencia ? `${N(cc.agencia, 5)}-${cc.agencia_dv || '0'}` : '',
       convenio:        cc.convenio || '',
       nossoNumeroFmt,
+      nossoNumeroDisplay: typeof b_nossoNumeroDisplay !== 'undefined' ? b_nossoNumeroDisplay : undefined,
+      agenciaCodigo:      typeof b_agenciaCodigo      !== 'undefined' ? b_agenciaCodigo      : undefined,
+      numeroDocumento:    typeof b_numeroDocumento    !== 'undefined' ? b_numeroDocumento    : undefined,
       carteira:        cc.carteira || (isBradesco ? '09' : '1'),
       vencimento:      fmtDate(venc),
       valor,
