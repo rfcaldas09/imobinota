@@ -373,6 +373,7 @@ function TabUsuarios() {
               <tr>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Empresa / E-mail</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">CNPJ</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Telefone</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Cert A1</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Plano</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Avulsa ✅</th>
@@ -393,6 +394,7 @@ function TabUsuarios() {
                     <p className="text-xs text-slate-400 mt-0.5">{u.email}</p>
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">{u.cnpj}</td>
+                  <td className="px-4 py-3 text-xs text-slate-600">{u.telefone || '—'}</td>
                   <td className="px-4 py-3 text-center">
                     {u.cert_ok
                       ? <span title="Certificado configurado" className="text-base">✅</span>

@@ -82,7 +82,7 @@ exports.handler = async (event) => {
   // Busca todos os perfis
   const { data: profiles, error: profErr } = await supabase
     .from('profiles')
-    .select('id, company_name, cnpj, email_contato, nfse_cert_path, plano_tipo, plano_fim, created_at, admin_ativo, is_contabilidade, parent_user_id')
+    .select('id, company_name, cnpj, email_contato, telefone, nfse_cert_path, plano_tipo, plano_fim, created_at, admin_ativo, is_contabilidade, parent_user_id')
     .order('created_at', { ascending: false })
 
   if (profErr) return { statusCode: 500, headers, body: JSON.stringify({ error: profErr.message }) }
@@ -131,6 +131,7 @@ exports.handler = async (event) => {
     email:       emailByUid[p.id] || p.email_contato || '—',
     company:     p.company_name || '—',
     cnpj:        p.cnpj        || '—',
+    telefone:    p.telefone    || null,
     cert_ok:     !!p.nfse_cert_path,
     plano:       p.plano_tipo  || null,
     plano_fim:   p.plano_fim   || null,
