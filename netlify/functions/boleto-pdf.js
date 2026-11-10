@@ -993,6 +993,7 @@ async function handle(event) {
     const sacado = em.tomador_nome || cob.tenant || ''
 
     let barcode, nossoNumeroFmt, agenciaLabel, agenciaValue, bankCode, bankLabel, bankLogoUri, bankLogoW, bankLogoH
+    let nossoNumeroDisplay, agenciaCodigo, numeroDocumento
 
     if (isBradesco) {
       // ── Bradesco (237) ──
@@ -1063,9 +1064,9 @@ async function handle(event) {
       bankLogoW         = 448
       bankLogoH         = 220
       // Viacredi-specific display fields (used by drawBoletoViacredi)
-      b_nossoNumeroDisplay = N(cc.conta, 7) + (cc.conta_dv || '0') + N(String(seq).replace(/\D/g,''), 9)
-      b_agenciaCodigo      = `${N(cc.agencia || '0', 4)}-${cc.agencia_dv || '0'}/${N(cc.conta, 7)}-${cc.conta_dv || '0'}`
-      b_numeroDocumento    = String(seq)
+      nossoNumeroDisplay = N(cc.conta, 7) + (cc.conta_dv || '0') + N(String(seq).replace(/\D/g,''), 9)
+      agenciaCodigo      = `${N(cc.agencia || '0', 4)}-${cc.agencia_dv || '0'}/${N(cc.conta, 7)}-${cc.conta_dv || '0'}`
+      numeroDocumento    = String(seq)
     }
 
     return {
@@ -1074,9 +1075,9 @@ async function handle(event) {
       agencia:         cc.agencia ? `${N(cc.agencia, 5)}-${cc.agencia_dv || '0'}` : '',
       convenio:        cc.convenio || '',
       nossoNumeroFmt,
-      nossoNumeroDisplay: typeof b_nossoNumeroDisplay !== 'undefined' ? b_nossoNumeroDisplay : undefined,
-      agenciaCodigo:      typeof b_agenciaCodigo      !== 'undefined' ? b_agenciaCodigo      : undefined,
-      numeroDocumento:    typeof b_numeroDocumento    !== 'undefined' ? b_numeroDocumento    : undefined,
+      nossoNumeroDisplay,
+      agenciaCodigo,
+      numeroDocumento,
       carteira:        cc.carteira || (isBradesco ? '09' : '1'),
       vencimento:      fmtDate(venc),
       valor,
