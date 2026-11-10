@@ -32,6 +32,7 @@ const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') :
 // ── EmailTagInput — campo de múltiplos e-mails estilo Outlook ─────
 function EmailTagInput({ value, onChange, placeholder = 'email@exemplo.com' }) {
   const [inputVal, setInputVal] = useState('')
+  const inputRef = useRef(null)
   const tags = (value || '').split(';').map(e => e.trim()).filter(Boolean)
 
   const addTag = (email) => {
@@ -71,24 +72,25 @@ function EmailTagInput({ value, onChange, placeholder = 'email@exemplo.com' }) {
 
   return (
     <div
-      className="flex flex-wrap gap-1 items-center min-h-[36px] border border-slate-200 rounded-lg px-2 py-1 bg-white focus-within:ring-2 focus-within:ring-emerald-400 focus-within:border-transparent cursor-text"
-      onClick={() => document.activeElement.blur()}
+      className="flex flex-wrap gap-1 items-start min-h-[36px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus-within:ring-2 focus-within:ring-emerald-400 focus-within:border-transparent cursor-text"
+      onMouseDown={e => { if (e.target === e.currentTarget) { e.preventDefault(); inputRef.current?.focus() } }}
     >
       {tags.map((tag, i) => (
-        <span key={i} className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 text-xs font-medium px-2 py-0.5 rounded-full border border-emerald-200">
+        <span key={i} className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 text-xs font-medium px-2 py-0.5 rounded-full border border-emerald-200 mt-0.5">
           {tag}
           <button type="button" onMouseDown={e => { e.preventDefault(); removeTag(i) }}
             className="text-emerald-400 hover:text-emerald-700 leading-none">×</button>
         </span>
       ))}
       <input
-        type="email"
+        ref={inputRef}
+        type="text"
         value={inputVal}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         onBlur={handleBlur}
         placeholder={tags.length === 0 ? placeholder : '+ adicionar'}
-        className="flex-1 min-w-[120px] text-sm text-slate-700 outline-none bg-transparent py-0.5"
+        className="flex-1 min-w-[140px] text-sm text-slate-700 outline-none bg-transparent py-0.5"
       />
     </div>
   )
@@ -796,10 +798,10 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
               />
             </Row>
           </div>
+          <Row label="E-mail">
+            <EmailTagInput value={f.email} onChange={v => set('email', v)} placeholder="cliente@email.com"/>
+          </Row>
           <div className="grid grid-cols-2 gap-3">
-            <Row label="E-mail">
-              <EmailTagInput value={f.email} onChange={v => set('email', v)} placeholder="cliente@email.com"/>
-            </Row>
             <Row label={`Telefone${f.phone && !isPhoneValid(f.phone) ? ' — incompleto' : ''}`}>
               <FormInp
                 value={f.phone}
