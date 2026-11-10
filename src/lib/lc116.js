@@ -275,4 +275,13 @@ export const LC116 = [
 
   // 40 – Obras de arte sob encomenda
   { cod:'40.01', desc:'Obras de arte sob encomenda' },
+
+  // ── Códigos cTribNac 99.xx — Não tributáveis pelo ISS (Sistema Nacional NFS-e / SEFIN) ──
+  // Usados por municípios aderentes ao SEFIN que exigem registro mesmo sem tributação ISS.
+  // O código 99.03 gera cTribNac = 990301 no envio ao Focus / SEFIN.
+  { cod:'99.01', desc:'Locação de bens móveis (não tributável pelo ISS — cTribNac 990101)' },
+  { cod:'99.02', desc:'Arrendamento mercantil (leasing) — não tributável pelo ISS (cTribNac 990201)' },
+  { cod:'99.03', desc:'Locação de bens imóveis — não tributável pelo ISS (cTribNac 990301)' },
+  { cod:'99.04', desc:'Cessão de direitos — não tributável pelo ISS (cTribNac 990401)' },
+  { cod:'99.05', desc:'Outros serviços não tributáveis pelo ISS (cTribNac 990501)' },
 ]
