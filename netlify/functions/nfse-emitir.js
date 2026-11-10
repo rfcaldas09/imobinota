@@ -55,7 +55,7 @@ async function handle(event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Body inválido' }) }
   }
 
-  const { userId, cobId, cobData, homologacao = false } = body
+  const { userId, cobId, cobData, homologacao = false, skipEmail = false } = body
   // cobData = { mesRef, tenant, cpf, email, property, totalValue, value,
   //             seguroFinanceiro, seguroIncendio, iptu, codServicoLc116 }
 
@@ -380,18 +380,20 @@ async function handle(event) {
   })
 
   // ── 10. Envia e-mail com PDF da NFS-e ─────────────────────────
-  try {
-    await enviarEmailNfse({
-      profile: p,
-      cobData,
-      numeroNfse,
-      nfseXml: nfseXml || responseBody,
-      homologacao,
-    })
-    console.log('[nfse-emitir] e-mail NFS-e enviado com sucesso')
-  } catch (emailErr) {
-    // Não quebra a emissão por falha de e-mail — apenas loga
-    console.error('[nfse-emitir] falha ao enviar e-mail NFS-e:', emailErr.message)
+  if (!skipEmail) {
+    try {
+      await enviarEmailNfse({
+        profile: p,
+        cobData,
+        numeroNfse,
+        nfseXml: nfseXml || responseBody,
+        homologacao,
+      })
+      console.log('[nfse-emitir] e-mail NFS-e enviado com sucesso')
+    } catch (emailErr) {
+      // Não quebra a emissão por falha de e-mail — apenas loga
+      console.error('[nfse-emitir] falha ao enviar e-mail NFS-e:', emailErr.message)
+    }
   }
 
   return {
@@ -1011,9 +1013,10 @@ async function enviarEmailNfse({ profile: p, cobData, numeroNfse, nfseXml, homol
   const bodyHtml     = bodyFinal.replace(/\n/g, '<br>')
   const bodyText     = bodyFinal
 
-  // Destinatários: homologacao → só reply_to; produção → cliente + cc reply_to
-  const toAddr = homologacao ? (replyTo || cobData.email || '') : (cobData.email || '')
-  if (!toAddr) {
+  // Destinatários: homologacao → só reply_to; produção → cliente (pode ser vários, sep por ";")
+  const rawEmail = homologacao ? (replyTo || cobData.email || '') : (cobData.email || '')
+  const toAddrs  = rawEmail.split(';').map(e => e.trim()).filter(Boolean)
+  if (!toAddrs.length) {
     console.warn('[nfse-email] sem destinatário, pulando envio de e-mail')
     return
   }
@@ -1027,7 +1030,7 @@ async function enviarEmailNfse({ profile: p, cobData, numeroNfse, nfseXml, homol
 
     const payload = {
       from:    `${fromName} <${fromAddr}>`,
-      to:      [toAddr],
+      to:      toAddrs,
       subject: subjectFinal,
       html:    `<div style="font-family:sans-serif;max-width:600px">${bodyHtml}</div>`,
       text:    bodyText,
@@ -1057,7 +1060,7 @@ async function enviarEmailNfse({ profile: p, cobData, numeroNfse, nfseXml, homol
 
     await transporter.sendMail({
       from:        `${fromName} <${p.from_email || p.smtp_user}>`,
-      to:          toAddr,
+      to:          toAddrs.join(', '),
       ...(replyTo && !homologacao ? { replyTo, cc: replyTo } : {}),
       subject:     subjectFinal,
       html:        `<div style="font-family:sans-serif;max-width:600px">${bodyHtml}</div>`,

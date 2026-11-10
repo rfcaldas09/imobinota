@@ -29,6 +29,71 @@ const IcUpload  = ({ c='' }) => ic('<polyline points="16 16 12 12 8 16"/><line x
 const fmt     = v => Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
 const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—'
 
+// ── EmailTagInput — campo de múltiplos e-mails estilo Outlook ─────
+function EmailTagInput({ value, onChange, placeholder = 'email@exemplo.com' }) {
+  const [inputVal, setInputVal] = useState('')
+  const tags = (value || '').split(';').map(e => e.trim()).filter(Boolean)
+
+  const addTag = (email) => {
+    const t = email.trim()
+    if (!t) return
+    const newTags = [...tags, t]
+    onChange(newTags.join(';'))
+    setInputVal('')
+  }
+
+  const removeTag = (idx) => {
+    const newTags = tags.filter((_, i) => i !== idx)
+    onChange(newTags.join(';'))
+  }
+
+  const handleKeyDown = (e) => {
+    if (e.key === ';' || e.key === 'Enter') {
+      e.preventDefault()
+      addTag(inputVal)
+    } else if (e.key === 'Backspace' && !inputVal && tags.length > 0) {
+      removeTag(tags.length - 1)
+    }
+  }
+
+  const handleChange = (e) => {
+    const v = e.target.value
+    if (v.includes(';')) {
+      const parts = v.split(';')
+      parts.slice(0, -1).forEach(p => { if (p.trim()) addTag(p) })
+      setInputVal(parts[parts.length - 1])
+    } else {
+      setInputVal(v)
+    }
+  }
+
+  const handleBlur = () => { if (inputVal.trim()) addTag(inputVal) }
+
+  return (
+    <div
+      className="flex flex-wrap gap-1 items-center min-h-[36px] border border-slate-200 rounded-lg px-2 py-1 bg-white focus-within:ring-2 focus-within:ring-emerald-400 focus-within:border-transparent cursor-text"
+      onClick={() => document.activeElement.blur()}
+    >
+      {tags.map((tag, i) => (
+        <span key={i} className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 text-xs font-medium px-2 py-0.5 rounded-full border border-emerald-200">
+          {tag}
+          <button type="button" onMouseDown={e => { e.preventDefault(); removeTag(i) }}
+            className="text-emerald-400 hover:text-emerald-700 leading-none">×</button>
+        </span>
+      ))}
+      <input
+        type="email"
+        value={inputVal}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
+        placeholder={tags.length === 0 ? placeholder : '+ adicionar'}
+        className="flex-1 min-w-[120px] text-sm text-slate-700 outline-none bg-transparent py-0.5"
+      />
+    </div>
+  )
+}
+
 // ── Máscaras de input ──────────────────────────────────────────────
 const digits = v => v.replace(/\D/g, '')
 
@@ -733,7 +798,7 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Row label="E-mail">
-              <FormInp value={f.email} onChange={e => set('email', e.target.value)} type="email" placeholder="cliente@email.com"/>
+              <EmailTagInput value={f.email} onChange={v => set('email', v)} placeholder="cliente@email.com"/>
             </Row>
             <Row label={`Telefone${f.phone && !isPhoneValid(f.phone) ? ' — incompleto' : ''}`}>
               <FormInp
@@ -1248,15 +1313,26 @@ function DocModal({ type, contract: c, onClose, onToast }) {
   // Configuração do provedor NFS-e do usuário
   const [nfseProvedor, setNfseProvedor]         = useState('sefin')
   const [focusHomologacao, setFocusHomologacao] = useState(false)
+
+  // Opção de gerar boleto + CNAB junto à NFS-e
+  const [gerarBoleto, setGerarBoleto]     = useState(false)
+  const [boletoContaId, setBoletoContaId] = useState('')
+  const [cnabContas, setCnabContas]       = useState([])
+  const [gerandoBoleto, setGerandoBoleto] = useState(false)
+
   useEffect(() => {
     if (!user || isBoleto) return
     supabase.from('profiles')
-      .select('nfse_provedor, focus_homologacao')
+      .select('nfse_provedor, focus_homologacao, cnab_config')
       .eq('id', user.id)
       .single()
       .then(({ data }) => {
         if (data?.nfse_provedor) setNfseProvedor(data.nfse_provedor)
         setFocusHomologacao(!!data?.focus_homologacao)
+        const raw = data?.cnab_config
+        const contas = Array.isArray(raw) ? raw : (raw ? [raw] : [])
+        setCnabContas(contas)
+        if (contas.length > 0) setBoletoContaId(contas[0].id || '')
       })
   }, [user, isBoleto])
 
@@ -1284,13 +1360,12 @@ function DocModal({ type, contract: c, onClose, onToast }) {
     try {
       const jwt = (await supabase.auth.getSession())?.data?.session?.access_token
       const mesRefStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
-      // Parse percentage strings from mapRow (may use comma as decimal separator)
       const parsePct = v => parseFloat((v || '').toString().replace(',', '.')) || null
       const cobData = {
         tenant:          c.tenant,
         cpf:             c.cpf || '',
         email:           c.email || '',
-        totalValue:      c.value, // valor do serviço (sem IPTU/seguro para NFS-e)
+        totalValue:      c.value,
         mesRef:          mesRefStr,
         discriminacao:      c.discriminacaoServico || null,
         codServicoLc116:    c.codServicoLc116 || null,
@@ -1315,21 +1390,21 @@ function DocModal({ type, contract: c, onClose, onToast }) {
       const emitFn = nfseProvedor === 'focus' ? 'nfse-emitir-focus' : 'nfse-emitir'
       const res = await fetch(`/.netlify/functions/${emitFn}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json', ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}) },
         body: JSON.stringify({
-          userId: user.id,
-          cobId: null,
-          cobData,
+          userId: user.id, cobId: null, cobData,
           homologacao: nfseProvedor === 'focus' ? focusHomologacao : false,
+          skipEmail: gerarBoleto, // se vai gerar boleto, o email será enviado depois com ambos os PDFs
         }),
       })
       const data = await res.json()
       if (res.ok && data.ok) {
         setNfseResult({ ok: true, numero: data.numeroNfse || data.numeroDps })
         onToast(`NFS-e ${data.numeroNfse || data.numeroDps || ''} emitida para ${c.tenant}`, 'success')
+        // Se opção de boleto marcada: gera CNAB+PDF e envia email com os dois anexos
+        if (gerarBoleto && data.emissaoId) {
+          await gerarBoletoEEmail(data.emissaoId, jwt)
+        }
       } else {
         setNfseResult({ ok: false, erro: data.error || 'Erro desconhecido' })
         onToast('Erro ao emitir NFS-e', 'error')
@@ -1339,6 +1414,68 @@ function DocModal({ type, contract: c, onClose, onToast }) {
       onToast('Erro ao emitir NFS-e', 'error')
     } finally {
       setEmitindo(false)
+    }
+  }
+
+  const gerarBoletoEEmail = async (emissaoId, jwt) => {
+    setGerandoBoleto(true)
+    const headers = { 'Content-Type': 'application/json', ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}) }
+    try {
+      // 1. Gera boleto PDF
+      const boletoRes = await fetch('/.netlify/functions/boleto-pdf', {
+        method: 'POST', headers,
+        body: JSON.stringify({ userId: user.id, emissaoIds: [emissaoId], contaId: boletoContaId, vencimento: vencimentoBoleto }),
+      })
+      const boletoData = await boletoRes.json()
+      const boletoPdfBase64 = boletoData?.pdfBase64 || null
+      const boletoFilename  = boletoData?.filename  || `boleto_${emissaoId.slice(0,8)}.pdf`
+
+      // 2. Gera arquivo CNAB
+      const cnabRes = await fetch('/.netlify/functions/cnab-gerar', {
+        method: 'POST', headers,
+        body: JSON.stringify({ userId: user.id, emissaoIds: [emissaoId], contaId: boletoContaId, vencimento: vencimentoBoleto }),
+      })
+      const cnabData = await cnabRes.json()
+
+      // 3. Monta ZIP e faz download
+      if (cnabData?.cnabText) {
+        const { default: JSZip } = await import('jszip')
+        const zip = new JSZip()
+        zip.file(cnabData.filename || 'remessa.txt', cnabData.cnabText, { binary: false })
+        if (boletoPdfBase64) {
+          const bin = atob(boletoPdfBase64)
+          const buf = new Uint8Array(bin.length)
+          for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i)
+          zip.file(boletoFilename, buf, { binary: true })
+        }
+        const zipBlob = await zip.generateAsync({ type: 'blob' })
+        const zipName = (cnabData.filename || 'remessa').replace(/\.(txt|rem)$/i, '') + '_boleto.zip'
+        const url = URL.createObjectURL(zipBlob)
+        const a   = document.createElement('a')
+        a.href = url; a.download = zipName
+        document.body.appendChild(a); a.click()
+        document.body.removeChild(a); URL.revokeObjectURL(url)
+      }
+
+      // 4. Envia email com NFS-e + boleto PDF anexados
+      if (boletoPdfBase64) {
+        const emailRes = await fetch('/.netlify/functions/nfse-email-boleto', {
+          method: 'POST', headers,
+          body: JSON.stringify({ userId: user.id, emissaoId, boletoPdfBase64, boletoFilename }),
+        })
+        if (!emailRes.ok) {
+          const ed = await emailRes.json()
+          console.warn('[DocModal] falha ao enviar email com boleto:', ed.error)
+          onToast('Boleto gerado, mas houve falha ao enviar email', 'error')
+          return
+        }
+      }
+      onToast('Boleto gerado e email enviado com sucesso!', 'success')
+    } catch (e) {
+      console.error('[DocModal] erro ao gerar boleto+email:', e)
+      onToast('Erro ao gerar boleto: ' + e.message, 'error')
+    } finally {
+      setGerandoBoleto(false)
     }
   }
 
@@ -1420,29 +1557,66 @@ function DocModal({ type, contract: c, onClose, onToast }) {
             </div>
           )}
 
-          {/* Data de vencimento do boleto — obrigatório para NFS-e */}
+          {/* Data de vencimento + opção de boleto — apenas para NFS-e */}
           {!isBoleto && !nfseResult?.ok && (
-            <div className="mb-4">
-              <label className="block text-xs font-semibold text-slate-500 mb-1">
-                Data de vencimento do boleto <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="date"
-                required
-                value={vencimentoBoleto}
-                onChange={e => setVencimentoBoleto(e.target.value)}
-                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
-              />
-              {!vencimentoBoleto && (
-                <p className="text-xs text-red-400 mt-1">Informe a data de vencimento para gerar o boleto.</p>
-              )}
+            <div className="mb-4 space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">
+                  Data de vencimento do boleto <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={vencimentoBoleto}
+                  onChange={e => setVencimentoBoleto(e.target.value)}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                />
+                {!vencimentoBoleto && (
+                  <p className="text-xs text-red-400 mt-1">Informe a data de vencimento para gerar o boleto.</p>
+                )}
+              </div>
+
+              {/* Opção de gerar Boleto + CNAB (ZIP) e anexar ao email */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={gerarBoleto}
+                    onChange={e => setGerarBoleto(e.target.checked)}
+                    disabled={cnabContas.length === 0}
+                    className="mt-0.5 rounded accent-emerald-600"
+                  />
+                  <div>
+                    <span className="text-xs font-semibold text-slate-700">Gerar Boleto + CNAB (ZIP) e anexar ao e-mail</span>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Baixa o arquivo de remessa + PDF do boleto. O e-mail será enviado com os dois PDFs (NFS-e + boleto).
+                    </p>
+                  </div>
+                </label>
+                {cnabContas.length === 0 && (
+                  <p className="text-xs text-amber-500 mt-2">⚠️ Configure uma conta bancária em Configurações → Integrações para habilitar esta opção.</p>
+                )}
+                {gerarBoleto && cnabContas.length > 1 && (
+                  <select
+                    value={boletoContaId}
+                    onChange={e => setBoletoContaId(e.target.value)}
+                    className="mt-2 w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  >
+                    {cnabContas.map(cc => (
+                      <option key={cc.id} value={cc.id}>{cc.label || cc.banco}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
             </div>
           )}
 
           {!isBoleto && nfseResult && (
             <div className={`mb-4 rounded-xl px-3 py-2.5 text-xs border ${nfseResult.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
               {nfseResult.ok
-                ? <>✅ NFS-e <strong>{nfseResult.numero}</strong> emitida com sucesso!</>
+                ? <>✅ NFS-e <strong>{nfseResult.numero}</strong> emitida com sucesso!
+                    {gerandoBoleto && <span className="ml-2 opacity-70">Gerando boleto e enviando e-mail…</span>}
+                  </>
                 : <>❌ {nfseResult.erro}</>
               }
             </div>
@@ -1465,9 +1639,11 @@ function DocModal({ type, contract: c, onClose, onToast }) {
               </button>
             ) : (
               <button onClick={emitirNfse}
-                disabled={emitindo || nfseResult?.ok || !vencimentoBoleto}
+                disabled={emitindo || gerandoBoleto || nfseResult?.ok || !vencimentoBoleto}
                 className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                {emitindo
+                {gerandoBoleto
+                  ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Gerando boleto…</>
+                  : emitindo
                   ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Emitindo…</>
                   : nfseResult?.ok
                   ? <><IcCheck c="w-4 h-4"/> NFS-e Emitida</>
