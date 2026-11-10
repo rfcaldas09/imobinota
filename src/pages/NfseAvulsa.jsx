@@ -1348,7 +1348,7 @@ export default function NfseAvulsa() {
     setLoadingHistory(true)
     const { data } = await supabase
       .from('nfse_emissoes')
-      .select('id, numero_nfse, numero_dps, tomador_nome, valor_servico, competencia, status, created_at, erro_msg, chave_acesso, cob_data_json')
+      .select('id, numero_nfse, numero_dps, tomador_nome, valor_servico, competencia, status, created_at, erro_msg, chave_acesso, cob_data_json, vencimento_boleto')
       .eq('user_id', effectiveUserId)
       .is('cobranca_id', null)
       .order('created_at', { ascending: false })
@@ -1774,9 +1774,16 @@ export default function NfseAvulsa() {
       alert('Nenhuma conta bancária configurada. Vá em Configurações → Integrações → CNAB.')
       return
     }
-    // Calcula sugestão: hoje + 30 dias
-    const sugestao = new Date(); sugestao.setDate(sugestao.getDate() + 30)
-    setCnabVencimento(sugestao.toISOString().slice(0, 10))
+    // Pré-preenche vencimento: se todas as notas selecionadas tiverem o mesmo
+    // vencimento_boleto (salvo ao emitir pelo contrato), usa-o; caso contrário, blank.
+    const selectedRows = filteredHistory.filter(em => selectedHistIds.has(em.id))
+    const vencDates = [...new Set(selectedRows.map(em => em.vencimento_boleto || '').filter(Boolean))]
+    if (vencDates.length === 1) {
+      // Converte para YYYY-MM-DD se vier como ISO timestamp
+      setCnabVencimento(vencDates[0].slice(0, 10))
+    } else {
+      setCnabVencimento('')
+    }
     setCnabModalOpen(true)
   }
 

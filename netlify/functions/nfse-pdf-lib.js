@@ -638,7 +638,7 @@ function extrairCamposPdf(xml, cobData, profile) {
     cnae:              profile?.nfse_codigo_servico || '',
     simples:           isSimples,
     meEpp:             isSimples,  // assume ME/EPP quando Simples Nacional (sem campo separado)
-    observacoes:       '',
+    observacoes:       descServico || '',
     impresso:          '',
   }
 }

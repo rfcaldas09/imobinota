@@ -1242,6 +1242,24 @@ function DocModal({ type, contract: c, onClose, onToast }) {
   const [emissao, setEmissao]   = useState(null) // null | 'created' | 'already' | 'error'
   const [nfseResult, setNfseResult] = useState(null) // null | { ok, numero?, erro? }
 
+  // Vencimento do boleto gerado a partir da nota
+  const [vencimentoBoleto, setVencimentoBoleto] = useState('')
+
+  // Configuração do provedor NFS-e do usuário
+  const [nfseProvedor, setNfseProvedor]         = useState('sefin')
+  const [focusHomologacao, setFocusHomologacao] = useState(false)
+  useEffect(() => {
+    if (!user || isBoleto) return
+    supabase.from('profiles')
+      .select('nfse_provedor, focus_homologacao')
+      .eq('id', user.id)
+      .single()
+      .then(({ data }) => {
+        if (data?.nfse_provedor) setNfseProvedor(data.nfse_provedor)
+        setFocusHomologacao(!!data?.focus_homologacao)
+      })
+  }, [user, isBoleto])
+
   useEffect(() => {
     const handle = e => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', handle)
@@ -1274,8 +1292,9 @@ function DocModal({ type, contract: c, onClose, onToast }) {
         email:           c.email || '',
         totalValue:      c.value, // valor do serviço (sem IPTU/seguro para NFS-e)
         mesRef:          mesRefStr,
-        discriminacao:   c.discriminacaoServico || null,
-        codServicoLc116: c.codServicoLc116 || null,
+        discriminacao:      c.discriminacaoServico || null,
+        codServicoLc116:    c.codServicoLc116 || null,
+        vencimento_boleto:  vencimentoBoleto || null,
         retencoes: {
           tpRetISSQN: c.issRetido ? 2 : 1,
           pIRRF:   parsePct(c.pIRRF),
@@ -1293,13 +1312,19 @@ function DocModal({ type, contract: c, onClose, onToast }) {
           munNome:    c.tamaMunNome    || '',
         } : null,
       }
-      const res = await fetch('/.netlify/functions/nfse-emitir', {
+      const emitFn = nfseProvedor === 'focus' ? 'nfse-emitir-focus' : 'nfse-emitir'
+      const res = await fetch(`/.netlify/functions/${emitFn}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}),
         },
-        body: JSON.stringify({ userId: user.id, cobId: null, cobData, homologacao: false }),
+        body: JSON.stringify({
+          userId: user.id,
+          cobId: null,
+          cobData,
+          homologacao: nfseProvedor === 'focus' ? focusHomologacao : false,
+        }),
       })
       const data = await res.json()
       if (res.ok && data.ok) {
@@ -1330,7 +1355,7 @@ function DocModal({ type, contract: c, onClose, onToast }) {
                 {isBoleto ? '💳 Boleto de Cobrança' : '📄 NFS-e — Nota Fiscal de Serviço'}
               </span>
               <h3 className="text-base font-bold text-slate-900 mt-0.5">
-                {isBoleto ? 'Via OpenPIX / Banco Inter' : 'API Nacional NFS-e — Gov.br'}
+                {isBoleto ? 'Via OpenPIX / Banco Inter' : nfseProvedor === 'focus' ? 'Via Focus NFe' : 'API Nacional NFS-e — Gov.br'}
               </h3>
             </div>
             <button onClick={onClose} className="text-slate-300 hover:text-slate-600 mt-1"><IcX c="w-5 h-5"/></button>
@@ -1395,6 +1420,25 @@ function DocModal({ type, contract: c, onClose, onToast }) {
             </div>
           )}
 
+          {/* Data de vencimento do boleto — obrigatório para NFS-e */}
+          {!isBoleto && !nfseResult?.ok && (
+            <div className="mb-4">
+              <label className="block text-xs font-semibold text-slate-500 mb-1">
+                Data de vencimento do boleto <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                required
+                value={vencimentoBoleto}
+                onChange={e => setVencimentoBoleto(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              />
+              {!vencimentoBoleto && (
+                <p className="text-xs text-red-400 mt-1">Informe a data de vencimento para gerar o boleto.</p>
+              )}
+            </div>
+          )}
+
           {!isBoleto && nfseResult && (
             <div className={`mb-4 rounded-xl px-3 py-2.5 text-xs border ${nfseResult.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
               {nfseResult.ok
@@ -1421,7 +1465,7 @@ function DocModal({ type, contract: c, onClose, onToast }) {
               </button>
             ) : (
               <button onClick={emitirNfse}
-                disabled={emitindo || nfseResult?.ok}
+                disabled={emitindo || nfseResult?.ok || !vencimentoBoleto}
                 className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                 {emitindo
                   ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Emitindo…</>

@@ -485,6 +485,7 @@ async function saveEmissao(supabaseUrl, serviceKey, {
     chave_acesso:         chave_acesso,
     cob_data_json:        cobData,
     discriminacao_servico: cobData?.discriminacao || null,
+    vencimento_boleto:     cobData?.vencimento_boleto || null,
     tomador_nome:         tomadorNome || '',
     competencia:          mesRef || '',
     valor_servico:        valor || 0,

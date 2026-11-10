@@ -375,6 +375,7 @@ async function handle(event) {
     tomador_nome: cobData.tenant || null,
     status: 'emitida', xml_nfse: nfseXml || responseBody,
     discriminacao_servico: cobData.discriminacao || null,
+    vencimento_boleto:     cobData.vencimento_boleto || null,
     cob_data_json: cobData,
   })
 
