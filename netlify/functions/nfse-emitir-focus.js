@@ -188,21 +188,16 @@ async function handle(event) {
   // ibs_mun_aliquota: aliquotaIbsMun, ibs_mun_valor: parseFloat(...), etc.
   // Campos IBS/CBS — formato LEGADO (AtendeNet / São José-SC).
   //
-  // DIAGNÓSTICO CONCLUÍDO (via XML retornado pelo Focus em 11/11/2026):
-  //   - ibs_uf_aliquota → gera <pIBSUF> (alíquota nominal UF), NÃO <pAliqEfetUF>
-  //   - cbs_aliquota    → gera seção <fed> incompatível com XSD AtendeNet
-  //                       XSD espera <mun> após <uf>, não <fed>
-  //   - cbs_valor       → gera <gCBS> em posição incorreta (XSD espera <vTotNF>)
-  //   - Quando CBS presente, o XSD passa a exigir <pAliqEfetUF> em <uf>, que o Focus não gera
+  // Mapeamento confirmado pela documentação pública Focus NFe (guia Balneário Barra do Sul/SC):
+  //   ibs_uf_aliquota          → <pIBSUF>       (nominal UF)
+  //   ibs_uf_aliquota_efetiva  → <pAliqEfetUF>  (efetiva UF)  ← obrigatório pelo XSD
+  //   ibs_mun_aliquota         → <pIBSMun>      (nominal Mun)
+  //   ibs_mun_aliquota_efetiva → <pAliqEfetMun> (efetiva Mun)
+  //   cbs_aliquota             → <pCBS>         (nominal CBS)
+  //   cbs_aliquota_efetiva     → <pAliqEfetCBS> (efetiva CBS)  ← faltava, por isso retornava 0
   //
-  // CONFIRMADO QUE FUNCIONA (nota 4079):
-  //   - ibs_uf_aliquota SOZINHO (sem CBS) → <uf><pIBSUF> aceito pelo AtendeNet
-  //   - ibs_cbs_situacao_tributaria, classificacao, base, municipio → segundo bloco IBSCBS OK
-  //   - codigo_nbs, codigo_indicador_operacao → OK
-  //
-  // CONCLUSÃO: o Focus Legado NÃO suporta CBS (cbs_aliquota/cbs_valor) para AtendeNet São José.
-  //   CBS fica NO PDF via fallback do perfil (cob_data_json.ibsCbs), mas NÃO vai para o XML oficial.
-  //   Abrir ticket no Focus para suporte a pAliqEfetUF e estrutura mun/fed correta.
+  // Em 2026 (período de teste, sem reduções): efetiva = nominal para todos.
+  // A partir de 2027 pode haver reduções — recalcular pAliq = pNominal * (1 - pRedAliq).
   const ibsCbsLegado = hasRtFields ? {
     ibs_cbs_situacao_tributaria:         nfseCst,
     ...(nfseCclasstrib ? { ibs_cbs_classificacao_tributaria: nfseCclasstrib } : {}),
@@ -210,10 +205,15 @@ async function handle(event) {
     ...(nbsCode        ? { codigo_nbs: nbsCode }                               : {}),
     ibs_cbs_base_calculo:                valorServicos,
     ibs_cbs_codigo_municipio_incidencia: ibge7,
-    ibs_uf_aliquota:  aliquotaIbsUf,   // → <pIBSUF> (nominal UF); sem CBS — ver comentário acima
-    // cbs_aliquota: REMOVIDO — gera <fed> incompatível com XSD AtendeNet (esperado <mun>)
-    // cbs_valor:    REMOVIDO — gera <gCBS> em posição incorreta
-    // ibs_mun_*:    REMOVIDOS — causam XSD Error 1871
+    ibs_uf_aliquota:          aliquotaIbsUf,
+    ibs_uf_aliquota_efetiva:  aliquotaIbsUf,   // em 2026: efetiva = nominal (sem redução)
+    ibs_mun_aliquota:         aliquotaIbsMun,
+    ibs_mun_aliquota_efetiva: aliquotaIbsMun,  // em 2026: efetiva = nominal
+    ibs_mun_valor:            parseFloat((valorServicos * aliquotaIbsMun / 100).toFixed(2)),
+    cbs_aliquota:             aliquotaCbs,
+    cbs_aliquota_efetiva:     aliquotaCbs,      // em 2026: efetiva = nominal
+    cbs_valor:                parseFloat((valorServicos * aliquotaCbs / 100).toFixed(2)),
+    ibs_cbs_valor_total:      valorServicos,    // vTotNF = vLiq em 2026
   } : {}
 
   // Campos IBS/CBS — formato NACIONAL (/nfsen):
