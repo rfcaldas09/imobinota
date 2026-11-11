@@ -187,14 +187,17 @@ async function handle(event) {
   // ibs_uf_aliquota: aliquotaIbsUf, ibs_uf_valor: parseFloat(...),
   // ibs_mun_aliquota: aliquotaIbsMun, ibs_mun_valor: parseFloat(...), etc.
   // Campos IBS/CBS — formato LEGADO (AtendeNet / São José-SC).
-  // Diagnóstico em andamento — campos confirmados/suspeitos:
-  //   CONFIRMADO OK : ibs_uf_aliquota → <pAliqEfetUF>
-  //   CONFIRMADO OK : ibs_mun_aliquota + ibs_mun_valor → <mun>
+  // Diagnóstico concluído (3 tentativas):
+  //   CONFIRMADO OK : ibs_uf_aliquota → <pAliqEfetUF>  (Mode A, nota 4079 emitida)
   //   CONFIRMADO OK : cbs_aliquota + cbs_valor
-  //   CONFIRMADO OK : ibs_cbs_* (situacao, classificacao, base, municipio)
-  //   SUSPEITO DIAG2: ibs_valor_total (pode criar <uf><vIBSUF> sem <pAliqEfetUF>)
-  //   SUSPEITO DIAG2: ibs_cbs_valor_total (mapeamento desconhecido)
-  // DIAG2: removendo ibs_valor_total e ibs_cbs_valor_total para isolar causa.
+  //   CONFIRMADO OK : ibs_cbs_situacao_tributaria, classificacao, base, municipio
+  //   CONFIRMADO OK : codigo_nbs, codigo_indicador_operacao
+  //   CONFIRMADO QUEBRA: ibs_uf_valor → cria <uf> extra sem <pAliqEfetUF>
+  //   CONFIRMADO QUEBRA: ibs_mun_aliquota e/ou ibs_mun_valor → mesmo XSD Error 1871
+  //   NÃO TESTADO: ibs_valor_total, ibs_cbs_valor_total (removidos preventivamente)
+  // Conclusão: o Focus Legado só aceita ibs_uf_aliquota para IBS — sem campos de <mun>.
+  // O AtendeNet calcula a parte municipal internamente (ou ignora para 2026).
+  // IBS Municipal é calculado no PDF via fallback do perfil.
   const ibsCbsLegado = hasRtFields ? {
     ibs_cbs_situacao_tributaria:         nfseCst,
     ...(nfseCclasstrib ? { ibs_cbs_classificacao_tributaria: nfseCclasstrib } : {}),
@@ -204,11 +207,9 @@ async function handle(event) {
     ibs_cbs_codigo_municipio_incidencia: ibge7,
     cbs_aliquota:     aliquotaCbs,
     cbs_valor:        parseFloat((valorServicos * aliquotaCbs / 100).toFixed(2)),
-    ibs_uf_aliquota:  aliquotaIbsUf,   // → <pAliqEfetUF> (SEM ibs_uf_valor)
-    ibs_mun_aliquota: aliquotaIbsMun,
-    ibs_mun_valor:    parseFloat((valorServicos * aliquotaIbsMun / 100).toFixed(2)),
-    // ibs_valor_total:     REMOVIDO DIAG2 — suspeito de criar <uf> sem <pAliqEfetUF>
-    // ibs_cbs_valor_total: REMOVIDO DIAG2 — mapeamento desconhecido
+    ibs_uf_aliquota:  aliquotaIbsUf,   // → <pAliqEfetUF> CONFIRMADO OK
+    // ibs_mun_aliquota: REMOVIDO — causa XSD Error 1871 no Focus Legado
+    // ibs_mun_valor:    REMOVIDO — causa XSD Error 1871 no Focus Legado
   } : {}
 
   // Campos IBS/CBS — formato NACIONAL (/nfsen):
