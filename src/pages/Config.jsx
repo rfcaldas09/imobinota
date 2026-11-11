@@ -458,10 +458,12 @@ export default function Config() {
           cst:        (() => { const s = data?.nfse_cst || ''; return s.length === 2 ? (CST_MIGRATION[s] || s) : s; })(),
           cindop:     data?.nfse_cindop     || '',
           cclasstrib: data?.nfse_cclasstrib || '',
-          aliquotaCbs:    data?.aliquota_cbs    != null ? String(data.aliquota_cbs)    : '0.9',
-          aliquotaIbs:    data?.aliquota_ibs    != null ? String(data.aliquota_ibs)    : '0.1',
-          aliquotaIbsUf:  data?.aliquota_ibs_uf  != null ? String(data.aliquota_ibs_uf)  : '0.0167',
-          aliquotaIbsMun: data?.aliquota_ibs_mun != null ? String(data.aliquota_ibs_mun) : '0.0833',
+          aliquotaCbs:       data?.aliquota_cbs       != null ? String(data.aliquota_cbs)       : '0.9',
+          aliquotaIbs:       data?.aliquota_ibs       != null ? String(data.aliquota_ibs)       : '0.1',
+          aliquotaIbsUf:     data?.aliquota_ibs_uf    != null ? String(data.aliquota_ibs_uf)    : '0.0167',
+          aliquotaIbsMun:    data?.aliquota_ibs_mun   != null ? String(data.aliquota_ibs_mun)   : '0.0833',
+          aliquotaPisProprio:    data?.aliquota_pis_proprio    != null ? String(data.aliquota_pis_proprio)    : '0.65',
+          aliquotaCofinsProprio: data?.aliquota_cofins_proprio != null ? String(data.aliquota_cofins_proprio) : '3',
           logradouro:    data?.nfse_logradouro      || '',
           numeroEnd:     data?.nfse_numero_end      || '',
           bairro:        data?.nfse_bairro          || '',
@@ -595,10 +597,12 @@ export default function Config() {
         nfse_cst:        f.cst        || null,
         nfse_cindop:     f.cindop     || null,
         nfse_cclasstrib: f.cclasstrib || null,
-        aliquota_cbs:     parseFloat((f.aliquotaCbs    || '0.9').replace(',', '.'))    || null,
-        aliquota_ibs:     parseFloat((f.aliquotaIbs    || '0.1').replace(',', '.'))    || null,
-        aliquota_ibs_uf:  parseFloat((f.aliquotaIbsUf  || '0.0167').replace(',', '.')) || null,
-        aliquota_ibs_mun: parseFloat((f.aliquotaIbsMun || '0.0833').replace(',', '.')) || null,
+        aliquota_cbs:            parseFloat((f.aliquotaCbs           || '0.9').replace(',', '.'))    || null,
+        aliquota_ibs:            parseFloat((f.aliquotaIbs           || '0.1').replace(',', '.'))    || null,
+        aliquota_ibs_uf:         parseFloat((f.aliquotaIbsUf         || '0.0167').replace(',', '.')) || null,
+        aliquota_ibs_mun:        parseFloat((f.aliquotaIbsMun        || '0.0833').replace(',', '.')) || null,
+        aliquota_pis_proprio:    parseFloat((f.aliquotaPisProprio    || '0.65').replace(',', '.'))   || null,
+        aliquota_cofins_proprio: parseFloat((f.aliquotaCofinsProprio || '3').replace(',', '.'))      || null,
         // Focus NFe
         nfse_provedor:     f.nfseProvedor,
         focus_token:       f.nfseProvedor === 'focus' ? (f.focusToken.trim() || null) : null,
@@ -1233,6 +1237,42 @@ export default function Config() {
                       <p className="text-xs text-slate-400 mt-0.5">Padrão 0,1% em 2026</p>
                     </div>
                   </div>
+                  {/* PIS / COFINS Próprio (regime tributário do prestador) */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">
+                        PIS Próprio (%) <span className="text-blue-500">prestador</span>
+                      </label>
+                      <Inp
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={f.aliquotaPisProprio}
+                        onChange={e => set('aliquotaPisProprio', e.target.value)}
+                        placeholder="0.65"
+                        mono
+                      />
+                      <p className="text-xs text-slate-400 mt-0.5">Lucro Presumido: 0,65%</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">
+                        COFINS Próprio (%) <span className="text-blue-500">prestador</span>
+                      </label>
+                      <Inp
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={f.aliquotaCofinsProprio}
+                        onChange={e => set('aliquotaCofinsProprio', e.target.value)}
+                        placeholder="3"
+                        mono
+                      />
+                      <p className="text-xs text-slate-400 mt-0.5">Lucro Presumido: 3,00%</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400 -mt-1">
+                    Usados para deduzir a base IBS/CBS — são os tributos do próprio prestador (regime tributário), <strong>não</strong> retenções do tomador.
+                  </p>
                   {/* Split IBS UF / Município */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>

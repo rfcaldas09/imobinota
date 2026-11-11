@@ -174,12 +174,15 @@ async function handle(event) {
     const alqIbsMun = parseFloat(profile?.aliquota_ibs_mun || 0)
     const nfseCst   = profile?.nfse_cst || ''
     if (alqCbs > 0 && nfseCst && fields.valorBruto > 0) {
-      // Base líquida: Valor Bruto − ISS − PIS − COFINS (orientação contábil LC 214/2025)
+      // Base líquida: Valor Bruto − ISS − PIS Próprio − COFINS Próprio (LC 214/2025)
+      // Usa alíquotas do próprio prestador (regime tributário), não retenções do tomador
+      const pisProprio    = parseFloat(profile?.aliquota_pis_proprio    || 0)
+      const cofinsProprio = parseFloat(profile?.aliquota_cofins_proprio || 0)
       const base = parseFloat((
-        (fields.valorBruto  || 0)
-        - (fields.valorIss  || 0)
-        - (fields.pis       || 0)
-        - (fields.cofins    || 0)
+        (fields.valorBruto || 0)
+        - (fields.valorIss || 0)
+        - (fields.valorBruto || 0) * pisProprio    / 100
+        - (fields.valorBruto || 0) * cofinsProprio / 100
       ).toFixed(2))
       fields.ibsBase      = base
       fields.cbs          = parseFloat((base * alqCbs    / 100).toFixed(2))

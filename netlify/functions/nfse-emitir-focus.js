@@ -54,7 +54,7 @@ async function handle(event) {
     `nfse_municipio_ibge,nfse_municipio_nome,nfse_codigo_servico,nfse_desc_servico,` +
     `nfse_ultimo_numero,focus_token,focus_token_prod,focus_homologacao,focus_nfse_legado,` +
     `nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,` +
-    `regime_tributario,aliquota_iss,nfse_nbs,nfse_cst,nfse_cindop,nfse_cclasstrib,aliquota_cbs,aliquota_ibs,aliquota_ibs_uf,aliquota_ibs_mun`
+    `regime_tributario,aliquota_iss,nfse_nbs,nfse_cst,nfse_cindop,nfse_cclasstrib,aliquota_cbs,aliquota_ibs,aliquota_ibs_uf,aliquota_ibs_mun,aliquota_pis_proprio,aliquota_cofins_proprio`
   )
   if (!profRes.ok) throw new Error(`Erro ao buscar perfil: ${profRes.status}`)
   const profiles = await profRes.json()
@@ -133,14 +133,17 @@ async function handle(event) {
   const aliquota      = parseFloat((p.aliquota_iss || '2').toString().replace(',', '.'))
   const valorIss      = parseFloat((valorServicos * aliquota / 100).toFixed(2))
 
-  // Base IBS/CBS líquida: Valor Bruto − ISS − PIS − COFINS do regime atual (LC 214/2025)
-  // Referência: orientação do contador — Base IBS/CBS = VL Total NFS-e − ISS − PIS − COFINS
-  const _r            = cobData.retencoes || {}
+  // Base IBS/CBS líquida: Valor Bruto − ISS − PIS Próprio − COFINS Próprio (LC 214/2025)
+  // PIS/COFINS Próprio = alíquotas do REGIME TRIBUTÁRIO do PRESTADOR (ex: LP = 0,65% + 3,00%)
+  // NÃO são as retenções do tomador — independe de haver ou não retenção na fonte.
+  const _r              = cobData.retencoes || {}
+  const pisProprio      = parseFloat(p.aliquota_pis_proprio    || 0)
+  const cofinsProprio   = parseFloat(p.aliquota_cofins_proprio || 0)
   const baseIbsCbs    = parseFloat((
     valorServicos
     - valorIss
-    - (_r.pPIS    ? valorServicos * _r.pPIS    / 100 : 0)
-    - (_r.pCOFINS ? valorServicos * _r.pCOFINS / 100 : 0)
+    - valorServicos * pisProprio    / 100
+    - valorServicos * cofinsProprio / 100
   ).toFixed(2))
 
   // ISS retido
@@ -534,10 +537,12 @@ async function handle(event) {
       aliqCbs:    aliquotaCbs,
       aliqIbsUf:  aliquotaIbsUf,
       aliqIbsMun: aliquotaIbsMun,
-      cst:       nfseCst       || null,
-      classTrib: nfseCclasstrib || null,
-      indOp:     nfseCindop    || null,
-      nbs:       nbsCode       || null,
+      cst:          nfseCst        || null,
+      classTrib:    nfseCclasstrib || null,
+      indOp:        nfseCindop     || null,
+      nbs:          nbsCode        || null,
+      pisProprio,
+      cofinsProprio,
     }
   }
 
