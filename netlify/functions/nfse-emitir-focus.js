@@ -187,9 +187,14 @@ async function handle(event) {
   // ibs_uf_aliquota: aliquotaIbsUf, ibs_uf_valor: parseFloat(...),
   // ibs_mun_aliquota: aliquotaIbsMun, ibs_mun_valor: parseFloat(...), etc.
   // Campos IBS/CBS — formato LEGADO (AtendeNet / São José-SC).
-  // DIAGNÓSTICO CONCLUÍDO: ibs_uf_aliquota popula <pAliqEfetUF> corretamente.
-  // ibs_uf_valor NÃO deve ser enviado — cria segundo <uf> sem <pAliqEfetUF> → XSD Error 1871.
-  // ibs_mun_aliquota e ibs_mun_valor OK para <mun>.
+  // Diagnóstico em andamento — campos confirmados/suspeitos:
+  //   CONFIRMADO OK : ibs_uf_aliquota → <pAliqEfetUF>
+  //   CONFIRMADO OK : ibs_mun_aliquota + ibs_mun_valor → <mun>
+  //   CONFIRMADO OK : cbs_aliquota + cbs_valor
+  //   CONFIRMADO OK : ibs_cbs_* (situacao, classificacao, base, municipio)
+  //   SUSPEITO DIAG2: ibs_valor_total (pode criar <uf><vIBSUF> sem <pAliqEfetUF>)
+  //   SUSPEITO DIAG2: ibs_cbs_valor_total (mapeamento desconhecido)
+  // DIAG2: removendo ibs_valor_total e ibs_cbs_valor_total para isolar causa.
   const ibsCbsLegado = hasRtFields ? {
     ibs_cbs_situacao_tributaria:         nfseCst,
     ...(nfseCclasstrib ? { ibs_cbs_classificacao_tributaria: nfseCclasstrib } : {}),
@@ -202,8 +207,8 @@ async function handle(event) {
     ibs_uf_aliquota:  aliquotaIbsUf,   // → <pAliqEfetUF> (SEM ibs_uf_valor)
     ibs_mun_aliquota: aliquotaIbsMun,
     ibs_mun_valor:    parseFloat((valorServicos * aliquotaIbsMun / 100).toFixed(2)),
-    ibs_valor_total:  parseFloat((valorServicos * aliquotaIbs / 100).toFixed(2)),
-    ibs_cbs_valor_total: valorServicos,  // vTotNF = vLiq em 2026
+    // ibs_valor_total:     REMOVIDO DIAG2 — suspeito de criar <uf> sem <pAliqEfetUF>
+    // ibs_cbs_valor_total: REMOVIDO DIAG2 — mapeamento desconhecido
   } : {}
 
   // Campos IBS/CBS — formato NACIONAL (/nfsen):
