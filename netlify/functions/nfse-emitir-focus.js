@@ -209,11 +209,12 @@ async function handle(event) {
     ibs_uf_aliquota_efetiva:  aliquotaIbsUf,   // em 2026: efetiva = nominal (sem redução)
     ibs_mun_aliquota:         aliquotaIbsMun,
     ibs_mun_aliquota_efetiva: aliquotaIbsMun,  // em 2026: efetiva = nominal
-    ibs_mun_valor:            parseFloat((valorServicos * aliquotaIbsMun / 100).toFixed(2)),
+    ibs_valor_total:          parseFloat((valorServicos * (aliquotaIbsUf + aliquotaIbsMun) / 100).toFixed(2)), // → <vIBSTot>
     cbs_aliquota:             aliquotaCbs,
     cbs_aliquota_efetiva:     aliquotaCbs,      // em 2026: efetiva = nominal
-    cbs_valor:                parseFloat((valorServicos * aliquotaCbs / 100).toFixed(2)),
-    ibs_cbs_valor_total:      valorServicos,    // vTotNF = vLiq em 2026
+    // cbs_valor REMOVIDO: Focus gera <gCBS><vCBS> mas AtendeNet só aceita gCBSCredPres/vDifCBS dentro de <gCBS>
+    // AtendeNet calcula <vCBS> internamente a partir de pAliqEfetCBS × vBC
+    ibs_cbs_valor_total:      valorServicos,    // → <vTotNF> = vLiq em 2026
   } : {}
 
   // Campos IBS/CBS — formato NACIONAL (/nfsen):
@@ -258,6 +259,9 @@ async function handle(event) {
       optante_simples_nacional: isSimples,
       incentivador_cultural:    false,
       regime_especial_tributacao: isSimples ? 6 : undefined, // 6 = ME/EPP Simples Nacional
+      // Reforma Tributária — campos raiz exigidos pelo bloco IBSCBS de metadados
+      // finalidade_emissao gera <finNFSe> que o AtendeNet espera ANTES de <cIndOp>
+      ...(hasRtFields ? { finalidade_emissao: 0, consumidor_final: 0 } : {}),
 
       // ─ Prestador ─
       prestador: {
