@@ -105,6 +105,7 @@ async function handle(event) {
       if (!cobData.cpf   && cd.cpf)   cobData.cpf       = cd.cpf
       if (!cobData.email && cd.email) cobData.email      = cd.email
       if (cd.tomadorEnd)              cobData.tomadorEnd = cd.tomadorEnd
+      if (cd.ibsCbs)                  cobData.ibsCbs     = cd.ibsCbs
     } catch (_) { /* JSON inválido — ignora */ }
   }
 
@@ -140,6 +141,22 @@ async function handle(event) {
   if (em.discriminacao_servico) cobData.discriminacao = em.discriminacao_servico
 
   const fields  = extrairCamposPdf(em.xml_nfse || '', cobData, profile)
+
+  // IBS/CBS overlay — sistemas legado (AtendeNet) não incluem os valores no XML de retorno.
+  // Os valores calculados na emissão ficam salvos em cob_data_json.ibsCbs.
+  if (cobData.ibsCbs) {
+    const ic = cobData.ibsCbs
+    if (!fields.cbs          && ic.cbs)       fields.cbs          = ic.cbs
+    if (!fields.ibsEstadual  && ic.ibsUf)     fields.ibsEstadual  = ic.ibsUf
+    if (!fields.ibsMunicipal && ic.ibsMun)    fields.ibsMunicipal = ic.ibsMun
+    if (!fields.ibsBase      && ic.base)      fields.ibsBase      = ic.base
+    if (!fields.totalIbsCbs  && ic.total)     fields.totalIbsCbs  = ic.total
+    if (!fields.codigoNbs    && ic.nbs)       fields.codigoNbs    = ic.nbs
+    if (!fields.codigoCST    && ic.cst)       fields.codigoCST    = ic.cst
+    if (!fields.codigoClassTrib && ic.classTrib) fields.codigoClassTrib = ic.classTrib
+    if (!fields.indicadorOp  && ic.indOp)     fields.indicadorOp  = ic.indOp
+  }
+
   // sobrescreve com dados diretos da emissão (mais confiáveis que o XML)
   // Prioridade: número oficial do SEFIN > número sequencial interno (numero_dps)
   if (em.numero_nfse)       fields.numero = em.numero_nfse
