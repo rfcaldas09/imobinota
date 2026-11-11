@@ -133,6 +133,16 @@ async function handle(event) {
   const aliquota      = parseFloat((p.aliquota_iss || '2').toString().replace(',', '.'))
   const valorIss      = parseFloat((valorServicos * aliquota / 100).toFixed(2))
 
+  // Base IBS/CBS líquida: Valor Bruto − ISS − PIS − COFINS do regime atual (LC 214/2025)
+  // Referência: orientação do contador — Base IBS/CBS = VL Total NFS-e − ISS − PIS − COFINS
+  const _r            = cobData.retencoes || {}
+  const baseIbsCbs    = parseFloat((
+    valorServicos
+    - valorIss
+    - (_r.pPIS    ? valorServicos * _r.pPIS    / 100 : 0)
+    - (_r.pCOFINS ? valorServicos * _r.pCOFINS / 100 : 0)
+  ).toFixed(2))
+
   // ISS retido
   const issRetido = (cobData.retencoes?.tpRetISSQN || 1) === 2
 
@@ -203,7 +213,7 @@ async function handle(event) {
     ...(nfseCclasstrib ? { ibs_cbs_classificacao_tributaria: nfseCclasstrib } : {}),
     ...(nfseCindop     ? { codigo_indicador_operacao:        nfseCindop     } : {}),
     ...(nbsCode        ? { codigo_nbs: nbsCode }                               : {}),
-    ibs_cbs_base_calculo:                valorServicos,
+    ibs_cbs_base_calculo:                baseIbsCbs,
     ibs_cbs_codigo_municipio_incidencia: ibge7,
     ibs_uf_aliquota:          aliquotaIbsUf,
     ibs_uf_aliquota_efetiva:  aliquotaIbsUf,   // em 2026: efetiva = nominal (sem redução)
@@ -514,12 +524,12 @@ async function handle(event) {
   // Persiste valores IBS/CBS calculados no cobData → lido pelo PDF (legado não inclui no XML)
   if (hasRtFields) {
     cobData.ibsCbs = {
-      base:      valorServicos,
-      cbs:       parseFloat((valorServicos * aliquotaCbs   / 100).toFixed(2)),
-      ibsUf:     parseFloat((valorServicos * aliquotaIbsUf / 100).toFixed(2)),
-      ibsMun:    parseFloat((valorServicos * aliquotaIbsMun / 100).toFixed(2)),
-      // total = IBS (UF + Mun) + CBS
-      total:     parseFloat((valorServicos * (aliquotaIbsUf + aliquotaIbsMun + aliquotaCbs) / 100).toFixed(2)),
+      base:      baseIbsCbs,
+      cbs:       parseFloat((baseIbsCbs * aliquotaCbs   / 100).toFixed(2)),
+      ibsUf:     parseFloat((baseIbsCbs * aliquotaIbsUf / 100).toFixed(2)),
+      ibsMun:    parseFloat((baseIbsCbs * aliquotaIbsMun / 100).toFixed(2)),
+      // total = IBS (UF + Mun) + CBS aplicados sobre a base líquida
+      total:     parseFloat((baseIbsCbs * (aliquotaIbsUf + aliquotaIbsMun + aliquotaCbs) / 100).toFixed(2)),
       // Alíquotas salvas para exibição no PDF (evita R$0,00 sem contexto em notas pequenas)
       aliqCbs:    aliquotaCbs,
       aliqIbsUf:  aliquotaIbsUf,

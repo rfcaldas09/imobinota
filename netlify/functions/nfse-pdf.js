@@ -174,12 +174,18 @@ async function handle(event) {
     const alqIbsMun = parseFloat(profile?.aliquota_ibs_mun || 0)
     const nfseCst   = profile?.nfse_cst || ''
     if (alqCbs > 0 && nfseCst && fields.valorBruto > 0) {
-      const base = fields.valorBruto
+      // Base líquida: Valor Bruto − ISS − PIS − COFINS (orientação contábil LC 214/2025)
+      const base = parseFloat((
+        (fields.valorBruto  || 0)
+        - (fields.valorIss  || 0)
+        - (fields.pis       || 0)
+        - (fields.cofins    || 0)
+      ).toFixed(2))
       fields.ibsBase      = base
       fields.cbs          = parseFloat((base * alqCbs    / 100).toFixed(2))
       fields.ibsEstadual  = parseFloat((base * alqIbsUf  / 100).toFixed(2))
       fields.ibsMunicipal = parseFloat((base * alqIbsMun / 100).toFixed(2))
-      fields.totalIbsCbs  = parseFloat((base * (alqIbsUf + alqIbsMun) / 100).toFixed(2))
+      fields.totalIbsCbs  = parseFloat((base * (alqIbsUf + alqIbsMun + alqCbs) / 100).toFixed(2))
       if (!fields.codigoCST)       fields.codigoCST       = nfseCst
       if (!fields.codigoClassTrib) fields.codigoClassTrib = profile?.nfse_cclasstrib || ''
       if (!fields.indicadorOp)     fields.indicadorOp     = profile?.nfse_cindop     || ''
