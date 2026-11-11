@@ -172,9 +172,10 @@ async function handle(event) {
   // NBS sem pontos (formato numérico puro esperado pela Focus NFe)
   const nbsCode = (p.nfse_nbs || cobData.codigoNbs || '').replace(/\./g, '')
 
-  // Campos IBS/CBS para o bloco "servico" (legado) ou nível raiz (nacional)
-  // vTotNF = vLiq em 2026 (IBS/CBS "por dentro", sem acréscimo ao valor total)
-  const ibsCbsServico = hasRtFields ? {
+  // Campos IBS/CBS — formato LEGADO (AtendeNet): envia alíquotas e valores explicitamente.
+  // ibs_uf_aliquota/valor omitidos: NFS-e de serviços é 100% municipal (ISS → IBS Mun).
+  // Enviar uf_aliquota=0 cria <UF> no XML sem <pAliqEfetUF>, gerando XSD Error 1871.
+  const ibsCbsLegado = hasRtFields ? {
     ibs_cbs_situacao_tributaria:         nfseCst,
     ...(nfseCclasstrib ? { ibs_cbs_classificacao_tributaria: nfseCclasstrib } : {}),
     ...(nfseCindop     ? { codigo_indicador_operacao:        nfseCindop     } : {}),
@@ -183,16 +184,22 @@ async function handle(event) {
     ibs_cbs_codigo_municipio_incidencia: ibge7,
     cbs_aliquota:  aliquotaCbs,
     cbs_valor:     parseFloat((valorServicos * aliquotaCbs / 100).toFixed(2)),
-    // ibs_uf_aliquota / ibs_uf_valor omitidos propositalmente:
-    // para NFS-e de serviços, IBS é 100% municipal (substitui ISS).
-    // Enviar alíquota UF = 0 cria o elemento <UF> no XML, que exige
-    // <pAliqEfetUF> e gera XSD Error 1871.
     ibs_mun_aliquota: aliquotaIbs,
     ibs_mun_valor:    parseFloat((valorServicos * aliquotaIbs / 100).toFixed(2)),
     ibs_valor_total:  parseFloat((valorServicos * aliquotaIbs / 100).toFixed(2)),
     ibs_cbs_valor_total: valorServicos,  // vTotNF = vLiq em 2026
   } : {}
-  console.log('[nfse-emitir-focus] IBS/CBS:', hasRtFields ? `CBS=${aliquotaCbs}% IBS=${aliquotaIbs}%` : 'não configurado')
+
+  // Campos IBS/CBS — formato NACIONAL (/nfsen): só códigos de classificação.
+  // O SEFIN calcula alíquotas/valores internamente usando o cadastro da empresa.
+  // Campos de alíquota/valor não existem no schema do /nfsen e geram XSD Error 1871.
+  const ibsCbsNacional = hasRtFields ? {
+    ibs_cbs_situacao_tributaria:    nfseCst,
+    ...(nfseCclasstrib ? { ibs_cbs_classificacao_tributaria: nfseCclasstrib } : {}),
+    ...(nfseCindop     ? { codigo_indicador_operacao:        nfseCindop     } : {}),
+  } : {}
+
+  console.log('[nfse-emitir-focus] IBS/CBS:', hasRtFields ? `CST=${nfseCst} CBS=${aliquotaCbs}% IBS=${aliquotaIbs}%` : 'não configurado')
 
   // ── Decide modo: legado (/nfse) ou nacional (/nfsen) ─────────
   const nfseIsLegado = !!p.focus_nfse_legado
@@ -268,8 +275,8 @@ async function handle(event) {
         ...(ret.pCSLL   ? { valor_csll:  parseFloat((valorServicos * ret.pCSLL   / 100).toFixed(2)) } : {}),
         ...(ret.pPIS    ? { valor_pis:   parseFloat((valorServicos * ret.pPIS    / 100).toFixed(2)) } : {}),
         ...(ret.pCOFINS ? { valor_cofins: parseFloat((valorServicos * ret.pCOFINS / 100).toFixed(2)) } : {}),
-        // Reforma Tributária (IBS/CBS) — Lucro Real/Presumido obrigatório a partir de 01/10/2026
-        ...ibsCbsServico,
+        // Reforma Tributária (IBS/CBS) — legado AtendeNet: alíquotas + valores explícitos
+        ...ibsCbsLegado,
       },
     }
 
@@ -333,8 +340,12 @@ async function handle(event) {
         return total > 0 ? { valor_csll: total } : {}
       })(),
       ...(ret.pINSS ? { valor_cp: parseFloat((valorServicos * ret.pINSS / 100).toFixed(2)) } : {}),
-      // Reforma Tributária (IBS/CBS) — Lucro Real/Presumido obrigatório a partir de 01/10/2026
-      ...ibsCbsServico,
+      // Reforma Tributária (IBS/CBS) — nacional: só códigos de classificação (sem alíquotas)
+      // Campos obrigatórios reforma tributária (DPS v2)
+      finalidade_emissao:   0,  // 0 = NFS-e regular
+      consumidor_final:     0,  // 0 = Não
+      indicador_destinatario: 0, // 0 = tomador = destinatário
+      ...ibsCbsNacional,
     }
   }
 
