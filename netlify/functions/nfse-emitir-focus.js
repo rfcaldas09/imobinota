@@ -518,7 +518,8 @@ async function handle(event) {
       cbs:       parseFloat((valorServicos * aliquotaCbs   / 100).toFixed(2)),
       ibsUf:     parseFloat((valorServicos * aliquotaIbsUf / 100).toFixed(2)),
       ibsMun:    parseFloat((valorServicos * aliquotaIbsMun / 100).toFixed(2)),
-      total:     parseFloat((valorServicos * aliquotaIbs   / 100).toFixed(2)),
+      // total = IBS (UF + Mun) + CBS — não só IBS
+      total:     parseFloat((valorServicos * (aliquotaIbsUf + aliquotaIbsMun + aliquotaCbs) / 100).toFixed(2)),
       cst:       nfseCst       || null,
       classTrib: nfseCclasstrib || null,
       indOp:     nfseCindop    || null,

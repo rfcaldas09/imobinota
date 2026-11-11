@@ -150,7 +150,11 @@ async function handle(event) {
     if (!fields.ibsEstadual  && ic.ibsUf)     fields.ibsEstadual  = ic.ibsUf
     if (!fields.ibsMunicipal && ic.ibsMun)    fields.ibsMunicipal = ic.ibsMun
     if (!fields.ibsBase      && ic.base)      fields.ibsBase      = ic.base
-    if (!fields.totalIbsCbs  && ic.total)     fields.totalIbsCbs  = ic.total
+    // total: prefere ic.total mas recalcula somando componentes se vier zerado
+    if (!fields.totalIbsCbs) {
+      const sumTotal = parseFloat(((ic.cbs || 0) + (ic.ibsUf || 0) + (ic.ibsMun || 0)).toFixed(2))
+      fields.totalIbsCbs = sumTotal || ic.total || 0
+    }
     if (!fields.codigoNbs    && ic.nbs)       fields.codigoNbs    = ic.nbs
     if (!fields.codigoCST    && ic.cst)       fields.codigoCST    = ic.cst
     if (!fields.codigoClassTrib && ic.classTrib) fields.codigoClassTrib = ic.classTrib

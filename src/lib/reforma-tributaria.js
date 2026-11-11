@@ -38,37 +38,46 @@ export const CST_OPTIONS = [
 // Fonte: AnexoVII-IndOp_IBSCBS_V1.00.00 (SEFIN/CGNFS-e)
 // Códigos extraídos do AnexoVIII (correlação LC116 × NBS × IndOp)
 export const CINDOP_OPTIONS = [
-  // ── Serviços prestados PRESENCIALMENTE sobre a pessoa (art. 11, LC 214/2025)
-  { value: '030101', label: '030101 — Serviço prestado fisicamente sobre a pessoa ou fruído presencialmente por PF — Local: estabelecimento do fornecedor' },
-  { value: '030104', label: '030104 — Serviço prestado fisicamente sobre a pessoa (clínica/hospital/educação) — Local: onde ocorre o atendimento' },
+  // ── Serviços prestados FISICAMENTE sobre a pessoa (inc. III, art. 11, LC 214/2025)
+  // Local: onde ocorre a prestação física do serviço
+  { value: '030101', label: '030101 — Serviço prestado fisicamente sobre a pessoa — Local: estabelecimento do fornecedor' },
+  { value: '030104', label: '030104 — Serviço prestado fisicamente sobre a pessoa — Local: endereço diverso (fornecedor/adquirente/destinatário)' },
 
-  // ── Bens imóveis (locação, cessão, arrendamento)
-  { value: '020101', label: '020101 — Bens imóveis — Locação / cessão onerosa / arrendamento (tipo I)' },
-  { value: '020201', label: '020201 — Bens imóveis — Locação / cessão onerosa / arrendamento (tipo II)' },
+  // ── Bens imóveis (inc. II, art. 11, LC 214/2025)
+  // Local: onde o imóvel está situado
+  { value: '020101', label: '020101 — Bem imóvel / bem imaterial relacionado a imóvel (operação onerosa) — Localidade do imóvel' },
+  { value: '020201', label: '020201 — Serviço prestado fisicamente sobre bem imóvel — Localidade do imóvel' },
 
-  // ── Eventos, espetáculos, entretenimento (presencial)
-  { value: '040101', label: '040101 — Espetáculos, eventos, atividades de entretenimento — Presencial' },
+  // ── Eventos, espetáculos, entretenimento presenciais (inc. IV-a, art. 11)
+  { value: '040101', label: '040101 — Evento / espetáculo / atividade de entretenimento presencial — Local do evento' },
 
-  // ── Demais serviços não especificados em outros indicadores, ou art. 11 III prestados à distância
-  // (código residual — cobre consultoria, arquitetura, serviços intelectuais em geral)
-  { value: '100301', label: '100301 — Demais serviços / prestados à distância — Domicílio do adquirente no país' },
+  // ── Serviços físicos sobre bem MÓVEL (inc. III-b / art. 11, LC 214/2025)
+  // Inclui: suporte técnico em TI, manutenção de equipamentos, reparos etc.
+  // Válido para NBS 1.1501.30.00 (suporte TI) + LC 116 item 01.07 — Anexo VIII
+  { value: '050101', label: '050101 — Serviço prestado fisicamente sobre bem móvel — Local: estabelecimento do fornecedor' },
+  { value: '050104', label: '050104 — Serviço prestado fisicamente sobre bem móvel — Local: endereço diverso (fornecedor/adquirente/destinatário)' },
 
-  // ── Bens imateriais / direitos (domicílio do adquirente)
-  { value: '100501', label: '100501 — Bens imateriais / direitos / licenças de software — Domicílio do adquirente' },
+  // ── Demais serviços / serviços à distância (inc. IV, art. 11)
+  // Código residual — cobre consultoria, serviços intelectuais, TI remoto etc.
+  { value: '100301', label: '100301 — Demais serviços / serviços à distância — Domicílio principal do adquirente no país' },
 
-  // ── Serviços agropecuários / insumos
-  { value: '050101', label: '050101 — Serviços agropecuários e aquícolas — Insumos (tipo I)' },
-  { value: '050104', label: '050104 — Serviços profissionais / agropecuários — Estabelecimento ou domicílio do tomador' },
+  // ── Fornecimento integralmente via bem intangível (software, direitos, licenças)
+  { value: '100501', label: '100501 — Fornecimento integralmente via bem intangível (software / direitos / licenças) — Domicílio principal do adquirente' },
 
-  // ── Exportação de serviços
-  { value: '070100', label: '070100 — Exportação de serviços — Tomador no exterior' },
+  // ── Serviços sobre pessoa / fruídos presencialmente — domicílio do adquirente
+  { value: '100101', label: '100101 — Serviço sobre a pessoa ou fruído presencialmente — Domicílio principal do adquirente' },
 
-  // ── Regimes específicos
-  { value: '050100', label: '050100 — Simples Nacional — DASMEI (alíquota fixa)' },
-  { value: '050201', label: '050201 — Simples Nacional — Tributação unificada (sublimite)' },
-  { value: '060101', label: '060101 — Profissionais liberais (Dec-lei 406/68) — Tributação por valor fixo' },
-  { value: '080101', label: '080101 — Construção civil — Serviço com ou sem material' },
-  { value: '100101', label: '100101 — Zona Franca de Manaus / Área de Livre Comércio' },
+  // ── Exportação de serviços (tomador no exterior)
+  { value: '070101', label: '070101 — Exportação de serviços (transporte de carga) — Endereço de entrega no exterior' },
+
+  // ── Serviços portuários
+  { value: '050201', label: '050201 — Serviços portuários — Local da prestação' },
+
+  // ── Transporte de passageiros
+  { value: '060101', label: '060101 — Serviço de transporte de passageiros — Local de início do transporte' },
+
+  // ── Construção civil / exploração de via
+  { value: '080101', label: '080101 — Serviço de exploração de via / construção civil — Local da prestação (proporcional ao território)' },
 ];
 
 // Mapeamento de CST antigo (2 dígitos) → CST novo (3 dígitos)
