@@ -209,11 +209,14 @@ async function handle(event) {
     ibs_uf_aliquota_efetiva:  aliquotaIbsUf,   // em 2026: efetiva = nominal (sem redução)
     ibs_mun_aliquota:         aliquotaIbsMun,
     ibs_mun_aliquota_efetiva: aliquotaIbsMun,  // em 2026: efetiva = nominal
-    // ibs_valor_total REMOVIDO: Focus gera <gIBS><vIBSTot> mas AtendeNet espera gIBSCredPres/gIBSUFTot dentro de <gIBS>
-    // Sem créditos/diferimentos não há <gIBS> — AtendeNet aceita totCIBS sem ele
+    // Hipótese: enviar ibs_uf_valor + ibs_mun_valor + cbs_valor juntos aciona geração
+    // de <gTribRegular> pelo Focus, que engloba <gIBS> e <gCBS> como esperado pelo AtendeNet.
+    // Com apenas cbs_valor isolado, Focus gerava <gCBS> direto em <totCIBS>, gerando erro XSD.
+    ibs_uf_valor:             parseFloat((valorServicos * aliquotaIbsUf  / 100).toFixed(2)), // → <gTribRegular><gIBS><gIBSUFTot><vIBSUF>
+    ibs_mun_valor:            parseFloat((valorServicos * aliquotaIbsMun / 100).toFixed(2)), // → <gTribRegular><gIBS><gIBSMunTot><vIBSMun>
     cbs_aliquota:             aliquotaCbs,
     cbs_aliquota_efetiva:     aliquotaCbs,      // em 2026: efetiva = nominal
-    cbs_valor:                parseFloat((valorServicos * aliquotaCbs / 100).toFixed(2)), // → <gCBS><vCBS> (obrigatório no totCIBS)
+    cbs_valor:                parseFloat((valorServicos * aliquotaCbs / 100).toFixed(2)),    // → <gTribRegular><gCBS><vCBS>
     ibs_cbs_valor_total:      valorServicos,    // → <vTotNF> = vLiq em 2026
   } : {}
 
