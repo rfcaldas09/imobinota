@@ -209,11 +209,11 @@ async function handle(event) {
     ibs_uf_aliquota_efetiva:  aliquotaIbsUf,   // em 2026: efetiva = nominal (sem redução)
     ibs_mun_aliquota:         aliquotaIbsMun,
     ibs_mun_aliquota_efetiva: aliquotaIbsMun,  // em 2026: efetiva = nominal
-    ibs_valor_total:          parseFloat((valorServicos * (aliquotaIbsUf + aliquotaIbsMun) / 100).toFixed(2)), // → <vIBSTot>
+    // ibs_valor_total REMOVIDO: Focus gera <gIBS><vIBSTot> mas AtendeNet espera gIBSCredPres/gIBSUFTot dentro de <gIBS>
+    // Sem créditos/diferimentos não há <gIBS> — AtendeNet aceita totCIBS sem ele
     cbs_aliquota:             aliquotaCbs,
     cbs_aliquota_efetiva:     aliquotaCbs,      // em 2026: efetiva = nominal
-    // cbs_valor REMOVIDO: Focus gera <gCBS><vCBS> mas AtendeNet só aceita gCBSCredPres/vDifCBS dentro de <gCBS>
-    // AtendeNet calcula <vCBS> internamente a partir de pAliqEfetCBS × vBC
+    cbs_valor:                parseFloat((valorServicos * aliquotaCbs / 100).toFixed(2)), // → <gCBS><vCBS> (obrigatório no totCIBS)
     ibs_cbs_valor_total:      valorServicos,    // → <vTotNF> = vLiq em 2026
   } : {}
 
