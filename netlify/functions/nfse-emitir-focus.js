@@ -54,7 +54,7 @@ async function handle(event) {
     `nfse_municipio_ibge,nfse_municipio_nome,nfse_codigo_servico,nfse_desc_servico,` +
     `nfse_ultimo_numero,focus_token,focus_token_prod,focus_homologacao,focus_nfse_legado,` +
     `nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,` +
-    `regime_tributario,aliquota_iss,nfse_nbs,nfse_cst,nfse_cindop,nfse_cclasstrib,aliquota_cbs,aliquota_ibs`
+    `regime_tributario,aliquota_iss,nfse_nbs,nfse_cst,nfse_cindop,nfse_cclasstrib,aliquota_cbs,aliquota_ibs,aliquota_ibs_uf,aliquota_ibs_mun`
   )
   if (!profRes.ok) throw new Error(`Erro ao buscar perfil: ${profRes.status}`)
   const profiles = await profRes.json()
@@ -167,21 +167,36 @@ async function handle(event) {
   const nfseCclasstrib = p.nfse_cclasstrib || null
   const aliquotaCbs   = parseFloat(p.aliquota_cbs || 0)
   const aliquotaIbs   = parseFloat(p.aliquota_ibs || 0)
+  // Split IBS entre UF (1/6) e Município (5/6) — lê do perfil, cai no cálculo se não cadastrado
+  const aliquotaIbsUf  = parseFloat(p.aliquota_ibs_uf  != null ? p.aliquota_ibs_uf  : (aliquotaIbs / 6).toFixed(4))
+  const aliquotaIbsMun = parseFloat(p.aliquota_ibs_mun != null ? p.aliquota_ibs_mun : (aliquotaIbs * 5 / 6).toFixed(4))
   // Envia IBS/CBS apenas se CST estiver configurado no perfil
   const hasRtFields   = !!(nfseCst && aliquotaCbs > 0)
   // NBS sem pontos (formato numérico puro esperado pela Focus NFe)
   const nbsCode = (p.nfse_nbs || cobData.codigoNbs || '').replace(/\./g, '')
 
-  // Campos IBS/CBS — formato LEGADO (AtendeNet):
-  // DESABILITADO — XSD Error 1871: AtendeNet exige <uf><pAliqEfetUF/></uf> ANTES de <mun>
-  // no schema DPS. Ao omitir ibs_uf_aliquota, Focus não gera <uf> e retorna:
-  // "Element 'mun': This element is not expected. Expected is ( uf )"
-  // Ao enviar ibs_uf_aliquota=0, Focus gera <uf> mas sem o filho <pAliqEfetUF>, causando:
-  // "Element 'uf': Missing child element(s). Expected is ( pAliqEfetUF )"
-  // Não foi encontrado campo Focus que force <pAliqEfetUF>0</pAliqEfetUF> quando valor=0.
-  // Período de graça autoriza NFS-e sem IBS/CBS até 31/12/2026 (não-conformidade permitida).
-  // TODO: reabilitar quando Focus documentar o campo correto para alíquota UF=0 em serviços.
-  const ibsCbsLegado = {} // desabilitado — ver comentário acima
+  // Campos IBS/CBS — formato LEGADO (AtendeNet).
+  // IBS 0.1% split: 1/6 → Estado (pAliqEfetUF), 5/6 → Município (pAliqEfetMun).
+  // Ex. Focus docs: ibs_uf_aliquota=0.0167, ibs_mun_aliquota=0.0833 (soma=0.1).
+  // O AtendeNet XSD exige <uf> ANTES de <mun>; como uf_aliquota > 0, o Focus gera
+  // <uf><pAliqEfetUF>valor</pAliqEfetUF></uf> corretamente.
+  // aliquotaIbsUf e aliquotaIbsMun vêm do perfil (calculados acima com fallback automático).
+  const ibsCbsLegado = hasRtFields ? {
+    ibs_cbs_situacao_tributaria:         nfseCst,
+    ...(nfseCclasstrib ? { ibs_cbs_classificacao_tributaria: nfseCclasstrib } : {}),
+    ...(nfseCindop     ? { codigo_indicador_operacao:        nfseCindop     } : {}),
+    ...(nbsCode        ? { codigo_nbs: nbsCode }                               : {}),
+    ibs_cbs_base_calculo:                valorServicos,
+    ibs_cbs_codigo_municipio_incidencia: ibge7,
+    cbs_aliquota:     aliquotaCbs,
+    cbs_valor:        parseFloat((valorServicos * aliquotaCbs / 100).toFixed(2)),
+    ibs_uf_aliquota:  aliquotaIbsUf,
+    ibs_uf_valor:     parseFloat((valorServicos * aliquotaIbsUf / 100).toFixed(2)),
+    ibs_mun_aliquota: aliquotaIbsMun,
+    ibs_mun_valor:    parseFloat((valorServicos * aliquotaIbsMun / 100).toFixed(2)),
+    ibs_valor_total:  parseFloat((valorServicos * aliquotaIbs / 100).toFixed(2)),
+    ibs_cbs_valor_total: valorServicos,  // vTotNF = vLiq em 2026
+  } : {}
 
   // Campos IBS/CBS — formato NACIONAL (/nfsen):
   // Quando CST é enviado, o Focus gera <Mun> no XML mas não gera <UF> antes,

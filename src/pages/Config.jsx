@@ -458,8 +458,10 @@ export default function Config() {
           cst:        (() => { const s = data?.nfse_cst || ''; return s.length === 2 ? (CST_MIGRATION[s] || s) : s; })(),
           cindop:     data?.nfse_cindop     || '',
           cclasstrib: data?.nfse_cclasstrib || '',
-          aliquotaCbs: data?.aliquota_cbs != null ? String(data.aliquota_cbs) : '0.9',
-          aliquotaIbs: data?.aliquota_ibs != null ? String(data.aliquota_ibs) : '0.1',
+          aliquotaCbs:    data?.aliquota_cbs    != null ? String(data.aliquota_cbs)    : '0.9',
+          aliquotaIbs:    data?.aliquota_ibs    != null ? String(data.aliquota_ibs)    : '0.1',
+          aliquotaIbsUf:  data?.aliquota_ibs_uf  != null ? String(data.aliquota_ibs_uf)  : '0.0167',
+          aliquotaIbsMun: data?.aliquota_ibs_mun != null ? String(data.aliquota_ibs_mun) : '0.0833',
           logradouro:    data?.nfse_logradouro      || '',
           numeroEnd:     data?.nfse_numero_end      || '',
           bairro:        data?.nfse_bairro          || '',
@@ -593,8 +595,10 @@ export default function Config() {
         nfse_cst:        f.cst        || null,
         nfse_cindop:     f.cindop     || null,
         nfse_cclasstrib: f.cclasstrib || null,
-        aliquota_cbs:    parseFloat((f.aliquotaCbs || '0.9').replace(',', '.')) || null,
-        aliquota_ibs:    parseFloat((f.aliquotaIbs || '0.1').replace(',', '.')) || null,
+        aliquota_cbs:     parseFloat((f.aliquotaCbs    || '0.9').replace(',', '.'))    || null,
+        aliquota_ibs:     parseFloat((f.aliquotaIbs    || '0.1').replace(',', '.'))    || null,
+        aliquota_ibs_uf:  parseFloat((f.aliquotaIbsUf  || '0.0167').replace(',', '.')) || null,
+        aliquota_ibs_mun: parseFloat((f.aliquotaIbsMun || '0.0833').replace(',', '.')) || null,
         // Focus NFe
         nfse_provedor:     f.nfseProvedor,
         focus_token:       f.nfseProvedor === 'focus' ? (f.focusToken.trim() || null) : null,
@@ -1209,18 +1213,57 @@ export default function Config() {
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 block mb-1">
-                        Alíquota IBS (%) <span className="text-violet-500">municipal</span>
+                        Alíquota IBS total (%)
                       </label>
                       <Inp
                         type="number"
                         step="0.01"
                         min="0"
                         value={f.aliquotaIbs}
-                        onChange={e => set('aliquotaIbs', e.target.value)}
+                        onChange={e => {
+                          const v = e.target.value
+                          const n = parseFloat(v.replace(',', '.')) || 0
+                          set('aliquotaIbs', v)
+                          set('aliquotaIbsUf',  String(parseFloat((n / 6).toFixed(4))))
+                          set('aliquotaIbsMun', String(parseFloat((n * 5 / 6).toFixed(4))))
+                        }}
                         placeholder="0.1"
                         mono
                       />
                       <p className="text-xs text-slate-400 mt-0.5">Padrão 0,1% em 2026</p>
+                    </div>
+                  </div>
+                  {/* Split IBS UF / Município */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">
+                        IBS UF (%) <span className="text-slate-400">1/6 do total</span>
+                      </label>
+                      <Inp
+                        type="number"
+                        step="0.0001"
+                        min="0"
+                        value={f.aliquotaIbsUf}
+                        onChange={e => set('aliquotaIbsUf', e.target.value)}
+                        placeholder="0.0167"
+                        mono
+                      />
+                      <p className="text-xs text-slate-400 mt-0.5">Parte estadual do IBS</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">
+                        IBS Município (%) <span className="text-slate-400">5/6 do total</span>
+                      </label>
+                      <Inp
+                        type="number"
+                        step="0.0001"
+                        min="0"
+                        value={f.aliquotaIbsMun}
+                        onChange={e => set('aliquotaIbsMun', e.target.value)}
+                        placeholder="0.0833"
+                        mono
+                      />
+                      <p className="text-xs text-slate-400 mt-0.5">Parte municipal do IBS</p>
                     </div>
                   </div>
                 </div>
