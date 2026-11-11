@@ -157,6 +157,28 @@ async function handle(event) {
     if (!fields.indicadorOp  && ic.indOp)     fields.indicadorOp  = ic.indOp
   }
 
+  // Fallback IBS/CBS por perfil — para notas emitidas antes do ibsCbs ser salvo no cobData.
+  // Só preenche se nenhum valor IBS/CBS veio do XML ou do cobData.ibsCbs,
+  // e o perfil tem CST configurado (indica município com IBS/CBS ativo).
+  if (!fields.cbs && !fields.ibsEstadual && !fields.ibsMunicipal) {
+    const alqCbs    = parseFloat(profile?.aliquota_cbs    || 0)
+    const alqIbsUf  = parseFloat(profile?.aliquota_ibs_uf  || 0)
+    const alqIbsMun = parseFloat(profile?.aliquota_ibs_mun || 0)
+    const nfseCst   = profile?.nfse_cst || ''
+    if (alqCbs > 0 && nfseCst && fields.valorBruto > 0) {
+      const base = fields.valorBruto
+      fields.ibsBase      = base
+      fields.cbs          = parseFloat((base * alqCbs    / 100).toFixed(2))
+      fields.ibsEstadual  = parseFloat((base * alqIbsUf  / 100).toFixed(2))
+      fields.ibsMunicipal = parseFloat((base * alqIbsMun / 100).toFixed(2))
+      fields.totalIbsCbs  = parseFloat((base * (alqIbsUf + alqIbsMun) / 100).toFixed(2))
+      if (!fields.codigoCST)       fields.codigoCST       = nfseCst
+      if (!fields.codigoClassTrib) fields.codigoClassTrib = profile?.nfse_cclasstrib || ''
+      if (!fields.indicadorOp)     fields.indicadorOp     = profile?.nfse_cindop     || ''
+      if (!fields.codigoNbs)       fields.codigoNbs       = String(profile?.nfse_nbs || '').replace(/\./g, '')
+    }
+  }
+
   // sobrescreve com dados diretos da emissão (mais confiáveis que o XML)
   // Prioridade: número oficial do SEFIN > número sequencial interno (numero_dps)
   if (em.numero_nfse)       fields.numero = em.numero_nfse
