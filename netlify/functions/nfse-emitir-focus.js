@@ -183,8 +183,10 @@ async function handle(event) {
     ibs_cbs_codigo_municipio_incidencia: ibge7,
     cbs_aliquota:  aliquotaCbs,
     cbs_valor:     parseFloat((valorServicos * aliquotaCbs / 100).toFixed(2)),
-    ibs_uf_aliquota:  0,
-    ibs_uf_valor:     0,
+    // ibs_uf_aliquota / ibs_uf_valor omitidos propositalmente:
+    // para NFS-e de serviços, IBS é 100% municipal (substitui ISS).
+    // Enviar alíquota UF = 0 cria o elemento <UF> no XML, que exige
+    // <pAliqEfetUF> e gera XSD Error 1871.
     ibs_mun_aliquota: aliquotaIbs,
     ibs_mun_valor:    parseFloat((valorServicos * aliquotaIbs / 100).toFixed(2)),
     ibs_valor_total:  parseFloat((valorServicos * aliquotaIbs / 100).toFixed(2)),
