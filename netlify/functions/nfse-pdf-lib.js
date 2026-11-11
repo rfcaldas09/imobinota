@@ -342,12 +342,21 @@ function renderPage(doc, f, qrBuf) {
   lbl('Código Class. Trib.:',   PL + 255, ry, 85); val(f.codigoClassTrib || '', PL + 342, ry, 100)
   ry += 13
 
+  // Formata alíquota para label: 0.9 → "(0,90%)", 0.0167 → "(0,0167%)"
+  const fmtAliq = (a) => {
+    if (a == null) return ''
+    // Remove zeros à direita mas mantém ao menos 2 casas decimais
+    const s = parseFloat(a).toFixed(4).replace(/\.?0+$/, '')
+    const decimals = s.includes('.') ? s.split('.')[1].length : 0
+    const display = parseFloat(a).toFixed(Math.max(2, decimals))
+    return ` (${display.replace('.', ',')}%)`
+  }
   const IC = [
-    { lbl: 'Base Cálculo IBS/CBS', val: fmtVal(f.ibsBase || 0),     w: 108 },
-    { lbl: 'CBS',                  val: fmtVal(f.cbs || 0),          w: 107 },
-    { lbl: 'IBS Estadual',         val: fmtVal(f.ibsEstadual || 0),  w: 108 },
-    { lbl: 'IBS Municipal',        val: fmtVal(f.ibsMunicipal || 0), w: 108 },
-    { lbl: 'Total IBS/CBS',        val: fmtVal(f.totalIbsCbs || 0),  w: 108 },
+    { lbl: 'Base Cálculo IBS/CBS',                       val: fmtVal(f.ibsBase || 0),     w: 108 },
+    { lbl: `CBS${fmtAliq(f.aliqCbs)}`,                   val: fmtVal(f.cbs || 0),          w: 107 },
+    { lbl: `IBS Estadual${fmtAliq(f.aliqIbsUf)}`,        val: fmtVal(f.ibsEstadual || 0),  w: 108 },
+    { lbl: `IBS Municipal${fmtAliq(f.aliqIbsMun)}`,      val: fmtVal(f.ibsMunicipal || 0), w: 108 },
+    { lbl: 'Total IBS/CBS',                              val: fmtVal(f.totalIbsCbs || 0),  w: 108 },
   ]
   cx = PL
   for (let i = 0; i < IC.length; i++) {

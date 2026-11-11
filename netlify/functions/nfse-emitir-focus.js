@@ -518,8 +518,12 @@ async function handle(event) {
       cbs:       parseFloat((valorServicos * aliquotaCbs   / 100).toFixed(2)),
       ibsUf:     parseFloat((valorServicos * aliquotaIbsUf / 100).toFixed(2)),
       ibsMun:    parseFloat((valorServicos * aliquotaIbsMun / 100).toFixed(2)),
-      // total = IBS (UF + Mun) + CBS — não só IBS
+      // total = IBS (UF + Mun) + CBS
       total:     parseFloat((valorServicos * (aliquotaIbsUf + aliquotaIbsMun + aliquotaCbs) / 100).toFixed(2)),
+      // Alíquotas salvas para exibição no PDF (evita R$0,00 sem contexto em notas pequenas)
+      aliqCbs:    aliquotaCbs,
+      aliqIbsUf:  aliquotaIbsUf,
+      aliqIbsMun: aliquotaIbsMun,
       cst:       nfseCst       || null,
       classTrib: nfseCclasstrib || null,
       indOp:     nfseCindop    || null,

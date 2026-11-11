@@ -159,6 +159,10 @@ async function handle(event) {
     if (!fields.codigoCST    && ic.cst)       fields.codigoCST    = ic.cst
     if (!fields.codigoClassTrib && ic.classTrib) fields.codigoClassTrib = ic.classTrib
     if (!fields.indicadorOp  && ic.indOp)     fields.indicadorOp  = ic.indOp
+    // Alíquotas para exibição nos labels do PDF (ex: "CBS (0,90%)")
+    if (ic.aliqCbs    != null) fields.aliqCbs    = ic.aliqCbs
+    if (ic.aliqIbsUf  != null) fields.aliqIbsUf  = ic.aliqIbsUf
+    if (ic.aliqIbsMun != null) fields.aliqIbsMun = ic.aliqIbsMun
   }
 
   // Fallback IBS/CBS por perfil — para notas emitidas antes do ibsCbs ser salvo no cobData.
