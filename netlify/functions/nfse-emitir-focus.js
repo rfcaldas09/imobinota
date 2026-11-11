@@ -175,28 +175,46 @@ async function handle(event) {
   // NBS sem pontos (formato numérico puro esperado pela Focus NFe)
   const nbsCode = (p.nfse_nbs || cobData.codigoNbs || '').replace(/\./g, '')
 
-  // Campos IBS/CBS — formato LEGADO (AtendeNet).
-  // IBS 0.1% split: 1/6 → Estado (pAliqEfetUF), 5/6 → Município (pAliqEfetMun).
-  // Ex. Focus docs: ibs_uf_aliquota=0.0167, ibs_mun_aliquota=0.0833 (soma=0.1).
-  // O AtendeNet XSD exige <uf> ANTES de <mun>; como uf_aliquota > 0, o Focus gera
-  // <uf><pAliqEfetUF>valor</pAliqEfetUF></uf> corretamente.
-  // aliquotaIbsUf e aliquotaIbsMun vêm do perfil (calculados acima com fallback automático).
-  const ibsCbsLegado = hasRtFields ? {
+  // Campos IBS/CBS — formato LEGADO (AtendeNet / São José-SC):
+  // DESABILITADO — aguardando resposta do suporte Focus.
+  // ibs_uf_aliquota=0.0167 e ibs_uf_valor=3.13 chegam corretos no payload,
+  // mas o Focus gera <uf><vIBSUF>3.13</vIBSUF></uf> sem <pAliqEfetUF>.
+  // O AtendeNet XSD exige <pAliqEfetUF> como primeiro filho de <uf>.
+  // Hipótese: o campo que popula <pAliqEfetUF> no AtendeNet tem outro nome
+  // (talvez ibs_uf_perc_efetivo ou similar) não documentado publicamente.
+  // TODO: reabilitar após confirmação do campo correto com suporte Focus.
+  // Payload pronto — reabilitar quando Focus confirmar campo para <pAliqEfetUF>:
+  // ibs_uf_aliquota: aliquotaIbsUf, ibs_uf_valor: parseFloat(...),
+  // ibs_mun_aliquota: aliquotaIbsMun, ibs_mun_valor: parseFloat(...), etc.
+  // ── DIAGNÓSTICO: testar qual campo mapeia para <pAliqEfetUF> ──────
+  // Trocar DIAG_MODE abaixo e reimplantar para cada teste:
+  //   'off'  → {} vazio (padrão seguro, cliente emite sem IBS/CBS)
+  //   'A'    → só ibs_uf_aliquota s/ ibs_uf_valor
+  //            Se erro mudar → aliquota cria <uf> mas falta <vIBSUF>
+  //            Se mesmo erro "pAliqEfetUF missing" → aliquota NÃO mapeia pAliqEfetUF
+  //   'B'    → só ibs_uf_valor s/ ibs_uf_aliquota
+  //            Se erro "mun not expected" → valor não cria <uf> e aliquota é o gatilho
+  //            Se erro "pAliqEfetUF missing" → valor cria <uf>, aliquota não popula pAliqEfetUF
+  //   'full' → ambos (último estado testado — erro "pAliqEfetUF missing" confirmado)
+  const DIAG_MODE = 'off'
+  const ibsCbsLegado = !hasRtFields || DIAG_MODE === 'off' ? {} : {
     ibs_cbs_situacao_tributaria:         nfseCst,
     ...(nfseCclasstrib ? { ibs_cbs_classificacao_tributaria: nfseCclasstrib } : {}),
     ...(nfseCindop     ? { codigo_indicador_operacao:        nfseCindop     } : {}),
     ...(nbsCode        ? { codigo_nbs: nbsCode }                               : {}),
     ibs_cbs_base_calculo:                valorServicos,
     ibs_cbs_codigo_municipio_incidencia: ibge7,
-    cbs_aliquota:     aliquotaCbs,
-    cbs_valor:        parseFloat((valorServicos * aliquotaCbs / 100).toFixed(2)),
-    ibs_uf_aliquota:  aliquotaIbsUf,
-    ibs_uf_valor:     parseFloat((valorServicos * aliquotaIbsUf / 100).toFixed(2)),
+    cbs_aliquota: aliquotaCbs,
+    cbs_valor:    parseFloat((valorServicos * aliquotaCbs / 100).toFixed(2)),
+    // UF:
+    ...(DIAG_MODE === 'A' || DIAG_MODE === 'full' ? { ibs_uf_aliquota: aliquotaIbsUf  } : {}),
+    ...(DIAG_MODE === 'B' || DIAG_MODE === 'full' ? { ibs_uf_valor: parseFloat((valorServicos * aliquotaIbsUf / 100).toFixed(2)) } : {}),
+    // Mun:
     ibs_mun_aliquota: aliquotaIbsMun,
     ibs_mun_valor:    parseFloat((valorServicos * aliquotaIbsMun / 100).toFixed(2)),
     ibs_valor_total:  parseFloat((valorServicos * aliquotaIbs / 100).toFixed(2)),
-    ibs_cbs_valor_total: valorServicos,  // vTotNF = vLiq em 2026
-  } : {}
+    ibs_cbs_valor_total: valorServicos,
+  }
 
   // Campos IBS/CBS — formato NACIONAL (/nfsen):
   // Quando CST é enviado, o Focus gera <Mun> no XML mas não gera <UF> antes,
