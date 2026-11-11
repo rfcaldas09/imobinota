@@ -187,17 +187,22 @@ async function handle(event) {
   // ibs_uf_aliquota: aliquotaIbsUf, ibs_uf_valor: parseFloat(...),
   // ibs_mun_aliquota: aliquotaIbsMun, ibs_mun_valor: parseFloat(...), etc.
   // Campos IBS/CBS — formato LEGADO (AtendeNet / São José-SC).
-  // Diagnóstico concluído (3 tentativas):
-  //   CONFIRMADO OK : ibs_uf_aliquota → <pAliqEfetUF>  (Mode A, nota 4079 emitida)
-  //   CONFIRMADO OK : cbs_aliquota + cbs_valor
-  //   CONFIRMADO OK : ibs_cbs_situacao_tributaria, classificacao, base, municipio
-  //   CONFIRMADO OK : codigo_nbs, codigo_indicador_operacao
-  //   CONFIRMADO QUEBRA: ibs_uf_valor → cria <uf> extra sem <pAliqEfetUF>
-  //   CONFIRMADO QUEBRA: ibs_mun_aliquota e/ou ibs_mun_valor → mesmo XSD Error 1871
-  //   NÃO TESTADO: ibs_valor_total, ibs_cbs_valor_total (removidos preventivamente)
-  // Conclusão: o Focus Legado só aceita ibs_uf_aliquota para IBS — sem campos de <mun>.
-  // O AtendeNet calcula a parte municipal internamente (ou ignora para 2026).
-  // IBS Municipal é calculado no PDF via fallback do perfil.
+  //
+  // DIAGNÓSTICO CONCLUÍDO (via XML retornado pelo Focus em 11/11/2026):
+  //   - ibs_uf_aliquota → gera <pIBSUF> (alíquota nominal UF), NÃO <pAliqEfetUF>
+  //   - cbs_aliquota    → gera seção <fed> incompatível com XSD AtendeNet
+  //                       XSD espera <mun> após <uf>, não <fed>
+  //   - cbs_valor       → gera <gCBS> em posição incorreta (XSD espera <vTotNF>)
+  //   - Quando CBS presente, o XSD passa a exigir <pAliqEfetUF> em <uf>, que o Focus não gera
+  //
+  // CONFIRMADO QUE FUNCIONA (nota 4079):
+  //   - ibs_uf_aliquota SOZINHO (sem CBS) → <uf><pIBSUF> aceito pelo AtendeNet
+  //   - ibs_cbs_situacao_tributaria, classificacao, base, municipio → segundo bloco IBSCBS OK
+  //   - codigo_nbs, codigo_indicador_operacao → OK
+  //
+  // CONCLUSÃO: o Focus Legado NÃO suporta CBS (cbs_aliquota/cbs_valor) para AtendeNet São José.
+  //   CBS fica NO PDF via fallback do perfil (cob_data_json.ibsCbs), mas NÃO vai para o XML oficial.
+  //   Abrir ticket no Focus para suporte a pAliqEfetUF e estrutura mun/fed correta.
   const ibsCbsLegado = hasRtFields ? {
     ibs_cbs_situacao_tributaria:         nfseCst,
     ...(nfseCclasstrib ? { ibs_cbs_classificacao_tributaria: nfseCclasstrib } : {}),
@@ -205,11 +210,10 @@ async function handle(event) {
     ...(nbsCode        ? { codigo_nbs: nbsCode }                               : {}),
     ibs_cbs_base_calculo:                valorServicos,
     ibs_cbs_codigo_municipio_incidencia: ibge7,
-    cbs_aliquota:     aliquotaCbs,
-    cbs_valor:        parseFloat((valorServicos * aliquotaCbs / 100).toFixed(2)),
-    ibs_uf_aliquota:  aliquotaIbsUf,   // → <pAliqEfetUF> CONFIRMADO OK
-    // ibs_mun_aliquota: REMOVIDO — causa XSD Error 1871 no Focus Legado
-    // ibs_mun_valor:    REMOVIDO — causa XSD Error 1871 no Focus Legado
+    ibs_uf_aliquota:  aliquotaIbsUf,   // → <pIBSUF> (nominal UF); sem CBS — ver comentário acima
+    // cbs_aliquota: REMOVIDO — gera <fed> incompatível com XSD AtendeNet (esperado <mun>)
+    // cbs_valor:    REMOVIDO — gera <gCBS> em posição incorreta
+    // ibs_mun_*:    REMOVIDOS — causam XSD Error 1871
   } : {}
 
   // Campos IBS/CBS — formato NACIONAL (/nfsen):
@@ -406,9 +410,15 @@ async function handle(event) {
     const statusRes  = await focusFetch(`${focusConsultaBase}?completo=1`, 'GET', null, focusToken)
     const statusBody = await statusRes.json()
     console.log(`[nfse-emitir-focus] poll ${i + 1}/${MAX_POLLS} | status:`, statusBody.status)
-    // Log diagnóstico: mostra TODAS as chaves retornadas pelo Focus com completo=1
+    // Log diagnóstico: mostra TODAS as chaves e XML gerado pelo Focus com completo=1
     if (statusBody.status === 'erro_autorizacao' || statusBody.status === 'erro') {
       console.error('[nfse-emitir-focus] body completo:', JSON.stringify(statusBody))
+      // Log do XML gerado pelo Focus (essencial para diagnosticar XSD errors)
+      const xmlKeys = ['xml', 'xml_envio', 'xml_dps', 'xml_nfse', 'xml_completo', 'xml_enviado', 'xml_sefin']
+      for (const k of xmlKeys) {
+        if (statusBody[k]) console.error(`[nfse-emitir-focus] ${k}:`, statusBody[k])
+      }
+      console.error('[nfse-emitir-focus] todas as chaves do body:', Object.keys(statusBody).join(', '))
     }
     focusStatus = statusBody.status || focusStatus
     focusData   = statusBody
