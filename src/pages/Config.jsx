@@ -458,6 +458,8 @@ export default function Config() {
           cst:        (() => { const s = data?.nfse_cst || ''; return s.length === 2 ? (CST_MIGRATION[s] || s) : s; })(),
           cindop:     data?.nfse_cindop     || '',
           cclasstrib: data?.nfse_cclasstrib || '',
+          aliquotaCbs: data?.aliquota_cbs != null ? String(data.aliquota_cbs) : '0.9',
+          aliquotaIbs: data?.aliquota_ibs != null ? String(data.aliquota_ibs) : '0.1',
           logradouro:    data?.nfse_logradouro      || '',
           numeroEnd:     data?.nfse_numero_end      || '',
           bairro:        data?.nfse_bairro          || '',
@@ -586,11 +588,13 @@ export default function Config() {
         nfse_bairro:         f.bairro,
         nfse_cep:            f.cep,
         nfse_ultimo_numero:  Math.max(0, parseInt(f.numeroInicial || '1', 10) - 1),
-        // Reforma Tributária (IBS/CBS) — informativos
+        // Reforma Tributária (IBS/CBS)
         nfse_nbs:        f.nbs        || null,
         nfse_cst:        f.cst        || null,
         nfse_cindop:     f.cindop     || null,
         nfse_cclasstrib: f.cclasstrib || null,
+        aliquota_cbs:    parseFloat((f.aliquotaCbs || '0.9').replace(',', '.')) || null,
+        aliquota_ibs:    parseFloat((f.aliquotaIbs || '0.1').replace(',', '.')) || null,
         // Focus NFe
         nfse_provedor:     f.nfseProvedor,
         focus_token:       f.nfseProvedor === 'focus' ? (f.focusToken.trim() || null) : null,
@@ -1184,6 +1188,40 @@ export default function Config() {
                         <option key={o.value} value={o.value}>{o.label}</option>
                       ))}
                     </select>
+                  </div>
+
+                  {/* Alíquotas CBS / IBS */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">
+                        Alíquota CBS (%) <span className="text-violet-500">federal</span>
+                      </label>
+                      <Inp
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={f.aliquotaCbs}
+                        onChange={e => set('aliquotaCbs', e.target.value)}
+                        placeholder="0.9"
+                        mono
+                      />
+                      <p className="text-xs text-slate-400 mt-0.5">Padrão 0,9% em 2026</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">
+                        Alíquota IBS (%) <span className="text-violet-500">municipal</span>
+                      </label>
+                      <Inp
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={f.aliquotaIbs}
+                        onChange={e => set('aliquotaIbs', e.target.value)}
+                        placeholder="0.1"
+                        mono
+                      />
+                      <p className="text-xs text-slate-400 mt-0.5">Padrão 0,1% em 2026</p>
+                    </div>
                   </div>
                 </div>
               </div>

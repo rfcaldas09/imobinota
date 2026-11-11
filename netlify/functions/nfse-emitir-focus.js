@@ -54,7 +54,7 @@ async function handle(event) {
     `nfse_municipio_ibge,nfse_municipio_nome,nfse_codigo_servico,nfse_desc_servico,` +
     `nfse_ultimo_numero,focus_token,focus_token_prod,focus_homologacao,focus_nfse_legado,` +
     `nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,` +
-    `regime_tributario,aliquota_iss,nfse_nbs`
+    `regime_tributario,aliquota_iss,nfse_nbs,nfse_cst,nfse_cindop,nfse_cclasstrib,aliquota_cbs,aliquota_ibs`
   )
   if (!profRes.ok) throw new Error(`Erro ao buscar perfil: ${profRes.status}`)
   const profiles = await profRes.json()
@@ -158,6 +158,40 @@ async function handle(event) {
 
   const isSimples = p.regime_tributario === 'simples'
 
+  // ── Reforma Tributária (IBS/CBS) ──────────────────────────────
+  // Obrigatório: Lucro Real/Presumido a partir de 01/10/2026 (LC 116 geral)
+  //              Lucro Real/Presumido 1.05 a partir de 01/12/2026
+  //              Simples Nacional a partir de 01/01/2027
+  const nfseCst       = p.nfse_cst       || null
+  const nfseCindop    = p.nfse_cindop    || null
+  const nfseCclasstrib = p.nfse_cclasstrib || null
+  const aliquotaCbs   = parseFloat(p.aliquota_cbs || 0)
+  const aliquotaIbs   = parseFloat(p.aliquota_ibs || 0)
+  // Envia IBS/CBS apenas se CST estiver configurado no perfil
+  const hasRtFields   = !!(nfseCst && aliquotaCbs > 0)
+  // NBS sem pontos (formato numérico puro esperado pela Focus NFe)
+  const nbsCode = (p.nfse_nbs || cobData.codigoNbs || '').replace(/\./g, '')
+
+  // Campos IBS/CBS para o bloco "servico" (legado) ou nível raiz (nacional)
+  // vTotNF = vLiq em 2026 (IBS/CBS "por dentro", sem acréscimo ao valor total)
+  const ibsCbsServico = hasRtFields ? {
+    ibs_cbs_situacao_tributaria:         nfseCst,
+    ...(nfseCclasstrib ? { ibs_cbs_classificacao_tributaria: nfseCclasstrib } : {}),
+    ...(nfseCindop     ? { codigo_indicador_operacao:        nfseCindop     } : {}),
+    ...(nbsCode        ? { codigo_nbs: nbsCode }                               : {}),
+    ibs_cbs_base_calculo:                valorServicos,
+    ibs_cbs_codigo_municipio_incidencia: ibge7,
+    cbs_aliquota:  aliquotaCbs,
+    cbs_valor:     parseFloat((valorServicos * aliquotaCbs / 100).toFixed(2)),
+    ibs_uf_aliquota:  0,
+    ibs_uf_valor:     0,
+    ibs_mun_aliquota: aliquotaIbs,
+    ibs_mun_valor:    parseFloat((valorServicos * aliquotaIbs / 100).toFixed(2)),
+    ibs_valor_total:  parseFloat((valorServicos * aliquotaIbs / 100).toFixed(2)),
+    ibs_cbs_valor_total: valorServicos,  // vTotNF = vLiq em 2026
+  } : {}
+  console.log('[nfse-emitir-focus] IBS/CBS:', hasRtFields ? `CBS=${aliquotaCbs}% IBS=${aliquotaIbs}%` : 'não configurado')
+
   // ── Decide modo: legado (/nfse) ou nacional (/nfsen) ─────────
   const nfseIsLegado = !!p.focus_nfse_legado
   console.log('[nfse-emitir-focus] modo NFS-e:', nfseIsLegado ? 'LEGADO (/nfse)' : 'NACIONAL (/nfsen)')
@@ -232,6 +266,8 @@ async function handle(event) {
         ...(ret.pCSLL   ? { valor_csll:  parseFloat((valorServicos * ret.pCSLL   / 100).toFixed(2)) } : {}),
         ...(ret.pPIS    ? { valor_pis:   parseFloat((valorServicos * ret.pPIS    / 100).toFixed(2)) } : {}),
         ...(ret.pCOFINS ? { valor_cofins: parseFloat((valorServicos * ret.pCOFINS / 100).toFixed(2)) } : {}),
+        // Reforma Tributária (IBS/CBS) — Lucro Real/Presumido obrigatório a partir de 01/10/2026
+        ...ibsCbsServico,
       },
     }
 
@@ -295,6 +331,8 @@ async function handle(event) {
         return total > 0 ? { valor_csll: total } : {}
       })(),
       ...(ret.pINSS ? { valor_cp: parseFloat((valorServicos * ret.pINSS / 100).toFixed(2)) } : {}),
+      // Reforma Tributária (IBS/CBS) — Lucro Real/Presumido obrigatório a partir de 01/10/2026
+      ...ibsCbsServico,
     }
   }
 
