@@ -31,7 +31,7 @@ async function handle(event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Body inválido' }) }
   }
 
-  const { userId, emissaoId, boletoPdfBase64, boletoFilename, homologacao = false } = body
+  const { userId, emissaoId, boletoPdfBase64, boletoFilename, pixBrCode, homologacao = false } = body
   if (!userId || !emissaoId) {
     return { statusCode: 400, body: JSON.stringify({ error: 'userId e emissaoId são obrigatórios' }) }
   }
@@ -96,13 +96,14 @@ async function handle(event) {
     nfsePdfBase64, nfsePdfFilename,
     boletoPdfBase64: boletoPdfBase64 || null,
     boletoFilename:  boletoFilename  || null,
+    pixBrCode:       pixBrCode       || null,
     numeroNfse: em.numero_nfse || em.numero_dps || '',
   })
 
   return { statusCode: 200, body: JSON.stringify({ ok: true }) }
 }
 
-async function enviarEmail({ p, cobData, homologacao, nfsePdfBase64, nfsePdfFilename, boletoPdfBase64, boletoFilename, numeroNfse }) {
+async function enviarEmail({ p, cobData, homologacao, nfsePdfBase64, nfsePdfFilename, boletoPdfBase64, boletoFilename, pixBrCode, numeroNfse }) {
   const fromName = p.from_name || 'NotaFacil'
   const replyTo  = p.reply_to  || ''
   const subject  = p.email_subject || 'NFS-e {{mes}}/{{ano}}'
@@ -123,11 +124,27 @@ async function enviarEmail({ p, cobData, homologacao, nfsePdfBase64, nfsePdfFile
     '{{vencimento}}': '',
     '{{link_boleto}}': '',
     '{{nfse_numero}}': String(numeroNfse || ''),
+    '{{pix_codigo}}':  pixBrCode || '',
   }
   const applyVars = tpl => Object.entries(vars).reduce((s, [k, v]) => s.replaceAll(k, v), tpl)
   const subjectFinal = applyVars(subject)
   const bodyFinal    = applyVars(bodyTpl)
-  const bodyHtml     = bodyFinal.replace(/\n/g, '<br>')
+
+  // Bloco HTML extra com PIX copia-e-cola (inserido após o corpo se houver pixBrCode)
+  const pixHtmlBlock = pixBrCode
+    ? `<div style="margin-top:20px;padding:16px;background:#f0f4ff;border:1px solid #c7d2fe;border-radius:8px;font-family:sans-serif">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#3730a3">💸 Pagamento via PIX</p>
+        <p style="margin:0 0 6px;font-size:12px;color:#4b5563">Copie o código abaixo e cole no seu aplicativo de banco para pagar:</p>
+        <div style="background:#fff;border:1px solid #e0e7ff;border-radius:6px;padding:10px;word-break:break-all;font-family:monospace;font-size:11px;color:#1e1b4b;user-select:all">
+          ${pixBrCode}
+        </div>
+      </div>`
+    : ''
+
+  const bodyHtml     = bodyFinal.replace(/\n/g, '<br>') + pixHtmlBlock
+  const bodyFinalTxt = pixBrCode
+    ? bodyFinal + `\n\nPagamento via PIX — Código copia-e-cola:\n${pixBrCode}`
+    : bodyFinal
 
   const rawEmail = homologacao ? (replyTo || cobData.email || '') : (cobData.email || '')
   const toAddrs  = rawEmail.split(';').map(e => e.trim()).filter(Boolean)
@@ -153,7 +170,7 @@ async function enviarEmail({ p, cobData, homologacao, nfsePdfBase64, nfsePdfFile
       to:          toAddrs,
       subject:     subjectFinal,
       html:        `<div style="font-family:sans-serif;max-width:600px">${bodyHtml}</div>`,
-      text:        bodyFinal,
+      text:        bodyFinalTxt,
       attachments,
       ...(replyTo && !homologacao ? { reply_to: replyTo, cc: [replyTo] } : {}),
     }
@@ -186,7 +203,7 @@ async function enviarEmail({ p, cobData, homologacao, nfsePdfBase64, nfsePdfFile
       ...(replyTo && !homologacao ? { replyTo, cc: replyTo } : {}),
       subject:     subjectFinal,
       html:        `<div style="font-family:sans-serif;max-width:600px">${bodyHtml}</div>`,
-      text:        bodyFinal,
+      text:        bodyFinalTxt,
       attachments: nmAttachments,
     })
   }

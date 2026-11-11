@@ -1316,16 +1316,17 @@ function DocModal({ type, contract: c, onClose, onToast }) {
   const [nfseProvedor, setNfseProvedor]         = useState('sefin')
   const [focusHomologacao, setFocusHomologacao] = useState(false)
 
-  // Opção de gerar boleto + CNAB junto à NFS-e
-  const [gerarBoleto, setGerarBoleto]     = useState(true)
-  const [boletoContaId, setBoletoContaId] = useState('')
-  const [cnabContas, setCnabContas]       = useState([])
-  const [gerandoBoleto, setGerandoBoleto] = useState(false)
+  // Opção de pagamento junto à NFS-e: 'boleto' | 'pix' | 'none'
+  const [pagamentoOpcao, setPagamentoOpcao] = useState('boleto')
+  const [boletoContaId, setBoletoContaId]   = useState('')
+  const [cnabContas, setCnabContas]         = useState([])
+  const [pixKey, setPixKey]                 = useState('')
+  const [gerandoBoleto, setGerandoBoleto]   = useState(false)
 
   useEffect(() => {
     if (!user || isBoleto) return
     supabase.from('profiles')
-      .select('nfse_provedor, focus_homologacao, cnab_config')
+      .select('nfse_provedor, focus_homologacao, cnab_config, pix_key_recebimento')
       .eq('id', user.id)
       .single()
       .then(({ data }) => {
@@ -1335,6 +1336,11 @@ function DocModal({ type, contract: c, onClose, onToast }) {
         const contas = Array.isArray(raw) ? raw : (raw ? [raw] : [])
         setCnabContas(contas)
         if (contas.length > 0) setBoletoContaId(contas[0].id || '')
+        const pk = data?.pix_key_recebimento || ''
+        setPixKey(pk)
+        // Define opção padrão: boleto se tiver conta, pix se só tiver pix, nenhum se não tiver nada
+        if (contas.length === 0 && pk) setPagamentoOpcao('pix')
+        else if (contas.length === 0 && !pk) setPagamentoOpcao('none')
       })
   }, [user, isBoleto])
 
@@ -1396,16 +1402,18 @@ function DocModal({ type, contract: c, onClose, onToast }) {
         body: JSON.stringify({
           userId: user.id, cobId: null, cobData,
           homologacao: nfseProvedor === 'focus' ? focusHomologacao : false,
-          skipEmail: gerarBoleto, // se vai gerar boleto, o email será enviado depois com ambos os PDFs
+          skipEmail: pagamentoOpcao !== 'none', // email será enviado depois com boleto ou pix
         }),
       })
       const data = await res.json()
       if (res.ok && data.ok) {
         setNfseResult({ ok: true, numero: data.numeroNfse || data.numeroDps })
         onToast(`NFS-e ${data.numeroNfse || data.numeroDps || ''} emitida para ${c.tenant}`, 'success')
-        // Se opção de boleto marcada: gera CNAB+PDF e envia email com os dois anexos
-        if (gerarBoleto && data.emissaoId) {
+        // Pós-emissão: gera boleto ou PIX e envia email
+        if (pagamentoOpcao === 'boleto' && data.emissaoId) {
           await gerarBoletoEEmail(data.emissaoId, jwt)
+        } else if (pagamentoOpcao === 'pix' && data.emissaoId) {
+          await gerarPixEEmail(data.emissaoId, jwt)
         }
       } else {
         setNfseResult({ ok: false, erro: data.error || 'Erro desconhecido' })
@@ -1476,6 +1484,57 @@ function DocModal({ type, contract: c, onClose, onToast }) {
     } catch (e) {
       console.error('[DocModal] erro ao gerar boleto+email:', e)
       onToast('Erro ao gerar boleto: ' + e.message, 'error')
+    } finally {
+      setGerandoBoleto(false)
+    }
+  }
+
+  const gerarPixEEmail = async (emissaoId, jwt) => {
+    setGerandoBoleto(true)
+    const headers = { 'Content-Type': 'application/json', ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}) }
+    try {
+      // Calcula expiresIn em segundos até o vencimento + 3 dias de carência
+      let expiresIn = 30 * 24 * 3600
+      if (vencimentoBoleto) {
+        const due  = new Date(vencimentoBoleto + 'T23:59:59')
+        const secs = Math.floor((due - Date.now()) / 1000)
+        expiresIn  = Math.max(3 * 24 * 3600, secs + 3 * 24 * 3600)
+      }
+
+      // 1. Gera cobrança PIX via OpenPix
+      const pixRes = await fetch('/.netlify/functions/openpix-create-charge', {
+        method: 'POST', headers,
+        body: JSON.stringify({
+          value:         Math.round(c.value * 100),   // centavos
+          correlationID: emissaoId,
+          comment:       `NFS-e ${c.tenant}`.slice(0, 140),
+          clientPixKey:  pixKey,
+          expiresIn,
+        }),
+      })
+      const pixData = await pixRes.json()
+      if (!pixRes.ok || !pixData.ok) {
+        console.warn('[DocModal] falha ao gerar PIX:', pixData.error)
+        onToast('PIX não gerado: ' + (pixData.error || 'Erro desconhecido'), 'error')
+        return
+      }
+      const brCode = pixData.brCode || ''
+
+      // 2. Envia email com NFS-e + código PIX
+      const emailRes = await fetch('/.netlify/functions/nfse-email-boleto', {
+        method: 'POST', headers,
+        body: JSON.stringify({ userId: user.id, emissaoId, pixBrCode: brCode }),
+      })
+      if (!emailRes.ok) {
+        const ed = await emailRes.json()
+        console.warn('[DocModal] falha ao enviar email com PIX:', ed.error)
+        onToast('PIX gerado, mas houve falha ao enviar email', 'error')
+        return
+      }
+      onToast('PIX gerado e email enviado com sucesso!', 'success')
+    } catch (e) {
+      console.error('[DocModal] erro ao gerar pix+email:', e)
+      onToast('Erro ao gerar PIX: ' + e.message, 'error')
     } finally {
       setGerandoBoleto(false)
     }
@@ -1559,56 +1618,85 @@ function DocModal({ type, contract: c, onClose, onToast }) {
             </div>
           )}
 
-          {/* Data de vencimento + opção de boleto — apenas para NFS-e */}
+          {/* Data de vencimento + opção de pagamento — apenas para NFS-e */}
           {!isBoleto && !nfseResult?.ok && (
             <div className="mb-4 space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">
-                  Data de vencimento do boleto <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={vencimentoBoleto}
-                  onChange={e => setVencimentoBoleto(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                />
-                {!vencimentoBoleto && (
-                  <p className="text-xs text-red-400 mt-1">Informe a data de vencimento para gerar o boleto.</p>
-                )}
-              </div>
-
-              {/* Opção de gerar Boleto + CNAB (ZIP) e anexar ao email */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
-                <label className="flex items-start gap-2 cursor-pointer">
+              {pagamentoOpcao !== 'none' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">
+                    Data de vencimento <span className="text-red-500">*</span>
+                  </label>
                   <input
-                    type="checkbox"
-                    checked={gerarBoleto}
-                    onChange={e => setGerarBoleto(e.target.checked)}
-                    disabled={cnabContas.length === 0}
-                    className="mt-0.5 rounded accent-emerald-600"
+                    type="date"
+                    required
+                    value={vencimentoBoleto}
+                    onChange={e => setVencimentoBoleto(e.target.value)}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
                   />
+                  {!vencimentoBoleto && (
+                    <p className="text-xs text-red-400 mt-1">Informe a data de vencimento.</p>
+                  )}
+                </div>
+              )}
+
+              {/* Opções de pagamento: Nenhum / Boleto / PIX */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                <p className="text-xs font-semibold text-slate-500 mb-1">Opção de pagamento no e-mail</p>
+
+                {/* Nenhum */}
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="radio" name="pagamentoOpcao" value="none"
+                    checked={pagamentoOpcao === 'none'}
+                    onChange={() => setPagamentoOpcao('none')}
+                    className="mt-0.5 accent-slate-500"/>
                   <div>
-                    <span className="text-xs font-semibold text-slate-700">Gerar Boleto + CNAB (ZIP) e anexar ao e-mail</span>
+                    <span className="text-xs font-semibold text-slate-700">Só enviar a NFS-e</span>
+                    <p className="text-xs text-slate-400 mt-0.5">Email enviado apenas com o PDF da nota fiscal.</p>
+                  </div>
+                </label>
+
+                {/* Boleto */}
+                <label className={`flex items-start gap-2 ${cnabContas.length === 0 ? 'opacity-50' : 'cursor-pointer'}`}>
+                  <input type="radio" name="pagamentoOpcao" value="boleto"
+                    checked={pagamentoOpcao === 'boleto'}
+                    onChange={() => setPagamentoOpcao('boleto')}
+                    disabled={cnabContas.length === 0}
+                    className="mt-0.5 accent-emerald-600"/>
+                  <div>
+                    <span className="text-xs font-semibold text-slate-700">Boleto + CNAB (ZIP)</span>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Baixa o arquivo de remessa + PDF do boleto. O e-mail será enviado com os dois PDFs (NFS-e + boleto).
+                      Gera remessa CNAB + PDF do boleto. Email enviado com NFS-e + boleto.
+                      {cnabContas.length === 0 && <span className="text-amber-500"> Configure uma conta em Config → Integrações.</span>}
                     </p>
                   </div>
                 </label>
-                {cnabContas.length === 0 && (
-                  <p className="text-xs text-amber-500 mt-2">⚠️ Configure uma conta bancária em Configurações → Integrações para habilitar esta opção.</p>
-                )}
-                {gerarBoleto && cnabContas.length > 1 && (
+                {pagamentoOpcao === 'boleto' && cnabContas.length > 1 && (
                   <select
                     value={boletoContaId}
                     onChange={e => setBoletoContaId(e.target.value)}
-                    className="mt-2 w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                    className="ml-5 w-[calc(100%-1.25rem)] border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
                   >
                     {cnabContas.map(cc => (
                       <option key={cc.id} value={cc.id}>{cc.label || cc.banco}</option>
                     ))}
                   </select>
                 )}
+
+                {/* PIX */}
+                <label className={`flex items-start gap-2 ${!pixKey ? 'opacity-50' : 'cursor-pointer'}`}>
+                  <input type="radio" name="pagamentoOpcao" value="pix"
+                    checked={pagamentoOpcao === 'pix'}
+                    onChange={() => setPagamentoOpcao('pix')}
+                    disabled={!pixKey}
+                    className="mt-0.5 accent-indigo-600"/>
+                  <div>
+                    <span className="text-xs font-semibold text-slate-700">PIX de cobrança</span>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Gera QR code PIX via OpenPix. Email enviado com NFS-e + código PIX copia-e-cola.
+                      {!pixKey && <span className="text-amber-500"> Configure a chave PIX em Config → Integrações.</span>}
+                    </p>
+                  </div>
+                </label>
               </div>
             </div>
           )}
@@ -1617,7 +1705,11 @@ function DocModal({ type, contract: c, onClose, onToast }) {
             <div className={`mb-4 rounded-xl px-3 py-2.5 text-xs border ${nfseResult.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
               {nfseResult.ok
                 ? <>✅ NFS-e <strong>{nfseResult.numero}</strong> emitida com sucesso!
-                    {gerandoBoleto && <span className="ml-2 opacity-70">Gerando boleto e enviando e-mail…</span>}
+                    {gerandoBoleto && (
+                      <span className="ml-2 opacity-70">
+                        {pagamentoOpcao === 'pix' ? 'Gerando PIX e enviando e-mail…' : 'Gerando boleto e enviando e-mail…'}
+                      </span>
+                    )}
                   </>
                 : <>❌ {nfseResult.erro}</>
               }
@@ -1641,10 +1733,10 @@ function DocModal({ type, contract: c, onClose, onToast }) {
               </button>
             ) : (
               <button onClick={emitirNfse}
-                disabled={emitindo || gerandoBoleto || nfseResult?.ok || !vencimentoBoleto}
+                disabled={emitindo || gerandoBoleto || nfseResult?.ok || (pagamentoOpcao !== 'none' && !vencimentoBoleto)}
                 className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                 {gerandoBoleto
-                  ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Gerando boleto…</>
+                  ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> {pagamentoOpcao === 'pix' ? 'Gerando PIX…' : 'Gerando boleto…'}</>
                   : emitindo
                   ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Emitindo…</>
                   : nfseResult?.ok
