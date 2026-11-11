@@ -209,15 +209,16 @@ async function handle(event) {
     ibs_uf_aliquota_efetiva:  aliquotaIbsUf,   // em 2026: efetiva = nominal (sem redução)
     ibs_mun_aliquota:         aliquotaIbsMun,
     ibs_mun_aliquota_efetiva: aliquotaIbsMun,  // em 2026: efetiva = nominal
-    // Hipótese: enviar ibs_uf_valor + ibs_mun_valor + cbs_valor juntos aciona geração
-    // de <gTribRegular> pelo Focus, que engloba <gIBS> e <gCBS> como esperado pelo AtendeNet.
-    // Com apenas cbs_valor isolado, Focus gerava <gCBS> direto em <totCIBS>, gerando erro XSD.
-    ibs_uf_valor:             parseFloat((valorServicos * aliquotaIbsUf  / 100).toFixed(2)), // → <gTribRegular><gIBS><gIBSUFTot><vIBSUF>
-    ibs_mun_valor:            parseFloat((valorServicos * aliquotaIbsMun / 100).toFixed(2)), // → <gTribRegular><gIBS><gIBSMunTot><vIBSMun>
+    // Sem campos de valor: Focus não gera <totCIBS> e AtendeNet calcula internamente.
+    // Histórico de tentativas com campos de valor:
+    //   ibs_cbs_valor_total → <totCIBS><vTotNF> gerado, mas exige <gTribRegular> depois
+    //   cbs_valor → <totCIBS><gCBS> direto → erro "gCBS not expected, expected gTribRegular"
+    //   ibs_uf_valor + ibs_mun_valor + cbs_valor → <gIBS><gIBSUFTot> + <gCBS><vCBS> diretos
+    //     → erro "gIBSUFTot not expected (expected vIBSTot)" + "vCBS not expected (expected gCBSCredPres)"
+    // Focus não gera <gTribRegular> para AtendeNet legado — limitação confirmada.
+    // Sem esses campos, o bloco <totCIBS> não é gerado pelo Focus e o AtendeNet o calcula.
     cbs_aliquota:             aliquotaCbs,
     cbs_aliquota_efetiva:     aliquotaCbs,      // em 2026: efetiva = nominal
-    cbs_valor:                parseFloat((valorServicos * aliquotaCbs / 100).toFixed(2)),    // → <gTribRegular><gCBS><vCBS>
-    ibs_cbs_valor_total:      valorServicos,    // → <vTotNF> = vLiq em 2026
   } : {}
 
   // Campos IBS/CBS — formato NACIONAL (/nfsen):
