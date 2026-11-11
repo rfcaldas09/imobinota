@@ -172,32 +172,27 @@ async function handle(event) {
   // NBS sem pontos (formato numérico puro esperado pela Focus NFe)
   const nbsCode = (p.nfse_nbs || cobData.codigoNbs || '').replace(/\./g, '')
 
-  // Campos IBS/CBS — formato LEGADO (AtendeNet): envia alíquotas e valores explicitamente.
-  // ibs_uf_aliquota/valor omitidos: NFS-e de serviços é 100% municipal (ISS → IBS Mun).
-  // Enviar uf_aliquota=0 cria <UF> no XML sem <pAliqEfetUF>, gerando XSD Error 1871.
-  const ibsCbsLegado = hasRtFields ? {
-    ibs_cbs_situacao_tributaria:         nfseCst,
-    ...(nfseCclasstrib ? { ibs_cbs_classificacao_tributaria: nfseCclasstrib } : {}),
-    ...(nfseCindop     ? { codigo_indicador_operacao:        nfseCindop     } : {}),
-    ...(nbsCode        ? { codigo_nbs: nbsCode }                               : {}),
-    ibs_cbs_base_calculo:                valorServicos,
-    ibs_cbs_codigo_municipio_incidencia: ibge7,
-    cbs_aliquota:  aliquotaCbs,
-    cbs_valor:     parseFloat((valorServicos * aliquotaCbs / 100).toFixed(2)),
-    ibs_mun_aliquota: aliquotaIbs,
-    ibs_mun_valor:    parseFloat((valorServicos * aliquotaIbs / 100).toFixed(2)),
-    ibs_valor_total:  parseFloat((valorServicos * aliquotaIbs / 100).toFixed(2)),
-    ibs_cbs_valor_total: valorServicos,  // vTotNF = vLiq em 2026
-  } : {}
+  // Campos IBS/CBS — formato LEGADO (AtendeNet):
+  // DESABILITADO — XSD Error 1871: AtendeNet exige <uf><pAliqEfetUF/></uf> ANTES de <mun>
+  // no schema DPS. Ao omitir ibs_uf_aliquota, Focus não gera <uf> e retorna:
+  // "Element 'mun': This element is not expected. Expected is ( uf )"
+  // Ao enviar ibs_uf_aliquota=0, Focus gera <uf> mas sem o filho <pAliqEfetUF>, causando:
+  // "Element 'uf': Missing child element(s). Expected is ( pAliqEfetUF )"
+  // Não foi encontrado campo Focus que force <pAliqEfetUF>0</pAliqEfetUF> quando valor=0.
+  // Período de graça autoriza NFS-e sem IBS/CBS até 31/12/2026 (não-conformidade permitida).
+  // TODO: reabilitar quando Focus documentar o campo correto para alíquota UF=0 em serviços.
+  const ibsCbsLegado = {} // desabilitado — ver comentário acima
 
-  // Campos IBS/CBS — formato NACIONAL (/nfsen): só códigos de classificação.
-  // O SEFIN calcula alíquotas/valores internamente usando o cadastro da empresa.
-  // Campos de alíquota/valor não existem no schema do /nfsen e geram XSD Error 1871.
-  const ibsCbsNacional = hasRtFields ? {
-    ibs_cbs_situacao_tributaria:    nfseCst,
-    ...(nfseCclasstrib ? { ibs_cbs_classificacao_tributaria: nfseCclasstrib } : {}),
-    ...(nfseCindop     ? { codigo_indicador_operacao:        nfseCindop     } : {}),
-  } : {}
+  // Campos IBS/CBS — formato NACIONAL (/nfsen):
+  // Quando CST é enviado, o Focus gera <Mun> no XML mas não gera <UF> antes,
+  // causando XSD Error 1871 ("mun: This element is not expected. Expected is uf").
+  // Isso ocorre porque o schema DPS exige <UF><pAliqEfetUF/></UF> mesmo com
+  // alíquota 0, e o Focus só cria esse elemento se a empresa tiver IBS-UF
+  // cadastrado no sistema Focus (alíquota UF = 0 para serviços).
+  // Enquanto o cadastro da empresa no Focus não estiver completo com IBS-UF,
+  // os campos IBS/CBS no nacional ficam desabilitados para evitar rejeição.
+  // TODO: reabilitar quando empresa estiver configurada no Focus com IBS-UF=0.
+  const ibsCbsNacional = {} // desabilitado — ver comentário acima
 
   console.log('[nfse-emitir-focus] IBS/CBS:', hasRtFields ? `CST=${nfseCst} CBS=${aliquotaCbs}% IBS=${aliquotaIbs}%` : 'não configurado')
 
