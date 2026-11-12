@@ -569,6 +569,26 @@ export default function Config() {
         }
       }
     } else if (tab === 'fiscal') {
+      // ── Valida numeração RPS: impede resetar para número já utilizado ──
+      const novoUltimo = Math.max(0, parseInt(f.numeroInicial || '1', 10) - 1)
+      const { data: emissaoMax } = await supabase
+        .from('nfse_emissoes')
+        .select('numero_dps')
+        .eq('user_id', user.id)
+        .not('numero_dps', 'is', null)
+        .order('numero_dps', { ascending: false })
+        .limit(1)
+      const maxUsado = emissaoMax?.[0]?.numero_dps ?? 0
+      if (novoUltimo < maxUsado) {
+        setSaving(false)
+        alert(
+          `Número inicial inválido!\n\n` +
+          `O RPS ${maxUsado} já foi emitido com sucesso.\n` +
+          `O "Número inicial" deve ser ${maxUsado + 1} ou maior para evitar conflito com notas já emitidas.`
+        )
+        return
+      }
+
       const parseRet = v => {
         const n = parseFloat((v || '').replace(',', '.'))
         return isNaN(n) ? null : n

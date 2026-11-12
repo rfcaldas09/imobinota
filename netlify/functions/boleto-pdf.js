@@ -726,7 +726,7 @@ function drawBoletoViacredi(doc, b) {
   doc.font('Helvetica-Bold').fontSize(11).fillColor(DGRAY)
      .text(b.bankCode || '', ML + LOGO_W + 2, y + 11, { width: CODE_W - 4, align: 'center', lineBreak: false })
   vline(ML + LOGO_W + CODE_W, y, y + HDR_H)
-  doc.font('Courier-Bold').fontSize(9).fillColor(DGRAY)
+  doc.font('Courier-Bold').fontSize(8).fillColor(DGRAY)
      .text(b.linhaDigitavel, ML + LOGO_W + CODE_W + 6, y + 11,
        { width: W - LOGO_W - CODE_W - 10, align: 'right', lineBreak: false })
   y += HDR_H; hline(y, LGRAY, 0.5); y += 2
@@ -768,7 +768,7 @@ function drawBoletoViacredi(doc, b) {
   y += 9; rx = ML
   val(b.dataDocumento, rx+2, y, dd1-4); rx+=dd1
   val(b.numeroDocumento||'', rx+2, y, dd2-4); rx+=dd2
-  val('DM', rx+2, y, dd3-4); rx+=dd3
+  val('N', rx+2, y, dd3-4); rx+=dd3
   val('S', rx+2, y, dd4-4); rx+=dd4
   val(b.dataDocumento, rx+2, y, dd5-4); rx+=dd5
   val(b.nossoNumeroDisplay||b.nossoNumeroFmt, rx+2, y, dd6-4)
@@ -1085,10 +1085,27 @@ async function handle(event) {
       sacado,
       sacadoCpf:       cob.cpf || '',
       sacadoEndereco:  cob.property || cob.endereco || '',
-      instrucoes:      cc.instrucao ||
-                       cob.instrucoes ||
-                       `Referente a: ${em.competencia || cob.mesRef || ''}` +
-                       (cob.property ? `\nImóvel: ${cob.property}` : ''),
+      instrucoes: cc.instrucao || (() => {
+        const linhas = []
+        if (cc.mora_cod && cc.mora_cod !== '3') {
+          if (cc.mora_cod === '2')
+            linhas.push(`Juros de ${cc.mora_val}% ao mês após o vencimento`)
+          else if (cc.mora_cod === '1')
+            linhas.push(`Juros de R$ ${String(cc.mora_val||'0').replace('.',',')} por dia após o vencimento`)
+        }
+        if (cc.multa_cod && cc.multa_cod !== '0') {
+          if (cc.multa_cod === '1')
+            linhas.push(`Multa de R$ ${String(cc.multa_val||'0').replace('.',',')} após o vencimento`)
+          else if (cc.multa_cod === '2')
+            linhas.push(`Multa de ${cc.multa_val}% após o vencimento`)
+        }
+        if (cc.protesto_cod === '1')
+          linhas.push(`Protesto automático em ${cc.protesto_prazo || '5'} dias corridos após o vencimento`)
+        const base = cob.instrucoes ||
+          (`Referente a: ${em.competencia || cob.mesRef || ''}` +
+           (cob.property ? `\nImóvel: ${cob.property}` : ''))
+        return linhas.length ? linhas.join('\n') + '\n' + base : base
+      })(),
       barcode,
       linhaDigitavel:  buildLinhaDigitavel(barcode),
       // Bank display
