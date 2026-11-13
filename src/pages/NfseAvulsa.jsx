@@ -1272,8 +1272,17 @@ export default function NfseAvulsa() {
   const [reformaDefaults, setReformaDefaults] = useState({}) // NBS/CST/cIndOp/cClassTrib do perfil
   const [nfseDefaults, setNfseDefaults] = useState({}) // município e IM do prestador (defaults por nota)
   const [profileLc116, setProfileLc116] = useState('')  // código LC116 padrão do perfil
+  const [profileLoading, setProfileLoading] = useState(false)  // carregando perfil do afiliado
   useEffect(() => {
     if (!effectiveUserId) return
+    // Limpa os defaults imediatamente ao trocar de usuário,
+    // para evitar que o modal abra com valores do usuário anterior.
+    setReformaDefaults({})
+    setNfseDefaults({})
+    setRetDefaults(NAT_RET_DEFAULT)
+    setIssAliquota(0)
+    setProfileLc116('')
+    setProfileLoading(true)
     supabase.from('profiles')
       .select('ret_irrf, ret_csll, ret_cofins, ret_pis, ret_inss, aliquota_iss, nfse_nbs, nfse_cst, nfse_cindop, nfse_cclasstrib, nfse_municipio_ibge, inscricao_municipal, nfse_codigo_servico, nfse_provedor, focus_homologacao')
       .eq('id', effectiveUserId)
@@ -1299,6 +1308,7 @@ export default function NfseAvulsa() {
           })
           setProfileLc116(data.nfse_codigo_servico || '')
         }
+        setProfileLoading(false)
       })
   }, [effectiveUserId])
 
@@ -2253,7 +2263,7 @@ export default function NfseAvulsa() {
       {/* ── Dropdown de afiliados (só para contabilidade com afiliados) ── */}
       {isContabilidade && affiliates.length > 0 && (
         <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
-          <span className="text-xs font-semibold text-amber-700 whitespace-nowrap">👤 Emitindo para:</span>
+          <span className="text-xs font-semibold text-amber-700 whitespace-nowrap">👤 Emitindo em nome de:</span>
           <select
             value={activeUserId ?? ''}
             onChange={e => setActiveUserId(e.target.value || null)}
@@ -2383,10 +2393,10 @@ export default function NfseAvulsa() {
               </button>
               <button
                 onClick={() => { setEditIdx(null); setShowModal(true) }}
-                disabled={emitting || !planAtivo}
-                title={!planAtivo ? 'Assine um plano para continuar' : undefined}
+                disabled={emitting || !planAtivo || profileLoading}
+                title={!planAtivo ? 'Assine um plano para continuar' : profileLoading ? 'Carregando perfil…' : undefined}
                 className="flex items-center gap-1.5 border border-indigo-200 text-indigo-600 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                <IcPlus/> Gerar nota fiscal
+                <IcPlus/> {profileLoading ? 'Carregando…' : 'Gerar nota fiscal'}
               </button>
             </div>
           </div>

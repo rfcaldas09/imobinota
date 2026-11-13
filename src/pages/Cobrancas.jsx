@@ -2372,7 +2372,7 @@ export default function Cobrancas() {
       {/* ── Dropdown de afiliados (só para contabilidade com afiliados) ── */}
       {isContabilidade && affiliates.length > 0 && (
         <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
-          <span className="text-xs font-semibold text-amber-700 whitespace-nowrap">👤 Emitindo para:</span>
+          <span className="text-xs font-semibold text-amber-700 whitespace-nowrap">👤 Emitindo em nome de:</span>
           <select
             value={activeUserId ?? ''}
             onChange={e => { setActiveUserId(e.target.value || null); setFilter('Todos') }}
