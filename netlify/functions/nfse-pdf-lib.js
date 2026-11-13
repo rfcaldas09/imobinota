@@ -513,7 +513,9 @@ function extrairCamposPdf(xml, cobData, profile) {
   // Tributos aproximados (pTotTribSN = % para Simples; senão soma)
   const pTotSN        = tagFloat('pTotTribSN')
   const valorTributos = pTotSN > 0 ? +(valorBruto * pTotSN / 100).toFixed(2) : (pis + cofins + inss + ir + csll)
-  const valorLiquido  = tagFloat('vLiq') || +(valorBruto - valorIss - ir - inss).toFixed(2)
+  // Valor líquido = Bruto − ISS retido − IR − CSLL − INSS
+  // (PIS e COFINS deduzidos em valorAReceber quando tpRetPisCofins ≠ 3)
+  const valorLiquido  = tagFloat('vLiq') || +(valorBruto - valorIss - ir - csll - inss).toFixed(2)
   // Valor efetivamente recebido pelo prestador:
   // ANTES NT 007: vLiq não descontava PIS+COFINS (DARF separado pelo tomador) → mostrava dedução extra
   // COM NT 007 (tpRetPisCofins=3): vLiq já inclui PIS+COFINS em vTotalRet → nenhuma dedução adicional
