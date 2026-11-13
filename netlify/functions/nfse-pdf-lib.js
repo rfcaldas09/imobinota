@@ -488,19 +488,27 @@ function extrairCamposPdf(xml, cobData, profile) {
   // Impostos federais (do XML; zero se não retornado — comum no Simples)
   // Aceita tanto as tags do XML de retorno do SEFIN (vPIS, vCOFINS, vIRRF, vCSLL)
   // quanto as tags da DPS que enviamos (vPis, vCofins, vRetIRRF, vRetCSLL)
-  const pis   = tagFloat('vPIS')   || tagFloat('vPis')   || tagFloat('vRetPIS')
-  const cofins = tagFloat('vCOFINS') || tagFloat('vCofins') || tagFloat('vRetCOFINS')
-  const inss   = tagFloat('vINSS')  || tagFloat('vInss')  || tagFloat('vRetCP')
-  const ir     = tagFloat('vIR')    || tagFloat('vIRRF')  || tagFloat('vRetIRRF')
+  // Fallback: cobData.retencoes salvo na emissão (municípios legado como AtendeNet São José
+  // não incluem os valores de retenção no XML de retorno — só no DPS enviado).
+  const retFb = cobData?.retencoes || {}
+  const retFbVal = (pct) => pct ? +(valorBruto * parseFloat(String(pct).replace(',', '.')) / 100).toFixed(2) : 0
+  const pis    = tagFloat('vPIS')   || tagFloat('vPis')   || tagFloat('vRetPIS')   || retFbVal(retFb.pPIS)
+  const cofins = tagFloat('vCOFINS') || tagFloat('vCofins') || tagFloat('vRetCOFINS') || retFbVal(retFb.pCOFINS)
+  const inss   = tagFloat('vINSS')  || tagFloat('vInss')  || tagFloat('vRetCP')    || retFbVal(retFb.pINSS)
+  const ir     = tagFloat('vIR')    || tagFloat('vIRRF')  || tagFloat('vRetIRRF')  || retFbVal(retFb.pIRRF)
   // NT 007 (desde 09/02/2026): quando tpRetPisCofins=3, o campo vRetCSLL é
   // CONSOLIDADO (CSLL + PIS + COFINS somados). Para exibir só o CSLL no PDF,
   // subtraímos os valores de PIS e COFINS que já lemos separadamente.
   const tpRetPisCofins = tag('tpRetPisCofins')
-  const csllBruto = tagFloat('vCSLL') || tagFloat('vRetCSLL')
+  const csllBruto = tagFloat('vCSLL') || tagFloat('vRetCSLL') || retFbVal(retFb.pCSLL)
   const csll = tpRetPisCofins === '3'
     ? +Math.max(0, csllBruto - pis - cofins).toFixed(2)
     : csllBruto
   const outrasRetencoes = 0
+
+  // ISS retido: cobData.retencoes.tpRetISSQN como fallback quando o XML não traz tpRetISSQN
+  const tpRetISSQN_xml = tag('tpRetISSQN')
+  const tpRetISSQN_eff = tpRetISSQN_xml || (retFb.tpRetISSQN === 2 || retFb.tpRetISSQN === '2' ? '2' : '')
 
   // Tributos aproximados (pTotTribSN = % para Simples; senão soma)
   const pTotSN        = tagFloat('pTotTribSN')
@@ -539,7 +547,7 @@ function extrairCamposPdf(xml, cobData, profile) {
   const atividade  = lc116Desc ? `Atividade: ${codLc116} - ${lc116Desc}` : ''
 
   // ── Tipo de retenção ISS ──────────────────────────────────────
-  const tpRet     = tag('tpRetISSQN')
+  const tpRet     = tpRetISSQN_eff
   const recolhimento = tpRet === '2' ? 'Com Retenção (Tomador)' : 'Sem Retenção'
 
   return {

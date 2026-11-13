@@ -106,6 +106,8 @@ async function handle(event) {
       if (!cobData.email && cd.email) cobData.email      = cd.email
       if (cd.tomadorEnd)              cobData.tomadorEnd = cd.tomadorEnd
       if (cd.ibsCbs)                  cobData.ibsCbs     = cd.ibsCbs
+      // Retenções federais salvas na emissão — municípios legado (AtendeNet) não as incluem no XML de retorno
+      if (cd.retencoes)               cobData.retencoes  = cd.retencoes
     } catch (_) { /* JSON inválido — ignora */ }
   }
 
