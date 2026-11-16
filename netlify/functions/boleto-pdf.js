@@ -768,8 +768,8 @@ function drawBoletoViacredi(doc, b) {
   y += 9; rx = ML
   val(b.dataDocumento, rx+2, y, dd1-4); rx+=dd1
   val(b.numeroDocumento||'', rx+2, y, dd2-4); rx+=dd2
-  val('N', rx+2, y, dd3-4); rx+=dd3
-  val('S', rx+2, y, dd4-4); rx+=dd4
+  val('DS', rx+2, y, dd3-4); rx+=dd3
+  val('N', rx+2, y, dd4-4); rx+=dd4
   val(b.dataDocumento, rx+2, y, dd5-4); rx+=dd5
   val(b.nossoNumeroDisplay||b.nossoNumeroFmt, rx+2, y, dd6-4)
   y += 13; hline(y); y += 2
