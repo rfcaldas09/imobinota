@@ -405,8 +405,14 @@ function renderPage(doc, f, qrBuf) {
   }
 
   lbl('Observações:', PL + 2, ry, 58)
-  if (f.observacoes) val(f.observacoes, PL + 62, ry, W - 66)
-  ry += 18
+  if (f.observacoes) {
+    // Renderiza com quebra de linha para o texto crescer para baixo e mover o rodapé
+    doc.font('Helvetica').fontSize(7).fillColor(BLK)
+       .text(String(f.observacoes), PL + 62, ry, { width: W - 66, lineBreak: true, continued: false })
+    ry = doc.y + 4
+  } else {
+    ry += 11
+  }
 
   y = ry; hline(y)
 
