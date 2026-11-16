@@ -419,9 +419,9 @@ function renderPage(doc, f, qrBuf) {
   // ── RODAPÉ ────────────────────────────────────────────────────
   y += 3
   doc.font('Helvetica-Bold').fontSize(6.5).fillColor(DRK)
-     .text(`Chave de acesso : ${f.chave || ''}`, PL + 2, y, { width: 360, lineBreak: false, continued: false })
+     .text(`Chave de acesso : ${f.chave || ''}`, PL + 2, y, { width: 290, lineBreak: false, continued: false })
   doc.font('Helvetica-Bold').fontSize(6.5)
-     .text('Link consulta pública : https://www.nfse.gov.br/consultapublica', PL + 365, y, { width: W - 367, align: 'right', lineBreak: false, continued: false })
+     .text('Link consulta pública : https://www.nfse.gov.br/consultapublica', PL + 295, y, { width: W - 297, align: 'right', lineBreak: false, continued: false })
   y += 10
   const nowStr = fmtDateTime(new Date().toISOString())
   doc.font('Helvetica').fontSize(6.5).fillColor(DRK)
