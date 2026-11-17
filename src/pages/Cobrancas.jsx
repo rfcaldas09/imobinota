@@ -1180,6 +1180,12 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
   // discriminações pendentes: { [cobrancaId]: string }
   const [discMap, setDiscMap]   = useState({})
   const [confirming, setConfirming] = useState(false) // guard anti-duplo-clique
+  // ── CNAB no step done ─────────────────────────────────────────────
+  const [cnabSelected,    setCnabSelected]    = useState(new Set()) // emissaoIds selecionados
+  const [cnabModalOpen,   setCnabModalOpen]   = useState(false)
+  const [cnabVencimento,  setCnabVencimento]  = useState('')
+  const [cnabContas,      setCnabContas]      = useState([])
+  const [cnabGenerating,  setCnabGenerating]  = useState(false)
 
   // ID efetivo: afiliado selecionado ou próprio usuário logado
   const effUserId = activeUserId ?? user?.id
@@ -1246,7 +1252,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
     const ref = mesStr(mesRef)
     const { data: cobsDoMes } = await supabase
       .from('cobrancas')
-      .select('id, valor_total, mes_referencia, contrato_id, contratos(imovel, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, seguro_financeiro, seguro_incendio, iptu, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss, toma_logradouro, toma_numero, toma_bairro, toma_cep, toma_cod_mun, toma_mun_nome, imovel_cib, imovel_inscricao_fiscal, imovel_finalidade, imovel_logradouro, imovel_numero, imovel_complemento, imovel_bairro, imovel_cep, imovel_cod_mun, imovel_mun_nome, cod_nbs, cert_pfx_path, cert_senha), inquilinos(nome, cpf, email)')
+      .select('id, valor_total, mes_referencia, contrato_id, contratos(imovel, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, seguro_financeiro, seguro_incendio, iptu, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss, toma_logradouro, toma_numero, toma_bairro, toma_cep, toma_cod_mun, toma_mun_nome, imovel_cib, imovel_inscricao_fiscal, imovel_finalidade, imovel_logradouro, imovel_numero, imovel_complemento, imovel_bairro, imovel_cep, imovel_cod_mun, imovel_mun_nome, cod_nbs, cert_pfx_path, cert_senha, vencimento_boleto), inquilinos(nome, cpf, email)')
       .eq('user_id', effUserId)
       .eq('mes_referencia', ref)
       .in('contrato_id', activeContracts.map(c => c.id))
@@ -1283,9 +1289,10 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
       tamaMunNome:    cob.contratos?.toma_mun_nome  || '',
       mesRef:          cob.mes_referencia,
       // modo contabilidade (locação imobiliária)
-      certPfxPath:  cob.contratos?.cert_pfx_path || null,
-      certSenhaEnc: cob.contratos?.cert_senha    || null,
-      codNbs:       cob.contratos?.cod_nbs        || null,
+      certPfxPath:    cob.contratos?.cert_pfx_path  || null,
+      certSenhaEnc:   cob.contratos?.cert_senha    || null,
+      codNbs:         cob.contratos?.cod_nbs        || null,
+      vencimentoBoleto: cob.contratos?.vencimento_boleto || null,
       imovel: (cob.contratos?.imovel_cib || cob.contratos?.imovel_cep) ? {
         cib:            cob.contratos?.imovel_cib             || null,
         inscricaoFiscal:cob.contratos?.imovel_inscricao_fiscal || null,
@@ -1348,6 +1355,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
 
   // ── Executa emissão para todos da fila ──────────────────────────
   const runFila = async (fila, discMapLocal, prevRes) => {
+    setCnabSelected(new Set())
     setStep('running')
     const total = fila.length
     let ok = 0, fails = 0
@@ -1398,10 +1406,11 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
                 pPIS:    cob.pPIS    || null,
                 pINSS:   cob.pINSS   || null,
               },
-              certPfxPath:  cob.certPfxPath  || null,
-              certSenhaEnc: cob.certSenhaEnc || null,
-              codNbs:       cob.codNbs       || null,
-              imovel:       cob.imovel       || null,
+              certPfxPath:      cob.certPfxPath      || null,
+              certSenhaEnc:     cob.certSenhaEnc     || null,
+              codNbs:           cob.codNbs           || null,
+              imovel:           cob.imovel           || null,
+              vencimento_boleto: cob.vencimentoBoleto || null,
             },
           }),
         })
@@ -1410,7 +1419,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
 
         ok++
         setLogs(l => l.map(e => e.id === cob.id && e.status === 'pending'
-          ? { ...e, status: 'ok', numero: data.numeroNfse || '' }
+          ? { ...e, status: 'ok', numero: data.numeroNfse || '', emissaoId: data.emissaoId || null, vencimentoBoleto: cob.vencimentoBoleto || null }
           : e))
       } catch (err) {
         fails++
@@ -1426,6 +1435,98 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
     setResult({ created: ok, skipped: (prevRes?.skipped ?? 0) + (total - fila.length >= 0 ? 0 : 0), fails, error: null })
     setStep('done')
     onDone()
+  }
+
+  // ── Abre modal CNAB no step done ──────────────────────────────────
+  const handleCNABClick = async () => {
+    let contas = []
+    try {
+      const { data: prof } = await supabase.from('profiles').select('cnab_config').eq('id', effUserId).single()
+      const raw = prof?.cnab_config
+      if (Array.isArray(raw)) contas = raw
+      else if (raw && typeof raw === 'object' && raw.banco) contas = [{ id: 'legacy', label: raw.banco, ...raw }]
+    } catch { /* ignora */ }
+    if (contas.length === 0) {
+      alert('Nenhuma conta bancária configurada. Vá em Configurações → Integrações → CNAB.')
+      return
+    }
+    setCnabContas(contas)
+    // pré-preenche vencimento se todos iguais
+    const selectedLogs = logs.filter(l => l.status === 'ok' && l.emissaoId && cnabSelected.has(l.emissaoId))
+    const vencDates = [...new Set(selectedLogs.map(l => l.vencimentoBoleto || '').filter(Boolean))]
+    setCnabVencimento(vencDates.length === 1 ? vencDates[0].slice(0, 10) : '')
+    setCnabModalOpen(true)
+  }
+
+  const handleGerarCNAB = async (contaId, vencimento) => {
+    const emitidaIds = Array.from(cnabSelected)
+    if (!emitidaIds.length) return
+    setCnabModalOpen(false)
+    setCnabGenerating(true)
+    try {
+      const res = await fetch('/.netlify/functions/cnab-gerar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: effUserId, emissaoIds: emitidaIds, contaId, vencimento }),
+      })
+      const data = await res.json()
+      if (!res.ok) { alert(`Erro ao gerar CNAB: ${data.error || 'Erro desconhecido'}`); return }
+      const { cnabText, filename, totalTitulos, valorTotal } = data
+
+      const contaSel  = cnabContas.find(c => c.id === contaId) || cnabContas[0]
+      const bancoNorm = (contaSel?.banco || '').toLowerCase()
+      const suportaPdf = bancoNorm === 'viacredi' || bancoNorm === 'bradesco' || bancoNorm === 'itau'
+
+      if (!suportaPdf) {
+        const blob = new Blob([cnabText], { type: 'text/plain;charset=ascii' })
+        const url  = URL.createObjectURL(blob)
+        const a    = document.createElement('a')
+        a.href = url; a.download = filename
+        document.body.appendChild(a); a.click()
+        document.body.removeChild(a); URL.revokeObjectURL(url)
+        alert(`Arquivo ${filename} gerado!\n${totalTitulos} título(s) · R$ ${Number(valorTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`)
+        return
+      }
+
+      // Gera PDF individual por emissão
+      const pdfResults = await Promise.all(
+        emitidaIds.map(async (emId) => {
+          try {
+            const r = await fetch('/.netlify/functions/boleto-pdf', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: effUserId, emissaoIds: [emId], contaId, vencimento }),
+            })
+            const d = await r.json()
+            if (!r.ok || !d.pdfBase64) return { emId, error: d.error || 'Falha' }
+            return { emId, pdfBase64: d.pdfBase64, filename: d.filename }
+          } catch (e) { return { emId, error: e.message } }
+        })
+      )
+      const pdfOk = pdfResults.filter(p => p.pdfBase64)
+
+      const JSZip = (await import('jszip')).default
+      const zip   = new JSZip()
+      zip.file(filename, cnabText, { binary: false })
+      for (const p of pdfOk) {
+        const logEntry = logs.find(l => l.emissaoId === p.emId)
+        const nf = logEntry?.numero || p.emId.slice(0, 8)
+        const bytes = Uint8Array.from(atob(p.pdfBase64), c => c.charCodeAt(0))
+        zip.file(`boleto_NF${nf}.pdf`, bytes)
+      }
+      const zipBlob = await zip.generateAsync({ type: 'blob' })
+      const zipUrl  = URL.createObjectURL(zipBlob)
+      const aZip    = document.createElement('a')
+      aZip.href = zipUrl; aZip.download = filename.replace(/\.txt$/i, '.zip') || 'cnab.zip'
+      document.body.appendChild(aZip); aZip.click()
+      document.body.removeChild(aZip); URL.revokeObjectURL(zipUrl)
+      const erros = pdfResults.filter(p => p.error)
+      if (erros.length) alert(`CNAB gerado. ${erros.length} PDF(s) com erro.`)
+    } catch (err) {
+      alert(`Erro ao gerar CNAB: ${err.message}`)
+    } finally {
+      setCnabGenerating(false)
+    }
   }
 
   const total = (() => {
@@ -1562,9 +1663,18 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
                             <p className="text-sm font-semibold text-slate-800 truncate">{c.tenant}</p>
                             <p className="text-xs text-slate-400 truncate">{c.property}</p>
                           </div>
-                          <span className="text-sm font-semibold text-slate-700 flex-shrink-0">
-                            {(c.totalValue ?? 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })}
-                          </span>
+                          <div className="flex-shrink-0 text-right">
+                            <span className="text-sm font-semibold text-slate-700 block">
+                              {(c.totalValue ?? 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })}
+                            </span>
+                            {c.vencimentoBoleto ? (
+                              <span className="text-xs text-slate-400">
+                                Venc. {new Date(c.vencimentoBoleto + 'T12:00:00').toLocaleDateString('pt-BR')}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-300">sem vencimento</span>
+                            )}
+                          </div>
                         </label>
                       )
                     })}
@@ -1727,14 +1837,26 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
             {logs.length > 0 && (
               <div className="overflow-y-auto flex-1 space-y-1.5 pr-0.5 mb-4" style={{ maxHeight: '44vh' }}>
                 {logs.map((l, i) => (
-                  <div key={i} className={`flex items-start gap-3 px-3.5 py-2.5 rounded-xl border text-sm ${
-                    l.status === 'ok'    ? 'bg-emerald-50 border-emerald-200' :
+                  <label key={i} className={`flex items-start gap-3 px-3.5 py-2.5 rounded-xl border text-sm cursor-pointer ${
+                    l.status === 'ok'    ? (cnabSelected.has(l.emissaoId) ? 'bg-emerald-100 border-emerald-300' : 'bg-emerald-50 border-emerald-200') :
                     l.status === 'error' ? 'bg-red-50 border-red-200' :
                                           'bg-slate-50 border-slate-200'
                   }`}>
-                    <span className="flex-shrink-0 mt-0.5 font-bold">
-                      {l.status === 'ok' ? '✓' : '✗'}
-                    </span>
+                    {l.status === 'ok' && l.emissaoId ? (
+                      <input type="checkbox"
+                        checked={cnabSelected.has(l.emissaoId)}
+                        onChange={() => setCnabSelected(prev => {
+                          const next = new Set(prev)
+                          if (next.has(l.emissaoId)) next.delete(l.emissaoId); else next.add(l.emissaoId)
+                          return next
+                        })}
+                        className="accent-emerald-600 w-4 h-4 flex-shrink-0 mt-0.5"
+                      />
+                    ) : (
+                      <span className="flex-shrink-0 mt-0.5 font-bold w-4 text-center">
+                        {l.status === 'ok' ? '✓' : '✗'}
+                      </span>
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className={`font-semibold truncate ${
                         l.status === 'ok' ? 'text-emerald-800' : 'text-red-800'
@@ -1748,14 +1870,63 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
                         <p className="text-xs text-red-600 mt-0.5 break-words">{l.msg}</p>
                       )}
                     </div>
-                  </div>
+                  </label>
                 ))}
               </div>
             )}
 
-            <button onClick={onClose} className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 text-sm">
-              Fechar
-            </button>
+            {/* Botões */}
+            <div className="flex gap-2.5 flex-wrap">
+              {cnabSelected.size > 0 && (
+                <div className="relative flex-1">
+                  <button
+                    onClick={handleCNABClick}
+                    disabled={cnabGenerating}
+                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-md disabled:opacity-50"
+                  >
+                    {cnabGenerating
+                      ? <><span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"/>Gerando…</>
+                      : <>🏦 Gerar CNAB ({cnabSelected.size})</>
+                    }
+                  </button>
+                  {cnabModalOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setCnabModalOpen(false)} />
+                      <div className="fixed z-50 bg-white border border-slate-200 rounded-xl shadow-xl w-80 p-4"
+                        style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                        <p className="font-semibold text-slate-700 mb-3 text-sm">Gerar arquivo CNAB</p>
+                        <label className="block text-xs text-slate-500 mb-1">Data de vencimento do boleto</label>
+                        <input type="date" value={cnabVencimento}
+                          onChange={e => setCnabVencimento(e.target.value)}
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        {cnabContas.length > 1 ? (
+                          cnabContas.map(conta => (
+                            <button key={conta.id} type="button"
+                              onClick={() => handleGerarCNAB(conta.id, cnabVencimento)}
+                              className="w-full mb-2 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
+                              Gerar — {conta.label || conta.banco}
+                            </button>
+                          ))
+                        ) : (
+                          <button type="button"
+                            onClick={() => handleGerarCNAB(cnabContas[0]?.id, cnabVencimento)}
+                            className="w-full mb-2 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
+                            Gerar arquivo
+                          </button>
+                        )}
+                        <button type="button" onClick={() => setCnabModalOpen(false)}
+                          className="w-full text-center text-sm text-slate-400 hover:text-slate-600 py-1">
+                          Cancelar
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              <button onClick={onClose} className={`py-2.5 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 text-sm ${cnabSelected.size > 0 ? 'px-5' : 'flex-1'}`}>
+                Fechar
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -2176,7 +2347,7 @@ export default function Cobrancas() {
     // 1. Busca contratos ativos primeiro (necessário para auto-gerar cobranças)
     const { data: ctrs } = await supabase
       .from('contratos')
-      .select('id, inquilino_id, imovel, valor_aluguel, seguro_financeiro, seguro_incendio, iptu, dia_vencimento, status, discriminacao_servico, solicitar_discriminacao_mensal, inquilinos(nome)')
+      .select('id, inquilino_id, imovel, valor_aluguel, seguro_financeiro, seguro_incendio, iptu, dia_vencimento, status, discriminacao_servico, solicitar_discriminacao_mensal, vencimento_boleto, inquilinos(nome)')
       .eq('user_id', uid)
       .eq('status', 'Ativo')
       .order('inquilinos(nome)', { ascending: true })
@@ -2195,6 +2366,7 @@ export default function Cobrancas() {
                         (Number(r.seguro_incendio)||0) + (Number(r.iptu)||0),
       discriminacaoServico:        r.discriminacao_servico          || '',
       solicitarDiscriminacaoMensal: !!r.solicitar_discriminacao_mensal,
+      vencimentoBoleto:            r.vencimento_boleto              || null,
     }))
     setContracts(mappedCtrs)
 
