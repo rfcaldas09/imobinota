@@ -111,10 +111,11 @@ const mapCob = (row, lastNfse = null) => {
     status:          row.status || 'Pendente',
     mesRef:          row.mes_referencia,
     emissao:         row.data_emissao,
-    nfseStatus:      lastNfse?.status       || null,
-    nfseNumero:      lastNfse?.numero_nfse  || null,
-    nfseId:          lastNfse?.id           || null,
-    nfseChave:       lastNfse?.chave_acesso || null,
+    nfseStatus:      lastNfse?.status          || null,
+    nfseNumero:      lastNfse?.numero_nfse    || null,
+    nfseId:          lastNfse?.id             || null,
+    nfseChave:       lastNfse?.chave_acesso   || null,
+    nfseVencimento:  lastNfse?.vencimento_boleto || null,
     // modo contabilidade (locação imobiliária)
     certPfxPath:  row.contratos?.cert_pfx_path || null,
     certSenhaEnc: row.contratos?.cert_senha    || null,
@@ -1252,7 +1253,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
     const ref = mesStr(mesRef)
     const { data: cobsDoMes } = await supabase
       .from('cobrancas')
-      .select('id, valor_total, mes_referencia, contrato_id, contratos(imovel, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, seguro_financeiro, seguro_incendio, iptu, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss, toma_logradouro, toma_numero, toma_bairro, toma_cep, toma_cod_mun, toma_mun_nome, imovel_cib, imovel_inscricao_fiscal, imovel_finalidade, imovel_logradouro, imovel_numero, imovel_complemento, imovel_bairro, imovel_cep, imovel_cod_mun, imovel_mun_nome, cod_nbs, cert_pfx_path, cert_senha, vencimento_boleto), inquilinos(nome, cpf, email)')
+      .select('id, valor_total, mes_referencia, contrato_id, contratos(imovel, cod_servico_lc116, discriminacao_servico, solicitar_discriminacao_mensal, seguro_financeiro, seguro_incendio, iptu, iss_retido, pct_irrf, pct_csll, pct_cofins, pct_pis, pct_inss, toma_logradouro, toma_numero, toma_bairro, toma_cep, toma_cod_mun, toma_mun_nome, imovel_cib, imovel_inscricao_fiscal, imovel_finalidade, imovel_logradouro, imovel_numero, imovel_complemento, imovel_bairro, imovel_cep, imovel_cod_mun, imovel_mun_nome, cod_nbs, cert_pfx_path, cert_senha, dia_vencimento), inquilinos(nome, cpf, email)')
       .eq('user_id', effUserId)
       .eq('mes_referencia', ref)
       .in('contrato_id', activeContracts.map(c => c.id))
@@ -1292,7 +1293,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
       certPfxPath:    cob.contratos?.cert_pfx_path  || null,
       certSenhaEnc:   cob.contratos?.cert_senha    || null,
       codNbs:         cob.contratos?.cod_nbs        || null,
-      vencimentoBoleto: cob.contratos?.vencimento_boleto || null,
+      vencimentoBoleto: calcDueDate(cob.mes_referencia, cob.contratos?.dia_vencimento) || null,
       imovel: (cob.contratos?.imovel_cib || cob.contratos?.imovel_cep) ? {
         cib:            cob.contratos?.imovel_cib             || null,
         inscricaoFiscal:cob.contratos?.imovel_inscricao_fiscal || null,
@@ -1667,13 +1668,12 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
                             <span className="text-sm font-semibold text-slate-700 block">
                               {(c.totalValue ?? 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })}
                             </span>
-                            {c.vencimentoBoleto ? (
-                              <span className="text-xs text-slate-400">
-                                Venc. {new Date(c.vencimentoBoleto + 'T12:00:00').toLocaleDateString('pt-BR')}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-slate-300">sem vencimento</span>
-                            )}
+                            {(() => {
+                              const venc = calcDueDate(mesRef, c.dueDay)
+                              return venc
+                                ? <span className="text-xs text-slate-400">Venc. {new Date(venc + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                                : <span className="text-xs text-slate-300">sem vencimento</span>
+                            })()}
                           </div>
                         </label>
                       )
@@ -2153,9 +2153,13 @@ export default function Cobrancas() {
   const [inlineCancelConfirm,setInlineCancelConfirm]= useState(null) // cobId aguardando confirm
   const [inlineCancelling,   setInlineCancelling]   = useState(null) // cobId cancelando
 
-  // ── Seleção em lote de NFS-e para cancelamento ────────────────
+  // ── Seleção em lote de NFS-e para cancelamento / CNAB ────────────
   const [selectedNfseIds,    setSelectedNfseIds]    = useState(new Set()) // cobIds selecionadas
   const [bulkCancelling,     setBulkCancelling]     = useState(false)
+  const [tableCnabModalOpen,  setTableCnabModalOpen]  = useState(false)
+  const [tableCnabVencimento, setTableCnabVencimento] = useState('')
+  const [tableCnabContas,     setTableCnabContas]     = useState([])
+  const [tableCnabGenerating, setTableCnabGenerating] = useState(false)
 
   const inlineDownloadPdf = async (c) => {
     if (!c.nfseId) return
@@ -2245,6 +2249,96 @@ export default function Cobrancas() {
     setSelectedNfseIds(new Set())
     if (erros) alert(`${erros} nota(s) com erro ao cancelar.`)
     load()
+  }
+
+  // ── CNAB em lote a partir da tabela principal ─────────────────────
+  const handleTableCNABClick = async () => {
+    let contas = []
+    try {
+      const { data: prof } = await supabase.from('profiles').select('cnab_config').eq('id', effectiveUserId).single()
+      const raw = prof?.cnab_config
+      if (Array.isArray(raw)) contas = raw
+      else if (raw && typeof raw === 'object' && raw.banco) contas = [{ id: 'legacy', label: raw.banco, ...raw }]
+    } catch { /* ignora */ }
+    if (contas.length === 0) {
+      alert('Nenhuma conta bancária configurada. Vá em Configurações → Integrações → CNAB.')
+      return
+    }
+    setTableCnabContas(contas)
+    // pré-preenche vencimento se todos iguais
+    const selectedRows = lista.filter(c => selectedNfseIds.has(c.id) && c.nfseStatus === 'emitida')
+    const vencDates = [...new Set(selectedRows.map(c => c.nfseVencimento || '').filter(Boolean))]
+    setTableCnabVencimento(vencDates.length === 1 ? vencDates[0].slice(0, 10) : '')
+    setTableCnabModalOpen(true)
+  }
+
+  const handleTableGerarCNAB = async (contaId, vencimento) => {
+    const emitidaIds = lista.filter(c => selectedNfseIds.has(c.id) && c.nfseStatus === 'emitida' && c.nfseId).map(c => c.nfseId)
+    if (!emitidaIds.length) return
+    setTableCnabModalOpen(false)
+    setTableCnabGenerating(true)
+    try {
+      const res = await fetch('/.netlify/functions/cnab-gerar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: effectiveUserId, emissaoIds: emitidaIds, contaId, vencimento }),
+      })
+      const data = await res.json()
+      if (!res.ok) { alert(`Erro ao gerar CNAB: ${data.error || 'Erro desconhecido'}`); return }
+      const { cnabText, filename, totalTitulos, valorTotal } = data
+
+      const contaSel  = tableCnabContas.find(c => c.id === contaId) || tableCnabContas[0]
+      const bancoNorm = (contaSel?.banco || '').toLowerCase()
+      const suportaPdf = bancoNorm === 'viacredi' || bancoNorm === 'bradesco' || bancoNorm === 'itau'
+
+      if (!suportaPdf) {
+        const blob = new Blob([cnabText], { type: 'text/plain;charset=ascii' })
+        const url  = URL.createObjectURL(blob)
+        const a    = document.createElement('a')
+        a.href = url; a.download = filename
+        document.body.appendChild(a); a.click()
+        document.body.removeChild(a); URL.revokeObjectURL(url)
+        alert(`Arquivo ${filename} gerado!\n${totalTitulos} título(s) · R$ ${Number(valorTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`)
+        return
+      }
+
+      const pdfResults = await Promise.all(
+        emitidaIds.map(async (emId) => {
+          try {
+            const r = await fetch('/.netlify/functions/boleto-pdf', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: effectiveUserId, emissaoIds: [emId], contaId, vencimento }),
+            })
+            const d = await r.json()
+            if (!r.ok || !d.pdfBase64) return { emId, error: d.error || 'Falha' }
+            return { emId, pdfBase64: d.pdfBase64, filename: d.filename }
+          } catch (e) { return { emId, error: e.message } }
+        })
+      )
+      const pdfOk = pdfResults.filter(p => p.pdfBase64)
+      const JSZip = (await import('jszip')).default
+      const zip   = new JSZip()
+      zip.file(filename, cnabText, { binary: false })
+      for (const p of pdfOk) {
+        const row = lista.find(c => c.nfseId === p.emId)
+        const nf  = row?.nfseNumero || p.emId.slice(0, 8)
+        const bytes = Uint8Array.from(atob(p.pdfBase64), ch => ch.charCodeAt(0))
+        zip.file(`boleto_NF${nf}.pdf`, bytes)
+      }
+      const zipBlob = await zip.generateAsync({ type: 'blob' })
+      const zipUrl  = URL.createObjectURL(zipBlob)
+      const aZip    = document.createElement('a')
+      aZip.href = zipUrl; aZip.download = filename.replace(/\.txt$/i, '.zip') || 'cnab.zip'
+      document.body.appendChild(aZip); aZip.click()
+      document.body.removeChild(aZip); URL.revokeObjectURL(zipUrl)
+      const erros = pdfResults.filter(p => p.error)
+      if (erros.length) alert(`CNAB gerado. ${erros.length} PDF(s) com erro.`)
+    } catch (err) {
+      alert(`Erro ao gerar CNAB: ${err.message}`)
+    } finally {
+      setTableCnabGenerating(false)
+    }
   }
 
   // ── Download ZIP com todos os PDF + XML do mês ────────────────────
@@ -2347,7 +2441,7 @@ export default function Cobrancas() {
     // 1. Busca contratos ativos primeiro (necessário para auto-gerar cobranças)
     const { data: ctrs } = await supabase
       .from('contratos')
-      .select('id, inquilino_id, imovel, valor_aluguel, seguro_financeiro, seguro_incendio, iptu, dia_vencimento, status, discriminacao_servico, solicitar_discriminacao_mensal, vencimento_boleto, inquilinos(nome)')
+      .select('id, inquilino_id, imovel, valor_aluguel, seguro_financeiro, seguro_incendio, iptu, dia_vencimento, status, discriminacao_servico, solicitar_discriminacao_mensal, inquilinos(nome)')
       .eq('user_id', uid)
       .eq('status', 'Ativo')
       .order('inquilinos(nome)', { ascending: true })
@@ -2366,7 +2460,6 @@ export default function Cobrancas() {
                         (Number(r.seguro_incendio)||0) + (Number(r.iptu)||0),
       discriminacaoServico:        r.discriminacao_servico          || '',
       solicitarDiscriminacaoMensal: !!r.solicitar_discriminacao_mensal,
-      vencimentoBoleto:            r.vencimento_boleto              || null,
     }))
     setContracts(mappedCtrs)
 
@@ -2392,7 +2485,7 @@ export default function Cobrancas() {
     if (cobIds.length) {
       const { data: emissoes } = await supabase
         .from('nfse_emissoes')
-        .select('id, cobranca_id, status, numero_nfse, chave_acesso, created_at')
+        .select('id, cobranca_id, status, numero_nfse, chave_acesso, created_at, vencimento_boleto')
         .eq('user_id', uid)
         .in('cobranca_id', cobIds)
         .order('created_at', { ascending: false })
@@ -2634,21 +2727,72 @@ export default function Cobrancas() {
             )}
           </button>
 
-          {/* Cancelar notas selecionadas */}
+          {/* Ações em lote quando há notas selecionadas */}
           {selectedNfseIds.size > 0 && (
-            <button
-              onClick={bulkCancelarNfse}
-              disabled={bulkCancelling}
-              className="flex items-center gap-2 bg-white border border-red-200 text-red-700 px-4 py-2 rounded-xl font-semibold text-sm hover:bg-red-50 shadow-sm whitespace-nowrap disabled:opacity-60 disabled:cursor-wait">
-              {bulkCancelling ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-red-300 border-t-red-600 rounded-full animate-spin"/>
-                  Cancelando…
-                </>
-              ) : (
-                <>🚫 Cancelar {selectedNfseIds.size} nota{selectedNfseIds.size > 1 ? 's' : ''} selecionada{selectedNfseIds.size > 1 ? 's' : ''}</>
-              )}
-            </button>
+            <>
+              {/* Gerar CNAB */}
+              <div className="relative">
+                <button
+                  onClick={handleTableCNABClick}
+                  disabled={tableCnabGenerating}
+                  className="flex items-center gap-2 bg-white border border-emerald-200 text-emerald-700 px-4 py-2 rounded-xl font-semibold text-sm hover:bg-emerald-50 shadow-sm whitespace-nowrap disabled:opacity-60 disabled:cursor-wait">
+                  {tableCnabGenerating ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin"/>
+                      Gerando…
+                    </>
+                  ) : (
+                    <>🏦 Gerar CNAB ({selectedNfseIds.size})</>
+                  )}
+                </button>
+                {tableCnabModalOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setTableCnabModalOpen(false)} />
+                    <div className="fixed z-50 bg-white border border-slate-200 rounded-xl shadow-xl w-80 p-4"
+                      style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                      <p className="font-semibold text-slate-700 mb-3 text-sm">Gerar arquivo CNAB</p>
+                      <label className="block text-xs text-slate-500 mb-1">Data de vencimento do boleto</label>
+                      <input type="date" value={tableCnabVencimento}
+                        onChange={e => setTableCnabVencimento(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      {tableCnabContas.length > 1 ? (
+                        tableCnabContas.map(conta => (
+                          <button key={conta.id} type="button"
+                            onClick={() => handleTableGerarCNAB(conta.id, tableCnabVencimento)}
+                            className="w-full mb-2 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
+                            Gerar — {conta.label || conta.banco}
+                          </button>
+                        ))
+                      ) : (
+                        <button type="button"
+                          onClick={() => handleTableGerarCNAB(tableCnabContas[0]?.id, tableCnabVencimento)}
+                          className="w-full mb-2 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
+                          Gerar arquivo
+                        </button>
+                      )}
+                      <button type="button" onClick={() => setTableCnabModalOpen(false)}
+                        className="w-full text-center text-sm text-slate-400 hover:text-slate-600 py-1">
+                        Cancelar
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+              {/* Cancelar */}
+              <button
+                onClick={bulkCancelarNfse}
+                disabled={bulkCancelling}
+                className="flex items-center gap-2 bg-white border border-red-200 text-red-700 px-4 py-2 rounded-xl font-semibold text-sm hover:bg-red-50 shadow-sm whitespace-nowrap disabled:opacity-60 disabled:cursor-wait">
+                {bulkCancelling ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-red-300 border-t-red-600 rounded-full animate-spin"/>
+                    Cancelando…
+                  </>
+                ) : (
+                  <>🚫 Cancelar {selectedNfseIds.size} nota{selectedNfseIds.size > 1 ? 's' : ''} selecionada{selectedNfseIds.size > 1 ? 's' : ''}</>
+                )}
+              </button>
+            </>
           )}
         </div>
       )}
