@@ -1669,7 +1669,7 @@ function BatchModal({ contracts, user, pixKey, mesRef: initialMes, isContabilida
                               {(c.totalValue ?? 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })}
                             </span>
                             {(() => {
-                              const venc = calcDueDate(mesRef, c.dueDay)
+                              const venc = calcDueDate(mesStr(mesRef), c.dueDay)
                               return venc
                                 ? <span className="text-xs text-slate-400">Venc. {new Date(venc + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
                                 : <span className="text-xs text-slate-300">sem vencimento</span>
