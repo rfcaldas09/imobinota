@@ -1493,48 +1493,21 @@ function DocModal({ type, contract: c, onClose, onToast }) {
     setGerandoBoleto(true)
     const headers = { 'Content-Type': 'application/json', ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}) }
     try {
-      // Calcula expiresIn em segundos até o vencimento + 3 dias de carência
-      let expiresIn = 30 * 24 * 3600
-      if (vencimentoBoleto) {
-        const due  = new Date(vencimentoBoleto + 'T23:59:59')
-        const secs = Math.floor((due - Date.now()) / 1000)
-        expiresIn  = Math.max(3 * 24 * 3600, secs + 3 * 24 * 3600)
-      }
-
-      // 1. Gera cobrança PIX via OpenPix
-      const pixRes = await fetch('/.netlify/functions/openpix-create-charge', {
-        method: 'POST', headers,
-        body: JSON.stringify({
-          value:         Math.round(c.value * 100),   // centavos
-          correlationID: emissaoId,
-          comment:       `NFS-e ${c.tenant}`.slice(0, 140),
-          clientPixKey:  pixKey,
-          expiresIn,
-        }),
-      })
-      const pixData = await pixRes.json()
-      if (!pixRes.ok || !pixData.ok) {
-        console.warn('[DocModal] falha ao gerar PIX:', pixData.error)
-        onToast('PIX não gerado: ' + (pixData.error || 'Erro desconhecido'), 'error')
-        return
-      }
-      const brCode = pixData.brCode || ''
-
-      // 2. Envia email com NFS-e + código PIX
+      // Envia email com NFS-e + chave PIX estática (sem integração externa)
       const emailRes = await fetch('/.netlify/functions/nfse-email-boleto', {
         method: 'POST', headers,
-        body: JSON.stringify({ userId: user.id, emissaoId, pixBrCode: brCode }),
+        body: JSON.stringify({ userId: user.id, emissaoId, pixBrCode: pixKey }),
       })
       if (!emailRes.ok) {
         const ed = await emailRes.json()
         console.warn('[DocModal] falha ao enviar email com PIX:', ed.error)
-        onToast('PIX gerado, mas houve falha ao enviar email', 'error')
+        onToast('Houve falha ao enviar email com chave PIX', 'error')
         return
       }
-      onToast('PIX gerado e email enviado com sucesso!', 'success')
+      onToast('Email com chave PIX enviado com sucesso!', 'success')
     } catch (e) {
       console.error('[DocModal] erro ao gerar pix+email:', e)
-      onToast('Erro ao gerar PIX: ' + e.message, 'error')
+      onToast('Erro ao enviar email com PIX: ' + e.message, 'error')
     } finally {
       setGerandoBoleto(false)
     }
@@ -1692,7 +1665,7 @@ function DocModal({ type, contract: c, onClose, onToast }) {
                   <div>
                     <span className="text-xs font-semibold text-slate-700">PIX de cobrança</span>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Gera QR code PIX via OpenPix. Email enviado com NFS-e + código PIX copia-e-cola.
+                      Email enviado com NFS-e + sua chave PIX cadastrada em Configurações.
                       {!pixKey && <span className="text-amber-500"> Configure a chave PIX em Config → Integrações.</span>}
                     </p>
                   </div>

@@ -130,12 +130,12 @@ async function enviarEmail({ p, cobData, homologacao, nfsePdfBase64, nfsePdfFile
   const subjectFinal = applyVars(subject)
   const bodyFinal    = applyVars(bodyTpl)
 
-  // Bloco HTML extra com PIX copia-e-cola (inserido após o corpo se houver pixBrCode)
+  // Bloco HTML extra com chave PIX (inserido após o corpo se houver pixBrCode)
   const pixHtmlBlock = pixBrCode
     ? `<div style="margin-top:20px;padding:16px;background:#f0f4ff;border:1px solid #c7d2fe;border-radius:8px;font-family:sans-serif">
         <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#3730a3">💸 Pagamento via PIX</p>
-        <p style="margin:0 0 6px;font-size:12px;color:#4b5563">Copie o código abaixo e cole no seu aplicativo de banco para pagar:</p>
-        <div style="background:#fff;border:1px solid #e0e7ff;border-radius:6px;padding:10px;word-break:break-all;font-family:monospace;font-size:11px;color:#1e1b4b;user-select:all">
+        <p style="margin:0 0 6px;font-size:12px;color:#4b5563">Use a chave PIX abaixo para realizar o pagamento pelo seu aplicativo de banco:</p>
+        <div style="background:#fff;border:1px solid #e0e7ff;border-radius:6px;padding:10px;word-break:break-all;font-family:monospace;font-size:12px;color:#1e1b4b;user-select:all">
           ${pixBrCode}
         </div>
       </div>`
@@ -143,7 +143,7 @@ async function enviarEmail({ p, cobData, homologacao, nfsePdfBase64, nfsePdfFile
 
   const bodyHtml     = bodyFinal.replace(/\n/g, '<br>') + pixHtmlBlock
   const bodyFinalTxt = pixBrCode
-    ? bodyFinal + `\n\nPagamento via PIX — Código copia-e-cola:\n${pixBrCode}`
+    ? bodyFinal + `\n\nPagamento via PIX — Chave PIX:\n${pixBrCode}`
     : bodyFinal
 
   const rawEmail = homologacao ? (replyTo || cobData.email || '') : (cobData.email || '')

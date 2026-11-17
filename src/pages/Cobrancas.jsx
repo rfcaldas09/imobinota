@@ -2895,22 +2895,21 @@ export default function Cobrancas() {
                   {/* Checkbox NFS-e */}
                   {isActive && !(isContabilidade && controlaGarantidora) && (
                     <td className="px-3 py-3.5">
-                      {c.nfseStatus === 'emitida' && c.nfseId ? (
-                        <input
-                          type="checkbox"
-                          checked={selectedNfseIds.has(c.id)}
-                          onChange={e => {
-                            setSelectedNfseIds(prev => {
-                              const next = new Set(prev)
-                              e.target.checked ? next.add(c.id) : next.delete(c.id)
-                              return next
-                            })
-                          }}
-                          className="w-4 h-4 accent-red-600 cursor-pointer"
-                        />
-                      ) : (
-                        <span className="w-4 h-4 inline-block"/>
-                      )}
+                      <input
+                        type="checkbox"
+                        checked={selectedNfseIds.has(c.id)}
+                        disabled={!(c.nfseStatus === 'emitida' && c.nfseId)}
+                        title={c.nfseStatus === 'emitida' && c.nfseId ? 'Selecionar para CNAB/cancelamento' : 'Apenas notas emitidas podem ser selecionadas'}
+                        onChange={e => {
+                          if (!(c.nfseStatus === 'emitida' && c.nfseId)) return
+                          setSelectedNfseIds(prev => {
+                            const next = new Set(prev)
+                            e.target.checked ? next.add(c.id) : next.delete(c.id)
+                            return next
+                          })
+                        }}
+                        className={`w-4 h-4 ${c.nfseStatus === 'emitida' && c.nfseId ? 'accent-red-600 cursor-pointer' : 'opacity-25 cursor-not-allowed'}`}
+                      />
                     </td>
                   )}
                   <td className="px-5 py-3.5">
