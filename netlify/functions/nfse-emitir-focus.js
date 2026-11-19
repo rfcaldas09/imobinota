@@ -17,6 +17,8 @@
 const FOCUS_URL_PROD = 'https://api.focusnfe.com.br/v2'
 const FOCUS_URL_HOMO = 'https://homologacao.focusnfe.com.br/v2'
 
+const { buildNfsePdf, extrairCamposPdf } = require('./nfse-pdf-lib')
+
 exports.handler = async (event) => {
   try {
     return await handle(event)
@@ -36,7 +38,7 @@ async function handle(event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Body inválido' }) }
   }
 
-  const { userId, cobId, cobData, homologacao: homoOverride } = body
+  const { userId, cobId, cobData, homologacao: homoOverride, skipEmail = false } = body
   if (!userId || !cobData) {
     return { statusCode: 400, body: JSON.stringify({ error: 'userId e cobData são obrigatórios' }) }
   }
@@ -54,7 +56,8 @@ async function handle(event) {
     `nfse_municipio_ibge,nfse_municipio_nome,nfse_codigo_servico,nfse_desc_servico,` +
     `nfse_ultimo_numero,focus_token,focus_token_prod,focus_homologacao,focus_nfse_legado,` +
     `nfse_logradouro,nfse_numero_end,nfse_bairro,nfse_cep,` +
-    `regime_tributario,aliquota_iss,nfse_nbs,nfse_cst,nfse_cindop,nfse_cclasstrib,aliquota_cbs,aliquota_ibs,aliquota_ibs_uf,aliquota_ibs_mun,aliquota_pis_proprio,aliquota_cofins_proprio`
+    `regime_tributario,aliquota_iss,nfse_nbs,nfse_cst,nfse_cindop,nfse_cclasstrib,aliquota_cbs,aliquota_ibs,aliquota_ibs_uf,aliquota_ibs_mun,aliquota_pis_proprio,aliquota_cofins_proprio,` +
+    `email_provider,from_name,reply_to,email_subject,email_body,smtp_host,smtp_port,smtp_user,smtp_pass,smtp_encryption,from_email`
   )
   if (!profRes.ok) throw new Error(`Erro ao buscar perfil: ${profRes.status}`)
   const profiles = await profRes.json()
@@ -556,9 +559,120 @@ async function handle(event) {
 
   console.log('[nfse-emitir-focus] AUTORIZADO | numeroNfse:', numeroNfse, '| emissaoId:', emissaoId)
 
+  // ── 8. Envia e-mail com PDF da NFS-e ─────────────────────────
+  if (!skipEmail) {
+    try {
+      await enviarEmailNfse({
+        profile: p,
+        cobData,
+        numeroNfse,
+        nfseXml: xmlNfse,
+        homologacao,
+      })
+      console.log('[nfse-emitir-focus] e-mail NFS-e enviado com sucesso')
+    } catch (emailErr) {
+      // Não quebra a emissão por falha de e-mail — apenas loga
+      console.error('[nfse-emitir-focus] falha ao enviar e-mail NFS-e:', emailErr.message)
+    }
+  }
+
   return {
     statusCode: 200,
     body: JSON.stringify({ ok: true, numeroNfse, emissaoId, focusRef: ref }),
+  }
+}
+
+// ── E-mail NFS-e ───────────────────────────────────────────────────
+
+async function enviarEmailNfse({ profile: p, cobData, numeroNfse, nfseXml, homologacao }) {
+  if (!p) return
+
+  // Gera PDF
+  const pdfFields  = extrairCamposPdf(nfseXml || '', cobData, p)
+  if (numeroNfse) pdfFields.numero = String(numeroNfse)
+  const pdfBuffer  = await buildNfsePdf(pdfFields)
+  const pdfBase64  = pdfBuffer.toString('base64')
+  const pdfFilename = `NFS-e_${numeroNfse || 'rascunho'}_${cobData.mesRef || ''}.pdf`
+
+  // Template do e-mail
+  const subject  = p.email_subject || 'NFS-e {{mes}}/{{ano}}'
+  const bodyTpl  = p.email_body    || 'Olá, {{cliente}}!\n\nSegue em anexo a nota fiscal de serviço referente à competência {{mes}}/{{ano}}:\n\n💰 Valor total: {{valor}}\n\nEm caso de dúvidas, entre em contato conosco.\n\nAtenciosamente,\n{{empresa}}'
+  const fromName = p.from_name || 'NotaFacil'
+  const replyTo  = p.reply_to  || ''
+
+  const [ano, mesNum] = String(cobData.mesRef || '').split('-')
+  const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+  const mesNome = meses[parseInt(mesNum || '1', 10) - 1] || mesNum || ''
+
+  const vars = {
+    '{{cliente}}':    cobData.tenant   || '',
+    '{{inquilino}}':  cobData.tenant   || '',
+    '{{mes}}':        mesNome,
+    '{{ano}}':        ano              || '',
+    '{{imovel}}':     cobData.property || '',
+    '{{valor}}':      'R$ ' + (parseFloat(cobData.totalValue || 0).toFixed(2)).replace('.', ','),
+    '{{empresa}}':    p.company_name   || fromName,
+    '{{vencimento}}': '',
+    '{{link_boleto}}': '',
+    '{{nfse_numero}}': String(numeroNfse || ''),
+  }
+  const applyVars = tpl => Object.entries(vars).reduce((s, [k, v]) => s.replaceAll(k, v), tpl)
+  const subjectFinal = applyVars(subject)
+  const bodyFinal    = applyVars(bodyTpl)
+  const bodyHtml     = bodyFinal.replace(/\n/g, '<br>')
+
+  // Destinatários: homologacao → só reply_to; produção → cliente (pode ser vários, sep por ";")
+  const rawEmail = homologacao ? (replyTo || cobData.email || '') : (cobData.email || '')
+  const toAddrs  = rawEmail.split(';').map(e => e.trim()).filter(Boolean)
+  if (!toAddrs.length) {
+    console.warn('[nfse-email-focus] sem destinatário, pulando envio de e-mail')
+    return
+  }
+
+  const provider = p.email_provider || 'resend'
+
+  if (provider === 'resend') {
+    const apiKey   = process.env.RESEND_API_KEY
+    const fromAddr = process.env.RESEND_FROM_EMAIL
+    if (!apiKey || !fromAddr) throw new Error('RESEND_API_KEY ou RESEND_FROM_EMAIL não configurados')
+
+    const payload = {
+      from:    `${fromName} <${fromAddr}>`,
+      to:      toAddrs,
+      subject: subjectFinal,
+      html:    `<div style="font-family:sans-serif;max-width:600px">${bodyHtml}</div>`,
+      text:    bodyFinal,
+      attachments: [{ filename: pdfFilename, content: pdfBase64 }],
+      ...(replyTo && !homologacao ? { reply_to: replyTo } : {}),
+      ...(replyTo && !homologacao ? { cc: [replyTo] } : {}),
+    }
+    const res  = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(`Resend error: ${data.message || res.status}`)
+
+  } else {
+    // SMTP via nodemailer
+    const nodemailer = require('nodemailer')
+    const transporter = nodemailer.createTransport({
+      host:   p.smtp_host,
+      port:   Number(p.smtp_port) || 587,
+      secure: p.smtp_encryption === 'ssl',
+      auth:   { user: p.smtp_user, pass: p.smtp_pass },
+      ...(p.smtp_encryption === 'none' ? { tls: { rejectUnauthorized: false } } : {}),
+    })
+    await transporter.sendMail({
+      from:        `${fromName} <${p.from_email || p.smtp_user}>`,
+      to:          toAddrs.join(', '),
+      ...(replyTo && !homologacao ? { replyTo, cc: replyTo } : {}),
+      subject:     subjectFinal,
+      html:        `<div style="font-family:sans-serif;max-width:600px">${bodyHtml}</div>`,
+      text:        bodyFinal,
+      attachments: [{ filename: pdfFilename, content: Buffer.from(pdfBase64, 'base64') }],
+    })
   }
 }
 
