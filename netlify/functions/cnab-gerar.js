@@ -1,6 +1,7 @@
 // Netlify Function — gera arquivo CNAB remessa (400 Bradesco/Itaú ou 240 Viacredi/Banrisul)
 // POST { userId, emissaoIds: [uuid, ...], contaId }
 // Retorna { cnabText, filename, totalTitulos, valorTotal }
+// fix: vencimento fallback usa hoje+30 (não created_at+30) — redeploy 2026-11-23
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
