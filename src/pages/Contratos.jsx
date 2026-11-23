@@ -1386,7 +1386,9 @@ function DocModal({ type, contract: c, onClose, onToast }) {
           pPIS:    parsePct(c.pPIS),
           pINSS:   parsePct(c.pINSS),
         },
-        tomadorEnd: c.tamaCep && c.tamaCodMun ? {
+        // Inclui tomadorEnd se tiver qualquer dado de endereço (CEP ou logradouro).
+        // Não exige tamaCodMun: nfse-pdf.js e nfse-emitir.js fazem fallback ViaCEP para o município.
+        tomadorEnd: (c.tamaCep || c.tomaLogradouro) ? {
           logradouro: c.tomaLogradouro || '',
           numero:     c.tomaNumero     || 'S/N',
           bairro:     c.tamaBairro     || '',

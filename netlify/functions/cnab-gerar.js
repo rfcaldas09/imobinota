@@ -73,7 +73,7 @@ async function handle(event) {
   const ids = emissaoIds.map(id => `"${id}"`).join(',')
   const emRes = await supabaseFetch(SUPABASE_URL, SERVICE_KEY,
     `nfse_emissoes?id=in.(${ids})&user_id=eq.${userId}&status=eq.emitida` +
-    `&select=id,numero_nfse,numero_dps,tomador_nome,valor_servico,created_at,competencia,cob_data_json`
+    `&select=id,numero_nfse,numero_dps,tomador_nome,valor_servico,created_at,competencia,cob_data_json,vencimento_boleto`
   )
   if (!emRes.ok) throw new Error(`Erro ao buscar emissões: ${emRes.status}`)
   const emissoes = await emRes.json()
@@ -280,7 +280,7 @@ function buildHeader400({ cc, profile, seqRemessa, hoje, seq }) {
 function buildTransacao400({ cc, em, nossoNumero, hoje, seq, vencimento }) {
   const cd      = parseCobData(em)
   const dac     = calcDacNossoNumero(cc.carteira, nossoNumero)
-  const venc    = resolveVencimento(vencimento, em.created_at)
+  const venc    = resolveVencimento(vencimento || em.vencimento_boleto, em.created_at)
   const emDt    = new Date(em.created_at || hoje)
   const cpfCnpj = (cd.cpf || '').replace(/\D/g, '')
   const tipoPag = cpfCnpj.length <= 11 ? '01' : '02'
@@ -394,7 +394,7 @@ function buildHeaderItau400({ cc, profile, hoje, seq }) {
 
 function buildDetalheItau400({ cc, em, nossoNumero, hoje, seq, profile, vencimento }) {
   const cd       = parseCobData(em)
-  const venc     = resolveVencimento(vencimento, em.created_at)
+  const venc     = resolveVencimento(vencimento || em.vencimento_boleto, em.created_at)
   const emDt     = new Date(em.created_at || hoje)
   const cpfCnpj  = (cd.cpf || cd.cnpj || '').replace(/\D/g, '')
   const tipoPag  = cpfCnpj.length <= 11 ? '01' : '02'
@@ -643,7 +643,7 @@ function buildLotHeader240({ info, cnpj, empresa, cc, seqRemessa, hoje, lotVer }
 function buildSegP240({ info, cc, em, nn, seqLote, hoje, vencimento }) {
   // Manual AILOS v14 – Seção 4.2.2.4 Registro Detalhe Segmento P (Remessa)
   const cd       = parseCobData(em)
-  const venc     = resolveVencimento(vencimento, em.created_at)
+  const venc     = resolveVencimento(vencimento || em.vencimento_boleto, em.created_at)
   const emDt     = new Date(em.created_at || hoje)
   const carteira = N(cc.carteira || info.carteira || '1', 1)  // 1 char
   const valor15  = String(valorCents(em.valor_servico)).padStart(15, '0')
