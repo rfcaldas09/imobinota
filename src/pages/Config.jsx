@@ -365,6 +365,40 @@ export default function Config() {
   const certInputRef            = useRef(null)
   const certPasswordRef         = useRef(null)  // lê DOM diretamente (evita problema com paste + React state)
 
+  // Admin: teste de geração Caixa
+  const [caixaTestando, setCaixaTestando] = useState(null) // null=idle, cc.id=gerando
+
+  const gerarTesteCaixa = async (cc) => {
+    setCaixaTestando(cc.id || 'default')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const authToken = session?.access_token || ''
+      const res = await fetch('/.netlify/functions/cnab-teste', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, contaId: cc.id, authToken }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }))
+        alert(`Erro: ${err.error || res.statusText}`)
+        return
+      }
+      const blob = await res.blob()
+      const today = new Date()
+      const dd = String(today.getDate()).padStart(2, '0')
+      const mm = String(today.getMonth() + 1).padStart(2, '0')
+      const filename = `teste_caixa_${dd}${mm}${today.getFullYear()}.zip`
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = filename; a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      alert(`Erro ao gerar teste: ${e.message}`)
+    } finally {
+      setCaixaTestando(null)
+    }
+  }
+
   const [f, setF] = useState({
     // Empresa
     company:             '',
@@ -1623,6 +1657,14 @@ export default function Config() {
                     <span className="text-xs text-slate-400 ml-2">{['bradesco','itau'].includes(cc.banco) ? 'CNAB 400' : 'CNAB 240'} · Ag {cc.agencia}{cc.agencia_dv ? '-' + cc.agencia_dv : ''} / CC {cc.conta}{cc.conta_dv ? '-' + cc.conta_dv : ''}</span>
                   </div>
                   <div className="flex gap-2">
+                    {(cc.banco || '').toLowerCase() === 'caixa' && user?.email === 'rafael.fcaldas@gmail.com' && (
+                      <button type="button"
+                        onClick={() => gerarTesteCaixa(cc)}
+                        disabled={caixaTestando !== null}
+                        className="text-xs text-emerald-600 hover:underline disabled:opacity-40">
+                        {caixaTestando === (cc.id || 'default') ? '⏳ Gerando...' : '⚗️ Teste'}
+                      </button>
+                    )}
                     <button type="button" onClick={() => setCnabForm({ ...cc })}
                       className="text-xs text-indigo-600 hover:underline">Editar</button>
                     <button type="button" onClick={() => set('cnabContas', f.cnabContas.filter((_, i) => i !== idx))}
