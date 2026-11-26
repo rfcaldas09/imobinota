@@ -133,6 +133,7 @@ async function handle(event) {
         emissaoIds: fakeIds,
         contaId: cc.id,
         vencimento: vencStr,
+        isTeste: true,  // Caixa SIGCB: grava 'REMESSA-TESTE' no header para homologação
       }),
     })
     if (!cnabRes.ok) {

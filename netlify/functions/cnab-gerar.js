@@ -27,7 +27,7 @@ async function handle(event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Body inválido' }) }
   }
 
-  const { userId, emissaoIds, contaId, vencimento } = body
+  const { userId, emissaoIds, contaId, vencimento, isTeste = false } = body
   if (!userId) return { statusCode: 400, body: JSON.stringify({ error: 'userId é obrigatório' }) }
   if (!Array.isArray(emissaoIds) || emissaoIds.length === 0) {
     return { statusCode: 400, body: JSON.stringify({ error: 'emissaoIds é obrigatório' }) }
@@ -104,10 +104,10 @@ async function handle(event) {
     if (!cc.cedente) {
       return { statusCode: 422, body: JSON.stringify({ error: 'Código do cedente Caixa não configurado.' }) }
     }
-    ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco, vencimento }))
+    ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco, vencimento, isTeste }))
   } else {
     // Viacredi (085) ou Banrisul (041)
-    ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco, vencimento }))
+    ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco, vencimento, isTeste }))
   }
 
   // ── Incrementa seq_remessa ────────────────────────────────────
@@ -508,13 +508,13 @@ function buildTrailerItau400(seq) {
 //  FEBRABAN padrão cobrança
 // ══════════════════════════════════════════════════════════════════
 const BANCO_INFO = {
-  viacredi: { cod: '085', nome: 'VIACREDI', lotVer: '045', carteira: '1', convenio: '101004' },
-  banrisul:  { cod: '041', nome: 'BANRISUL',  lotVer: '060', carteira: '11', convenio: '' },
-  sicoob:   { cod: '756', nome: 'SICOOB',    lotVer: '045', carteira: '01', convenio: '' },
-  caixa:    { cod: '104', nome: 'CAIXA ECONOMICA FEDERAL', lotVer: '050', carteira: '1', convenio: '' },
+  viacredi: { cod: '085', nome: 'VIACREDI', fileVer: '084', lotVer: '045', carteira: '1', convenio: '101004' },
+  banrisul:  { cod: '041', nome: 'BANRISUL',  fileVer: '084', lotVer: '060', carteira: '11', convenio: '' },
+  sicoob:   { cod: '756', nome: 'SICOOB',    fileVer: '084', lotVer: '045', carteira: '01', convenio: '' },
+  caixa:    { cod: '104', nome: 'CAIXA ECONOMICA FEDERAL', fileVer: '101', lotVer: '060', carteira: '1', convenio: '' },
 }
 
-function gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco, vencimento }) {
+function gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco, vencimento, isTeste = false }) {
   const baseInfo = BANCO_INFO[banco] || BANCO_INFO.viacredi
   // Caixa: injeta cedente no campo convênio (pos 033-052 do header)
   const info = banco === 'caixa' && cc.cedente
@@ -527,8 +527,8 @@ function gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco, vencimen
   let seqLote    = 1     // seq dentro do lote
   let totalValor = 0
 
-  // ── Header arquivo
-  linhas.push(buildFileHeader240({ info, cnpj, empresa, cc, seqRemessa, hoje }))
+  // ── Header arquivo — isTeste: Caixa SIGCB exige 'REMESSA-TESTE' em pos 192-211 durante homologação
+  linhas.push(buildFileHeader240({ info, cnpj, empresa, cc, seqRemessa, hoje, isTeste }))
   seqGlobal++
 
   // ── Lot header
@@ -598,7 +598,7 @@ function nossoNumero240(em, idx, codBanco, cc) {
   return '0'.repeat(10) + N(seqRaw, 10)
 }
 
-function buildFileHeader240({ info, cnpj, empresa, cc, seqRemessa, hoje }) {
+function buildFileHeader240({ info, cnpj, empresa, cc, seqRemessa, hoje, isTeste = false }) {
   let r = ''
   r += info.cod                     // 001-003
   r += '0000'                       // 004-007
@@ -620,10 +620,16 @@ function buildFileHeader240({ info, cnpj, empresa, cc, seqRemessa, hoje }) {
   r += fmtDataDDMMAAAA(hoje)        // 144-151
   r += fmtHoraHHMMSS(hoje)          // 152-157
   r += N(seqRemessa, 6)             // 158-163
-  r += '084'                        // 164-166 versão layout
+  r += (info.fileVer || '084')       // 164-166 versão layout (Caixa SIGCB='101', outros='084')
   r += '00000'                      // 167-171 densidade
   r += ' '.repeat(20)               // 172-191 reserva banco
-  r += ' '.repeat(20)               // 192-211 reserva empresa
+  // 192-211 reserva empresa / situação arquivo
+  // Durante homologação SIGCB Caixa, deve conter 'REMESSA-TESTE' (20A)
+  if (isTeste) {
+    r += 'REMESSA-TESTE       '     // 192-211 literal de homologação (20A)
+  } else {
+    r += ' '.repeat(20)             // 192-211 brancos (produção)
+  }
   r += ' '.repeat(29)               // 212-240
   if (r.length !== 240) throw new Error(`FileHeader240: ${r.length}`)
   return r
@@ -686,12 +692,17 @@ function buildSegP240({ info, cc, em, nn, seqLote, hoje, vencimento }) {
 
   // Baixa: '1'=baixar auto, '2'=devolver/decurso de prazo
   // Viacredi (085) exige código '2' + prazo '000' (prazo é configurado na conta do banco)
+  // Caixa SIGCB: protesto='3' + baixa='2' causa REJEIÇÃO do arquivo — forçar baixa='1'
   let baixaCod, baixaPrazo
   if (info.cod === '085') {
     baixaCod   = '2'
     baixaPrazo = '000'
   } else {
-    baixaCod   = cc.baixa_cod || '2'
+    baixaCod = cc.baixa_cod || '2'
+    // Safeguard Caixa: manual SIGCB proíbe a combinação protesto='3' + baixa='2'
+    if (info.cod === '104' && protestoCod === '3' && baixaCod === '2') {
+      baixaCod = '1'  // força "Baixar/Devolver" quando protesto é "Não protestar"
+    }
     baixaPrazo = baixaCod !== '0'
       ? String(parseInt(cc.baixa_prazo || '30', 10)).padStart(3, '0').slice(-3)
       : '   '  // brancos quando sem baixa
