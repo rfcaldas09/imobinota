@@ -1601,11 +1601,11 @@ export default function Config() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="font-semibold text-slate-800 text-sm">📄 Remessa CNAB — Geração de Boletos</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Cadastre as contas bancárias para gerar remessas. Bradesco/Itaú = CNAB 400; Viacredi / Banrisul = CNAB 240.</p>
+                <p className="text-xs text-slate-400 mt-0.5">Cadastre as contas bancárias para gerar remessas. Bradesco/Itaú = CNAB 400; Viacredi / Banrisul / Caixa = CNAB 240.</p>
               </div>
               <button
                 type="button"
-                onClick={() => setCnabForm({ id: crypto.randomUUID(), banco: 'bradesco', label: '', agencia: '', agencia_dv: '', conta: '', conta_dv: '', carteira: '', cod_empresa: '', seq_remessa: 1 })}
+                onClick={() => setCnabForm({ id: crypto.randomUUID(), banco: 'bradesco', label: '', agencia: '', agencia_dv: '', conta: '', conta_dv: '', carteira: '', cod_empresa: '', cedente: '', seq_remessa: 1 })}
                 className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition whitespace-nowrap">
                 + Adicionar conta
               </button>
@@ -1646,6 +1646,7 @@ export default function Config() {
                     <option value="itau">Itaú (341) — CNAB 400</option>
                     <option value="viacredi">Viacredi / Cecred (085) — CNAB 240</option>
                     <option value="banrisul">Banrisul (041) — CNAB 240</option>
+                    <option value="caixa">Caixa Econômica Federal (104) — CNAB 240</option>
                   </select>
                 </Row>
 
@@ -1657,6 +1658,14 @@ export default function Config() {
                   <Row label="Código da Empresa (Cedente)" hint="20 dígitos fornecidos pelo Bradesco (cobrança registrada).">
                     <Inp value={cnabForm.cod_empresa || ''} onChange={e => cnabFormSet('cod_empresa', e.target.value.replace(/\D/g, '').slice(0, 20))}
                       placeholder="00000000000000000000" mono />
+                  </Row>
+                )}
+
+                {cnabForm.banco === 'caixa' && (
+                  <Row label="Código do Cedente" hint="7 dígitos fornecidos pela Caixa (já inclui o DV). Ex: 0935847">
+                    <Inp value={cnabForm.cedente || ''} onChange={e => cnabFormSet('cedente', e.target.value.replace(/\D/g, '').slice(0, 7))}
+                      onBlur={() => { if (cnabForm.cedente) cnabFormSet('cedente', cnabForm.cedente.padStart(7, '0')) }}
+                      placeholder="0935847" mono />
                   </Row>
                 )}
 
@@ -1708,11 +1717,11 @@ export default function Config() {
                     placeholder="1" mono />
                 </Row>
 
-                {/* ── Instruções de cobrança — Viacredi, Banrisul (CNAB 240) e Itaú (CNAB 400) ── */}
-                {(cnabForm.banco === 'viacredi' || cnabForm.banco === 'banrisul' || cnabForm.banco === 'itau') && (
+                {/* ── Instruções de cobrança — Viacredi, Banrisul, Caixa (CNAB 240) e Itaú (CNAB 400) ── */}
+                {(cnabForm.banco === 'viacredi' || cnabForm.banco === 'banrisul' || cnabForm.banco === 'caixa' || cnabForm.banco === 'itau') && (
                   <div className="border-t border-indigo-100 pt-3 space-y-3">
                     <p className="text-xs font-semibold text-indigo-700">
-                      Instruções de cobrança ({cnabForm.banco === 'banrisul' ? 'Banrisul' : cnabForm.banco === 'itau' ? 'Itaú' : 'Viacredi/AILOS'})
+                      Instruções de cobrança ({cnabForm.banco === 'banrisul' ? 'Banrisul' : cnabForm.banco === 'itau' ? 'Itaú' : cnabForm.banco === 'caixa' ? 'Caixa Econômica Federal' : 'Viacredi/AILOS'})
                     </p>
 
                     {/* Juros de mora */}

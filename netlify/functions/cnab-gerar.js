@@ -100,6 +100,11 @@ async function handle(event) {
     ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB400({ cc, profile, emissoes, seqRemessa, hoje, vencimento }))
   } else if (banco === 'itau') {
     ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB400Itau({ cc, profile, emissoes, seqRemessa, hoje, vencimento }))
+  } else if (banco === 'caixa') {
+    if (!cc.cedente) {
+      return { statusCode: 422, body: JSON.stringify({ error: 'Código do cedente Caixa não configurado.' }) }
+    }
+    ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco, vencimento }))
   } else {
     // Viacredi (085) ou Banrisul (041)
     ;({ cnabText, totalTitulos, valorTotal } = gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco, vencimento }))
@@ -142,6 +147,8 @@ async function handle(event) {
     filename = `CB${dd}${mm}${seq2}.REM`
   } else if (banco === 'banrisul') {
     filename = `R${String(seqRemessa).padStart(7, '0')}.240`
+  } else if (banco === 'caixa') {
+    filename = `CB${dd}${mm}${seq2}.REM`
   } else {
     filename = `REM${String(seqRemessa).padStart(7, '0')}.TXT`
   }
@@ -504,10 +511,15 @@ const BANCO_INFO = {
   viacredi: { cod: '085', nome: 'VIACREDI', lotVer: '045', carteira: '1', convenio: '101004' },
   banrisul:  { cod: '041', nome: 'BANRISUL',  lotVer: '060', carteira: '11', convenio: '' },
   sicoob:   { cod: '756', nome: 'SICOOB',    lotVer: '045', carteira: '01', convenio: '' },
+  caixa:    { cod: '104', nome: 'CAIXA ECONOMICA FEDERAL', lotVer: '050', carteira: '1', convenio: '' },
 }
 
 function gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco, vencimento }) {
-  const info     = BANCO_INFO[banco] || BANCO_INFO.viacredi
+  const baseInfo = BANCO_INFO[banco] || BANCO_INFO.viacredi
+  // Caixa: injeta cedente no campo convênio (pos 033-052 do header)
+  const info = banco === 'caixa' && cc.cedente
+    ? { ...baseInfo, convenio: N(cc.cedente, 7).padEnd(20, ' ') }
+    : baseInfo
   const cnpj     = N((profile.cnpj || '').replace(/\D/g, ''), 14)
   const empresa  = A(profile.company_name || 'EMPRESA', 30)
   const linhas   = []
@@ -575,6 +587,12 @@ function nossoNumero240(em, idx, codBanco, cc) {
   if (codBanco === '041') {
     // Banrisul: sequencial 10 dígitos + 10 spaces
     return N(seqRaw, 10).padEnd(20, ' ')
+  }
+  if (codBanco === '104') {
+    // Caixa SIGCB: '14' (produto=1 + emissão=4) + Seq1(000) + Seq2(000) + Seq3(seq9) = 17 chars + 3 spaces = 20
+    // O DV é calculado pelo banco a partir do campo livre; aqui registramos o nosso número bruto
+    const seq9 = N(seqRaw, 9)
+    return ('14' + '000' + '000' + seq9).padEnd(20, ' ')
   }
   // Default: zeros(10) + sequencial(10)
   return '0'.repeat(10) + N(seqRaw, 10)
@@ -693,10 +711,12 @@ function buildSegP240({ info, cc, em, nn, seqLote, hoje, vencimento }) {
   r += A(cc.conta_dv || ' ', 1)    // 036 DV conta
   r += ' '                         // 037 DV ag/conta
   r += nn                          // 038-057 nosso número (20A)
+  // Caixa usa emissão '4' (empresa emite boleto pelo SIGCB), outros usam '2'
+  const emissaoBoleto = info.cod === '104' ? '4' : '2'
   r += carteira                    // 058 carteira (1N)
   r += '1'                         // 059 tipo cadastramento (1=Cobrança Simples)
   r += '1'                         // 060 tipo documento (default '1')
-  r += '2'                         // 061 emissão boleto (2=cliente emite)
+  r += emissaoBoleto               // 061 emissão boleto (2=cliente emite; Caixa=4)
   r += '2'                         // 062 distribuição boleto (2=cliente distribui)
   r += nroDoc                      // 063-077 nº documento (15A, left-aligned)
   r += fmtDataDDMMAAAA(venc)       // 078-085 vencimento (8N)
@@ -871,6 +891,40 @@ function buildFileTrailer240({ info, qtdLotes, qtdRegistros }) {
   r += ' '.repeat(205)  // 036-240
   if (r.length !== 240) throw new Error(`FileTrailer240: ${r.length}`)
   return r
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Campo livre SIGCB — Caixa Econômica Federal (104)
+//  Formato (25 dígitos):
+//    cedente5(5) + dvCedente(1) + '1'(1) + seq1(3) + '1'(1) + seq2(3) + '4'(1) + seq3(9) + dvCL(1)
+//  Onde:
+//    cedente5    = código cedente sem DV, 5 dígitos (ex: '0935847' → cedente='93584', dv='7')
+//    dvCedente   = último dígito do código cedente informado pelo banco
+//    seq1/seq2   = '000' (zeros para cobrança simples)
+//    seq3        = número sequencial do título, padded to 9
+//    dvCL        = módulo 10 sobre os primeiros 24 dígitos
+// ══════════════════════════════════════════════════════════════════
+function calcMod10DV(str) {
+  let sum = 0, mult = 2
+  for (let i = str.length - 1; i >= 0; i--) {
+    let r = parseInt(str[i], 10) * mult
+    if (r > 9) r -= 9
+    sum += r
+    mult = mult === 2 ? 1 : 2
+  }
+  return String((10 - (sum % 10)) % 10)
+}
+
+/** Campo livre Caixa SIGCB (25 dígitos).
+ *  cedenteCode: código cedente de 7 dígitos fornecido pelo banco (ex: '0935847')
+ *  seq: número sequencial do título (número NFS-e) */
+function campoLivreCaixa(cedenteCode, seq) {
+  const code    = N(cedenteCode, 7)       // '0935847'
+  const cedente5 = code.slice(1, 6)       // '93584' (posições 2-6)
+  const dvCed   = code.slice(6)           // '7'    (posição 7)
+  const seq9    = N(String(seq).replace(/\D/g, ''), 9)
+  const payload = cedente5 + dvCed + '1' + '000' + '1' + '000' + '4' + seq9  // 24 chars
+  return payload + calcMod10DV(payload)   // 25 chars
 }
 
 // ── Supabase helper ───────────────────────────────────────────────

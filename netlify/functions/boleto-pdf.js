@@ -211,6 +211,37 @@ function buildBarcode({ convenio, conta, contaDv, carteira, seq, vencimento, val
   return banco + moeda + String(dv) + fStr + vStr + cl
 }
 
+// ══════════════════════════════════════════════════════════
+//  Caixa Econômica Federal (104) — SIGCB
+// ══════════════════════════════════════════════════════════
+
+/** Campo livre SIGCB (25 dígitos).
+ *  cedenteCode: código cedente de 7 dígitos (ex: '0935847')
+ *  dvMod10 já definido acima */
+function campoLivreCaixaPdf(cedenteCode, seq) {
+  const code     = N(cedenteCode, 7)
+  const cedente5 = code.slice(1, 6)   // posições 2-6
+  const dvCed    = code.slice(6)       // posição 7
+  const seq9     = N(String(seq).replace(/\D/g, ''), 9)
+  const payload  = cedente5 + dvCed + '1' + '000' + '1' + '000' + '4' + seq9  // 24 chars
+  return payload + String(dvMod10(payload))  // 25 chars
+}
+
+/** Código de barras Caixa SIGCB (44 dígitos) */
+function buildBarcodeCaixa({ cedente, seq, vencimento, valor }) {
+  const banco  = '104'
+  const moeda  = '9'
+  const fStr   = String(fatorVencimento(vencimento)).padStart(4, '0')
+  const vCents = Math.round(
+    parseFloat(String(valor).replace(/[^\d,.]/g, '').replace(',', '.')) * 100
+  )
+  const vStr  = String(vCents).padStart(10, '0')
+  const cl    = campoLivreCaixaPdf(cedente, seq)   // 25 chars
+  const semDV = banco + moeda + fStr + vStr + cl
+  const dv    = dvMod11Barcode(semDV)
+  return banco + moeda + String(dv) + fStr + vStr + cl
+}
+
 /** Linha digitável (47 dígitos formatados) */
 function buildLinhaDigitavel(barcode) {
   const cl = barcode.slice(19)   // campo livre 25 chars
@@ -960,8 +991,12 @@ async function handle(event) {
   const isBradesco = banco === 'bradesco'
   const isItau     = banco === 'itau'
   const isViacredi = banco === 'viacredi'
-  if (!isBradesco && !isItau && !isViacredi) {
-    return { statusCode: 422, body: JSON.stringify({ error: `boleto-pdf.js suporta Viacredi, Bradesco e Itaú. Banco configurado: ${banco}` }) }
+  const isCaixa    = banco === 'caixa'
+  if (!isBradesco && !isItau && !isViacredi && !isCaixa) {
+    return { statusCode: 422, body: JSON.stringify({ error: `boleto-pdf.js suporta Viacredi, Bradesco, Itaú e Caixa. Banco configurado: ${banco}` }) }
+  }
+  if (isCaixa && !cc.cedente) {
+    return { statusCode: 422, body: JSON.stringify({ error: 'Código do cedente Caixa não configurado.' }) }
   }
 
   // ── Busca emissões ────────────────────────────────────────
@@ -1043,6 +1078,22 @@ async function handle(event) {
       bankLogoUri    = ITAU_LOGO_URI || null
       bankLogoW      = 180
       bankLogoH      = 180
+    } else if (isCaixa) {
+      // ── Caixa (104) SIGCB ──
+      const cedenteCode = N(cc.cedente || '0000000', 7)
+      const seq9        = N(String(seq).replace(/\D/g, ''), 9)
+      const cl          = campoLivreCaixaPdf(cedenteCode, seq)
+
+      barcode = buildBarcodeCaixa({ cedente: cedenteCode, seq, vencimento: venc, valor })
+
+      nossoNumeroFmt = `14000000${seq9}-${cl.slice(-1)}`
+      agenciaLabel   = 'AGÊNCIA / CÓD. CEDENTE'
+      agenciaValue   = `${N(cc.agencia || '0', 4)} / ${cedenteCode}`
+      bankCode       = '104-0'
+      bankLabel      = 'CAIXA'
+      bankLogoUri    = null
+      bankLogoW      = 0
+      bankLogoH      = 0
     } else {
       // ── Viacredi (085) ──
       barcode = buildBarcode({
@@ -1078,7 +1129,7 @@ async function handle(event) {
       nossoNumeroDisplay,
       agenciaCodigo,
       numeroDocumento,
-      carteira:        cc.carteira || (isBradesco ? '09' : '1'),
+      carteira:        isCaixa ? 'RG' : (cc.carteira || (isBradesco ? '09' : '1')),
       vencimento:      fmtDate(venc),
       valor,
       dataDocumento:   dataHoje,
