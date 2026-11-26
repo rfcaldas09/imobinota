@@ -64,13 +64,10 @@ async function handle(event) {
     return { statusCode: 422, body: JSON.stringify({ error: 'Nenhuma conta bancária configurada.' }) }
   }
 
-  let cc
-  if (contaId) {
-    cc = contas.find(c => c.id === contaId)
-    if (!cc) return { statusCode: 422, body: JSON.stringify({ error: 'Conta bancária não encontrada.' }) }
-  } else {
-    cc = contas.find(c => (c.banco || '').toLowerCase() === 'caixa') || contas[0]
-  }
+  // Busca conta: por id → por banco='caixa' → primeira da lista
+  let cc = (contaId ? contas.find(c => c.id === contaId) : null)
+         || contas.find(c => (c.banco || '').toLowerCase() === 'caixa')
+         || contas[0]
 
   if ((cc.banco || '').toLowerCase() !== 'caixa') {
     return { statusCode: 422, body: JSON.stringify({ error: `Esta função só suporta Caixa. Banco configurado: ${cc.banco}` }) }
