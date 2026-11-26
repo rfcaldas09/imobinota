@@ -516,9 +516,10 @@ const BANCO_INFO = {
 
 function gerarCNAB240({ cc, profile, emissoes, seqRemessa, hoje, banco, vencimento, isTeste = false }) {
   const baseInfo = BANCO_INFO[banco] || BANCO_INFO.viacredi
-  // Caixa: injeta cedente no campo convênio (pos 033-052 do header)
+  // Caixa SIGCB: cedente (7N) em pos 034-040 do header lote + zeros completando 20 chars
+  // Header arquivo: cedente em pos 033-052 (campo convênio/legado), zeros restantes
   const info = banco === 'caixa' && cc.cedente
-    ? { ...baseInfo, convenio: N(cc.cedente, 7).padEnd(20, ' ') }
+    ? { ...baseInfo, convenio: N(cc.cedente, 7) + '0'.repeat(13) }
     : baseInfo
   const cnpj     = N((profile.cnpj || '').replace(/\D/g, ''), 14)
   const empresa  = A(profile.company_name || 'EMPRESA', 30)
@@ -670,7 +671,10 @@ function buildSegP240({ info, cc, em, nn, seqLote, hoje, vencimento }) {
   const cd       = parseCobData(em)
   const venc     = resolveVencimento(vencimento || em.vencimento_boleto, hoje)
   const emDt     = new Date(em.created_at || hoje)
-  const carteira = N(cc.carteira || info.carteira || '1', 1)  // 1 char
+  // Caixa SIGCB: carteira deve ser '1' (Cobrança Simples). Outros bancos usam cc.carteira.
+  const carteira = info.cod === '104'
+    ? '1'
+    : N(cc.carteira || info.carteira || '1', 1)
   const valor15  = String(valorCents(em.valor_servico)).padStart(15, '0')
   const nroDoc   = A((em.numero_nfse || em.numero_dps || String(seqLote)), 15)
   const usoEmp   = A((em.numero_nfse || em.numero_dps || ''), 25)
