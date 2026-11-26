@@ -1,11 +1,9 @@
 // Netlify Function — gera CNAB 240 + boletos PDF de teste para homologação Caixa
-// Admin-only: apenas rafael.fcaldas@gmail.com pode usar
+// Disponível para qualquer usuário com conta Caixa configurada
 // POST { userId, contaId, authToken }
 // Retorna: ZIP (base64) com arquivo CNAB + PDFs de boleto
 
 const JSZip = require('jszip')
-
-const ADMIN_EMAIL = 'rafael.fcaldas@gmail.com'
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -36,7 +34,7 @@ async function handle(event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'userId e authToken são obrigatórios' }) }
   }
 
-  // ── Valida admin via Supabase auth ────────────────────────
+  // ── Valida usuário via Supabase auth ─────────────────────
   const userRes = await fetch(`${SB_URL}/auth/v1/user`, {
     headers: {
       'apikey': SB_KEY,
@@ -47,8 +45,8 @@ async function handle(event) {
     return { statusCode: 401, body: JSON.stringify({ error: 'Token inválido' }) }
   }
   const authUser = await userRes.json()
-  if (authUser?.email !== ADMIN_EMAIL) {
-    return { statusCode: 403, body: JSON.stringify({ error: 'Acesso negado. Apenas admin pode usar esta função.' }) }
+  if (!authUser?.id) {
+    return { statusCode: 401, body: JSON.stringify({ error: 'Usuário não autenticado.' }) }
   }
 
   // ── Busca perfil + cnab_config do usuário alvo ───────────

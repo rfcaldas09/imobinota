@@ -1657,7 +1657,7 @@ export default function Config() {
                     <span className="text-xs text-slate-400 ml-2">{['bradesco','itau'].includes(cc.banco) ? 'CNAB 400' : 'CNAB 240'} · Ag {cc.agencia}{cc.agencia_dv ? '-' + cc.agencia_dv : ''} / CC {cc.conta}{cc.conta_dv ? '-' + cc.conta_dv : ''}</span>
                   </div>
                   <div className="flex gap-2">
-                    {(cc.banco || '').toLowerCase() === 'caixa' && user?.email === 'rafael.fcaldas@gmail.com' && (
+                    {(cc.banco || '').toLowerCase() === 'caixa' && (
                       <button type="button"
                         onClick={() => gerarTesteCaixa(cc)}
                         disabled={caixaTestando !== null}
