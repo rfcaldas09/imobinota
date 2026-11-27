@@ -1189,6 +1189,18 @@ function ContractForm({ initial, onSave, onClose, title, saveLabel, accentColor 
               <Lc116Picker value={f.codServicoLc116} onChange={v => set('codServicoLc116', v)} />
             </div>
 
+            <Row label="Código NBS (opcional)">
+              <select
+                value={f.codNbs || ''}
+                onChange={e => set('codNbs', e.target.value || null)}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">— Padrão do perfil —</option>
+                <option value="1.1002.10.00">1.1002.10.00 — Locação Residencial</option>
+                <option value="1.1002.20.00">1.1002.20.00 — Locação Comercial / Não-Residencial</option>
+              </select>
+            </Row>
+
             <Row label="Discriminação do serviço (texto fixo)">
               <textarea
                 value={f.discriminacaoServico}
@@ -1377,6 +1389,8 @@ function DocModal({ type, contract: c, onClose, onToast }) {
         mesRef:          mesRefStr,
         discriminacao:      c.discriminacaoServico || null,
         codServicoLc116:    c.codServicoLc116 || null,
+        codigoNbs:          c.codNbs || null,   // NBS por contrato — para nfse-emitir-focus.js
+        codNbs:             c.codNbs || null,   // NBS por contrato — para nfse-emitir.js (padrão)
         vencimento_boleto:  vencimentoBoleto || null,
         retencoes: {
           tpRetISSQN: c.issRetido ? 2 : 1,

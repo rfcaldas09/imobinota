@@ -217,6 +217,8 @@ export const MUNICIPIOS_SUL = [
   { ibge:'4316907', nome:'Santa Maria — RS',     nac:true  },
   { ibge:'4314407', nome:'Pelotas — RS',         nac:true,  nacEm:'2026-08-01' },
   { ibge:'4309100', nome:'Gramado — RS',         nac:false },
+  // ── PERNAMBUCO ──────────────────────────────────────────────────────────────
+  { ibge:'2604106', nome:'Caruaru — PE',          nac:true  },
   // ── PARANÁ ──────────────────────────────────────────────────────────────────
   { ibge:'4106902', nome:'Curitiba — PR',        nac:true  },
   { ibge:'4113700', nome:'Londrina — PR',        nac:true  },
@@ -442,4 +444,5 @@ export const ISS_IBGE = {
   '4115200': '5,00', // Maringá PR
   '4119905': '2,00', // Ponta Grossa PR
   '4104808': '2,00', // Cascavel PR
+  '2604106': '5,00', // Caruaru PE (alíquota ISS padrão municipal — confirmar na prefeitura)
 }
